@@ -259,9 +259,12 @@ Director runs `/emote joy` immediately — zero classifier round-trips for
 tagged messages.
 
 **Since 0.5.0 this needs no setup**: the instruction below is injected
-automatically near the end of the context (via ST's extension-prompt
-mechanism, IN_CHAT at depth 1, like an Author's Note), so there is nothing to
-paste into your preset. The toggle turns injection and tag parsing on/off
+automatically via ST's extension-prompt mechanism — since 0.5.5 as a **system
+message at depth 0, i.e. placed absolutely last, after your message** (for
+chat completion this is `populationInjectionPrompts()` splicing depth-0
+injections at the end), with mandatory-format wording so presets that end
+replies with a planning/`<details>` block still emit the tag — so there is
+nothing to paste into your preset. The toggle turns injection and tag parsing on/off
 together. The snippet remains in the drawer for reference:
 
 > At the very end of every reply, on its own line, append [MOOD: \<one word\>]

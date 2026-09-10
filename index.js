@@ -125,6 +125,18 @@
  *   - Unknown Speakers: a dialogue colour on no Cast card gets a tinted
  *     silhouette chip (pronoun-gendered, best-guess name).
  *
+ * v0.5.5:
+ *
+ *   - Quiet console: nothing is printed unless "Debug Logging" is on
+ *     (errors still go to console.error).
+ *   - Mood-tag instruction injected at depth 0 (a system message placed
+ *     absolutely last) with mandatory-format wording; a tag is also read
+ *     from the reasoning block as a last resort; the raw tail is logged
+ *     (debug) when no tag arrives.
+ *   - Flash-free sprite: no /emote for a label already on screen; the
+ *     crossfade keeps the old image until the new one has painted and
+ *     blends over 1.2s; idle variants are preloaded and cycle every ~2 min.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -139,6 +151,15 @@
 
     const MODULE = 'scene_director';
     const LOG = '[scene-director]';
+    // v0.5.5: all console output goes through dbg(); silent unless the
+    // "Debug logging" toggle is on. Failures still use console.error.
+    function dbg() {
+        try {
+            const st = SillyTavern.getContext().extensionSettings[MODULE];
+            if (!st || !st.enableDebug) return;
+            console.log.apply(console, [LOG].concat(Array.prototype.slice.call(arguments)));
+        } catch (e) { /* ignore */ }
+    }
 
     // Perf: never regex-sweep more than this many chars of a message.
     const MAX_SCAN = 20000;
@@ -214,13 +235,14 @@
         enableThoughtTips: true,
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
+        enableDebug: false,         // v0.5.5: console diagnostics off by default
         ownColorHex: '',            // the main character's dialogue colour (never an "unknown")
         interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
         idleAfterSeconds: 90,    // quiet time before idle presence starts
-        idleEverySeconds: 45,    // interval between idle sprite swaps
+        idleEverySeconds: 120,   // interval between idle sprite swaps (0.5.5: ~2 min)
 
         // v0.3.0 misc config.
         titlePrefix: '',
@@ -286,7 +308,7 @@
         try {
             re = new RegExp(source, f);
         } catch (e) {
-            console.warn(`${LOG} invalid regex: ${source}`, e);
+            console.error(`${LOG} invalid regex: ${source}`, e);
         }
         regexCache.set(key, re);
         return re;
@@ -432,7 +454,7 @@
                     });
                 }
                 s.backgroundMap = [];
-                console.log(`${LOG} migrated ${s.places.length} background-map rows into place cards`);
+                dbg(`migrated ${s.places.length} background-map rows into place cards`);
             }
             // 0.5.1: chipSize changed from px to vh.
             if (Number(s.chipSize) > 40) s.chipSize = defaultSettings.chipSize;
@@ -721,11 +743,11 @@
                     Math.min(scene.text.length, hitAt + 160));
                 const dep = DEPART_RE.exec(win);
                 if (dep) {
-                    if (castPresence.has(member.key)) console.log(`${LOG} cast -${member.key} (departure "${dep[0]}")`);
+                    if (castPresence.has(member.key)) dbg(`cast -${member.key} (departure "${dep[0]}")`);
                     castPresence.delete(member.key);
                     continue;
                 }
-                if (!castPresence.has(member.key)) console.log(`${LOG} cast +${member.key} (${evidence})`);
+                if (!castPresence.has(member.key)) dbg(`cast +${member.key} (${evidence})`);
                 present.push({ member, pos, evidence });
             }
             if (member.colorHex && pos > speakerPos) {
@@ -1099,8 +1121,19 @@
                     ghost.style.height = rect.height + 'px';
                     ghost.style.opacity = '1';
                     document.body.appendChild(ghost);
-                    requestAnimationFrame(function () { ghost.style.opacity = '0'; });
-                    sdTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 350);
+                    // 0.5.5: keep the old image fully visible until the new
+                    // file has painted, then a 1.2s cross-blend.
+                    let waited = 0;
+                    const startFade = function () {
+                        if (!(cur.complete && cur.naturalWidth > 0) && waited < 4000) {
+                            waited += 50;
+                            sdTimeout(startFade, 50);
+                            return;
+                        }
+                        requestAnimationFrame(function () { ghost.style.opacity = '0'; });
+                        sdTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 1300);
+                    };
+                    startFade();
                 } catch (e) { /* never break on sprite changes */ }
             });
             spriteObserver.observe(target, {
@@ -1109,7 +1142,7 @@
                 childList: true,
                 subtree: true,
             });
-            console.log(`${LOG} sprite crossfade attached`);
+            dbg(`sprite crossfade attached`);
         } catch (e) {
             console.error(`${LOG} sprite crossfade setup failed`, e);
         }
@@ -1695,8 +1728,12 @@
             if (generating || Date.now() - lastActivityTs < (Number(settings.idleAfterSeconds) || 90) * 1000) return;
             const cur = currentSpriteImg();
             if (!cur || !NEUTRAL_FILE_RE.test((cur.src.split('/').pop() || '').toLowerCase())) return;
+            // 0.5.5: preload the incoming file before swapping.
+            const next = others[Math.floor(Math.random() * others.length)];
+            const ok = await verifyImageUrl(next);
+            if (!ok || generating) return;
             lastIdleSwapTs = Date.now();
-            cur.src = others[Math.floor(Math.random() * others.length)];
+            cur.src = next;
         } catch (e) { /* ignore */ }
     }
 
@@ -1753,7 +1790,7 @@
                             const im = new Image();
                             im.src = 'backgrounds/' + encodeURIComponent(f);
                         });
-                        console.log(`${LOG} prefetched ${files.size} backgrounds`);
+                        dbg(`prefetched ${files.size} backgrounds`);
                     }
                     const img = currentSpriteImg();
                     if (img && img.src) {
@@ -2150,7 +2187,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         // v0.5.0: a location change clears presence entirely — the strip
         // rebuilds from speaking evidence at the new location.
         if (scene.location && presenceLoc && scene.location !== presenceLoc) {
-            for (const [k] of castPresence) console.log(`${LOG} cast -${k} (location change)`);
+            for (const [k] of castPresence) dbg(`cast -${k} (location change)`);
             castPresence.clear(); // hard reset — no grace across a move
         }
         if (scene.location) presenceLoc = scene.location;
@@ -2162,7 +2199,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             for (const p of present) if (p.pos > speakerPos) speakerPos = p.pos;
             for (const u of detectUnknownSpeakers(scene, settings)) {
                 if (u.pos > speakerPos) { speakerPos = u.pos; speakerKey = u.key; }
-                if (!castPresence.has(u.key)) console.log(`${LOG} cast +${u.key} "${u.label}" (${u.gender}, hex ${u.hex})`);
+                if (!castPresence.has(u.key)) dbg(`cast +${u.key} "${u.label}" (${u.gender}, hex ${u.hex})`);
                 present.push({ member: { key: u.key, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } }, pos: u.pos });
             }
         }
@@ -2175,7 +2212,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (nowKeys.has(k)) continue;
             const next = miss + 1;
             if (next >= PRESENCE_MISS_LIMIT) {
-                console.log(`${LOG} cast -${k} (absent ${next} messages)`);
+                dbg(`cast -${k} (absent ${next} messages)`);
                 castPresence.delete(k);
                 continue;
             }
@@ -2304,9 +2341,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         try {
             const ctx = SillyTavern.getContext();
             if (typeof ctx.setExtensionPrompt !== 'function') return;
+            // Verified in public/scripts/openai.js populationInjectionPrompts():
+            // depth 0 = a system message spliced ABSOLUTELY LAST (after the
+            // user's message) for chat completion; text completion places
+            // it the same way via getExtensionPrompt(IN_CHAT, 0).
             ctx.setExtensionPrompt(MOOD_INJECT_KEY,
                 settings.enableMoodTag ? MOOD_PROMPT_SNIPPET : '',
-                1 /* IN_CHAT */, 1 /* depth */, false /* scan */, 0 /* SYSTEM */);
+                1 /* IN_CHAT */, 0 /* depth: absolutely last */, false /* scan */, 0 /* SYSTEM */);
         } catch (e) {
             console.error(`${LOG} mood-tag injection failed`, e);
         }
@@ -2411,9 +2452,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 const use = tries >= 3 ? 'neutral' : label;
                 try { await runCommand(ctx, `/emote ${use}`); } catch (e) { /* ignore */ }
                 if (Date.now() < hydrateUntil) {
-                    console.debug(`${LOG} initial hydrate: sprite not drawn yet -> /emote ${use} (${tries})`);
+                    dbg(`initial hydrate: sprite not drawn yet -> /emote ${use} (${tries})`);
                 } else {
-                    console.log(`${LOG} sprite was blank -> re-asserted /emote ${use} (${tries})`);
+                    dbg(`sprite was blank -> re-asserted /emote ${use} (${tries})`);
                     spriteDebug(ctx, use);
                 }
             }
@@ -2442,7 +2483,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 hasLabel = list.some(function (x) { return x.label === label; });
             }
             const holder = document.getElementById('expression-holder');
-            console.log(`${LOG} sprite-debug`, {
+            dbg(`sprite-debug`, {
                 img: img ? ('#' + (img.id || '?') + '.' + (img.className || '')) : '(no img)',
                 src: img ? img.getAttribute('src') : null,
                 holderDisplay: holder ? getComputedStyle(holder).display : null,
@@ -2450,7 +2491,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 fallback: (ctx.extensionSettings.expressions || {}).fallback_expression,
                 api: (ctx.extensionSettings.expressions || {}).api,
             });
-        } catch (e) { console.log(`${LOG} sprite-debug failed`, e); }
+        } catch (e) { dbg(`sprite-debug failed`, e); }
     }
 
     /** Last [MOOD:] tag in the loaded chat (scans back a few AI messages). */
@@ -2478,15 +2519,34 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         sdTimeout(function () { assertExpression(ctx, label); }, delayMs || 0);
     }
 
-    async function applyMoodTag(ctx, rawText, settings) {
+    /** Label of the sprite on screen (ST's data-expression, else filename). */
+    function displayedLabel() {
+        try {
+            const img = currentSpriteImg();
+            if (!img || !img.getAttribute('src')) return null;
+            const de = img.getAttribute('data-expression');
+            if (de) return de.toLowerCase();
+            const file = decodeURIComponent((img.getAttribute('src') || '').split('/').pop().split('?')[0]).toLowerCase();
+            return file.replace(/\.[^.]+$/, '').replace(/[-.].*$/, '') || null;
+        } catch (e) { return null; }
+    }
+
+    async function applyMoodTag(ctx, rawText, settings, reasoningText) {
         try {
             if (!settings.enableMoodTag) return;
-            const label = detectMoodTag(rawText);
-            if (!label) return;
+            let label = detectMoodTag(rawText);
+            if (!label && reasoningText) label = detectMoodTag(String(reasoningText)); // last resort
+            if (!label) {
+                dbg('no [MOOD] tag; raw tail: ' + JSON.stringify(String(rawText || '').slice(-120)));
+                return;
+            }
             stripMoodTagFromDom();
             sdTimeout(function () { showMainMoodEmoji(label, settings); }, 400);
+            // v0.5.5: never re-/emote a label already on screen (a re-emote
+            // over an idle variant forces a crossfade = a visible flash).
+            if (displayedLabel() === label) { lastMoodLabel = label; syncFallback(ctx, label); dbg(`mood tag ${label} (already displayed, no /emote)`); return; }
             await assertExpression(ctx, label);
-            console.log(`${LOG} mood tag -> /emote ${label}`);
+            dbg(`mood tag -> /emote ${label}`);
         } catch (e) {
             console.error(`${LOG} mood tag failed`, e);
         }
@@ -2516,7 +2576,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             // Inline Mood Tag: fire-and-forget (self-contained) so it never
             // delays the rest of the scene. Reads the RAW text — the tag
             // trails the message and must survive the MAX_SCAN cap.
-            try { applyMoodTag(ctx, last.mes, settings); } catch (e) { /* ignore */ }
+            try { applyMoodTag(ctx, last.mes, settings, last.extra && last.extra.reasoning); } catch (e) { /* ignore */ }
 
             try {
                 updateCastStrip(scene, settings);
@@ -2557,10 +2617,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                             lastBg = bg;
                             lastBgGraded = pick.graded && bg === pick.file;
                             await applyBackground(ctx, bg, settings);
-                            console.log(`${LOG} "${location}" -> ${bg}`);
+                            dbg(`"${location}" -> ${bg}`);
                         }
                     } else {
-                        console.debug(`${LOG} no background mapping for location: ${location}`);
+                        dbg(`no background mapping for location: ${location}`);
                     }
                 } catch (e) {
                     console.error(`${LOG} background switch failed`, e);
@@ -2594,7 +2654,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         // 0.5.1: the /costume handler re-classifies; redraw
                         // the tagged mood so a None classifier can't blank it.
                         replayExpression(ctx, settings, 0);
-                        console.log(`${LOG} costume: ${lastCostume || 'default'} -> ${desired || 'default'} (loc="${location}", hour=${scene.hour})`);
+                        dbg(`costume: ${lastCostume || 'default'} -> ${desired || 'default'} (loc="${location}", hour=${scene.hour})`);
                         lastCostume = desired;
                         try {
                             const meta = chatMeta(true);
@@ -2688,10 +2748,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             }
         } catch (e) { /* ignore */ }
         if (result.prome) {
-            console.log(`${LOG} Prome VN Extension detected — Weather & Lighting Overlay auto-disabled`);
+            dbg(`Prome VN Extension detected — Weather & Lighting Overlay auto-disabled`);
         }
         if (result.weatherCycle) {
-            console.log(`${LOG} st-weather-cycle detected — Ken Burns Drift auto-disabled`);
+            dbg(`st-weather-cycle detected — Ken Burns Drift auto-disabled`);
         }
         return result;
     }
@@ -2728,7 +2788,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     }
                     return [];
                 } catch (e) {
-                    console.warn(`${LOG} backgrounds list fetch failed`, e);
+                    dbg('backgrounds list fetch failed', e);
                     return [];
                 }
             })();
@@ -3331,6 +3391,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
         ['enableUnknownSpeakers', 'Unknown Speakers', 'A tinted silhouette chip (male/female/neutral by nearby pronouns, best-guess name) for any dialogue colour not on a Cast card'],
+        ['enableDebug', 'Debug Logging', 'Print [scene-director] diagnostics (chip add/remove with evidence, sprite replays, injection) to the console; off = silent unless something fails'],
         ['enableThoughtTips', 'Thought Tooltips', 'Hover the sprite or a cast chip: bio line, mood emoji and the last sentences the model wrote about that character\'s inner state (regex over the last reply + its reasoning; no AI calls)'],
         ['enableMoodTag', 'Inline Mood Tag', 'Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
@@ -3368,9 +3429,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
 
     // Preset line for the Inline Mood Tag feature — lists all 28 labels the
     // expressions extension understands.
-    const MOOD_PROMPT_SNIPPET = 'At the very end of every reply, on its own line, append '
-        + '[MOOD: <one word>] choosing the single best fit from: '
-        + EXPRESSION_LABELS.join(', ') + '.';
+    const MOOD_PROMPT_SNIPPET = 'MANDATORY FORMAT: the final line of your reply must be exactly '
+        + '[MOOD: label] — after everything else, including any <details> or planning block — '
+        + 'where label is the single best fit for the character\'s current mood from: '
+        + EXPRESSION_LABELS.join(', ') + '. No reply may end without this line.';
 
     function escapeHtml(s) {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -3895,7 +3957,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         const panel = document.getElementById('extensions_settings2')
             || document.getElementById('extensions_settings');
         if (!panel) {
-            console.warn(`${LOG} extensions settings panel not found; settings UI skipped`);
+            console.error(`${LOG} extensions settings panel not found; settings UI skipped`);
             return;
         }
         const holder = document.createElement('div');
@@ -3904,7 +3966,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         loadSettingsIntoForm();
         try {
             const content = document.querySelector('#scene_director_settings .inline-drawer-content');
-            console.log(`${LOG} settings drawer registered in #${panel.id}: ${content ? content.querySelectorAll('input, select, textarea').length : 0} controls`);
+            dbg(`settings drawer registered in #${panel.id}: ${content ? content.querySelectorAll('input, select, textarea').length : 0} controls`);
         } catch (e) { /* ignore */ }
         document.getElementById('sd_apply').addEventListener('click', applyForm);
         document.getElementById('sd_test').addEventListener('click', testLastMessage);
@@ -3942,7 +4004,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            console.log(`${LOG} loaded (v0.5.4)`);
+            dbg('loaded (v0.5.5)');
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

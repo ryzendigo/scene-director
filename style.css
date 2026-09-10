@@ -232,7 +232,7 @@
     pointer-events: none;
     z-index: 2;
     object-fit: contain;
-    transition: opacity 0.3s ease;
+    transition: opacity 1.2s ease;
 }
 
 /* ---- Settings drawer ---- */
