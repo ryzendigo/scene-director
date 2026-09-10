@@ -11,6 +11,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const src = fs.readFileSync(path.join(here, '..', 'index.js'), 'utf8');
 const a = src.indexOf('// === MOOD ENGINE (pure) BEGIN ==='); const b = src.indexOf('// === MOOD ENGINE (pure) END ===');
 const MoodEngine = new Function(src.slice(a, b) + '\nreturn MoodEngine;')();
+const pa = src.indexOf('// === PRESENCE ENGINE (pure) BEGIN ==='); const pb = src.indexOf('// === PRESENCE ENGINE (pure) END ===');
+export const PresenceEngine = new Function(src.slice(pa, pb) + '\nreturn PresenceEngine;')();
 const [file, hex, name = '', count = '5'] = process.argv.slice(2);
 if (!file || !hex) { console.error('usage: mood-harness.mjs <chat.jsonl> <#hex> [name] [count]'); process.exit(1); }
 const msgs = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));

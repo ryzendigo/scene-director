@@ -142,6 +142,12 @@
  * go_emotions classifier, L3 weighted lexicon with vetoes; deterministic
  * verdict rules; 8 s hysteresis; NPC variants from the same pipeline.
  *
+ * v0.6.4 — PresenceEngine: presence is a layered evidence/veto verdict
+ * (own dialogue +10, arrival cue +4, action +2, header +3; vetoes for a
+ * name inside another speaker's quotes, absence/reported-speech
+ * sentences, departures, location change) — a name inside someone else's
+ * speech never summons a chip. Unknown-speaker names come from narration.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -240,6 +246,8 @@
         bubbleSeconds: 6,
 
         // v0.5.3 presence + thought tooltips (regex sources, 'i' flag).
+        // v0.6.4 presence engine tables (regex alternations; blank = built-in).
+        presenceArrivalRegex: '', presenceActionRegex: '', presenceDepartRegex: '',
         presenceCueRegex: 'enter(?:s|ed)?|walk(?:s|ed)? in|walk(?:s|ed)? over|com(?:es|ing) in|came in|appear(?:s|ed)|opens? the door|opened the door|arriv(?:es|ed|ing)|join(?:s|ed)|sits?|sat|sitting|seated|stands?|stood|standing|is (?:there|here)|was (?:there|here)|beside|next to|across (?:from|the table)|opposite|lean(?:s|ed|ing)|steps? (?:in|closer|forward)|says?|said|asks?|asked|replie[sd]|murmur(?:s|ed)|whisper(?:s|ed)|nods?|nodded|smil(?:es|ed)|frowns?|glanc(?:es|ed)|looks? (?:up|over|at)|watch(?:es|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|turn(?:s|ed) to',
         absenceContextRegex: 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|miss(?:es|ed|ing)?|remember(?:s|ed|ing)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|tell(?:s|ing)?|told|mention(?:s|ed)?|about|wonder(?:s|ed|ing)?|wish(?:es|ed)?|promised?|later|tomorrow|afterwards',
         enableThoughtTips: true,
@@ -778,6 +786,244 @@
         return { LABELS, DEFAULT_LEXICON, compileLexicon, extractOwn, classifierText, detectTag, lexicon, normaliseLocal, verdict, mapToAvailable, npcVariant, describe };
     })();
     // === MOOD ENGINE (pure) END ===
+    // === PRESENCE ENGINE (pure) BEGIN ===
+    // Layered evidence/veto engine for every text-driven decision: who is in
+    // the scene (cast + unknown speakers), which props are in play, and
+    // whether a costume trigger is live. Pure functions only (no DOM/ST), so
+    // the node harness can extract this block and run saved messages.
+    //
+    // The one structural rule everything hangs on: text INSIDE any coloured
+    // dialogue span or plain quotation marks belongs to a SPEAKER, and a
+    // name inside someone else's speech is a mention, never presence —
+    // characters talk about people constantly. Only NARRATION (outside all
+    // quotes/spans) can carry presence cues. A speaker's own span is the
+    // decisive evidence for that speaker.
+    const PresenceEngine = (function () {
+        const FONT_ANY_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>([\s\S]*?)<\/font>/gi;
+        const QUOTE_RE = /"[^"\n]{2,400}"|“[^”\n]{2,400}”/g;
+        const DETAILS_RE = /<details[\s\S]*?<\/details>/gi;
+        const THINK_RE = /<think>[\s\S]*?<\/think>/gi;
+        const SENTENCE_SPLIT_RE = /[.!?\n]/;
+        const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/m;
+        // Physical arrival / position cues (narration only). No speech verbs.
+        const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:in|over|up)|com(?:es|ing) (?:in|over|up)|came (?:in|over|up)|step(?:s|ped)? (?:in|inside|closer|forward|up)|appear(?:s|ed)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
+        // Physical action verbs (narration only, weaker evidence).
+        const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|frowns?|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|sets? down|picks? up|waves?|shakes? (?:her|his) head|folds? (?:her|his) arms|pats?|squeez(?:es|ed)|hugs?|kiss(?:es|ed)|touch(?:es|ed)|points?|gestur(?:es|ed)|snorts?|sighs?';
+        // Reported speech / phone / absence — any of these in the sentence
+        // that names the character vetoes them for this message.
+        const DEFAULT_ABSENCE = 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|said|says?|would say|tell(?:s|ing)?|told|remember(?:s|ed|ing)?|miss(?:es|ed|ing)?|wonder(?:s|ed|ing)?|promised?|about|mention(?:s|ed)?|th(?:ink|ought)s? (?:of|about)|wish(?:es|ed)?|later|tomorrow|yesterday|last (?:night|week|time)|wrote|reckon(?:s|ed)?|thinks?|used to|back (?:home|at)';
+        const DEFAULT_DEPART = 'leaves|left|gone|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|hangs? up|hung up|head(?:s|ed) (?:out|off|home)|goes out|departs?|departed|goodbye|good night';
+        // Props: handled / present cues, and memory contexts that veto.
+        const DEFAULT_HANDLED = 'on the (?:table|bench|counter|seat|desk|bed)|in (?:her|his|your) (?:hand|hands|lap|bag|pocket)|holds?|holding|held|sets? (?:it |the \\w+ )?down|picks? (?:it |the \\w+ )?up|takes?|took|hands? (?:her|him|you|it)|opens?|closes?|puts?|lays?|lifts?|pours?|sips?|drinks?|eats?|wraps?|clutch(?:es|ed)|grips?|turns? (?:it|the \\w+) over|passes?';
+        const DEFAULT_MEMORY = 'remember(?:s|ed|ing)?|last (?:night|week|time|year)|yesterday|later|tomorrow|going to|gonna|will|would|used to|had been|back (?:then|home|at)|once|promis(?:es|ed)|mention(?:s|ed)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|wish(?:es|ed)?|miss(?:es|ed)?|talk(?:s|ed|ing)? (?:of|about)';
+
+        function compile(src, flags) {
+            try { return src ? new RegExp('\\b(?:' + src + ')\\b', flags || 'i') : null; } catch (e) { return null; }
+        }
+        function compileTables(o) {
+            o = o || {};
+            return {
+                arrival: compile(o.arrival || DEFAULT_ARRIVAL, 'i'),
+                action: compile(o.action || DEFAULT_ACTION, 'i'),
+                absence: compile(o.absence || DEFAULT_ABSENCE, 'i'),
+                depart: compile(o.depart || DEFAULT_DEPART, 'gi'),
+                handled: compile(o.handled || DEFAULT_HANDLED, 'i'),
+                memory: compile(o.memory || DEFAULT_MEMORY, 'i'),
+            };
+        }
+
+        /**
+         * Mask a message: same-length string where every coloured span and
+         * every quoted run is blanked (spaces), so indices stay valid and
+         * regexes over `narr` only ever see narration. Also returns the
+         * spans (hex, range) and quote ranges, and the 📍 header line.
+         */
+        function mask(raw) {
+            const text = String(raw || '').replace(DETAILS_RE, function (m) { return ' '.repeat(m.length); })
+                .replace(THINK_RE, function (m) { return ' '.repeat(m.length); });
+            const spans = [];
+            let narr = text;
+            const blank = function (s, start, end) { return s.slice(0, start) + ' '.repeat(end - start) + s.slice(end); };
+            FONT_ANY_RE.lastIndex = 0;
+            let m;
+            while ((m = FONT_ANY_RE.exec(text)) !== null) {
+                spans.push({ start: m.index, end: m.index + m[0].length, hex: m[1].toLowerCase(), inner: m[2] });
+            }
+            for (const sp of spans) narr = blank(narr, sp.start, sp.end);
+            const quotes = [];
+            QUOTE_RE.lastIndex = 0;
+            while ((m = QUOTE_RE.exec(narr)) !== null) quotes.push({ start: m.index, end: m.index + m[0].length });
+            for (const q of quotes) narr = blank(narr, q.start, q.end);
+            // Strip remaining tags from narration (keep length).
+            narr = narr.replace(/<[^>]+>/g, function (t) { return ' '.repeat(t.length); });
+            const hm = HEADER_LINE_RE.exec(text);
+            const header = hm ? hm[0] : '';
+            if (hm) narr = blank(narr, hm.index, hm.index + hm[0].length);
+            return { text, narr, spans, quotes, header };
+        }
+        function ownerAt(masked, idx) {
+            for (const sp of masked.spans) if (idx >= sp.start && idx < sp.end) return { kind: 'span', hex: sp.hex };
+            for (const q of masked.quotes) if (idx >= q.start && idx < q.end) return { kind: 'quote' };
+            return null;
+        }
+        function sentenceAround(text, idx) {
+            let a = idx; let b = idx;
+            while (a > 0 && !SENTENCE_SPLIT_RE.test(text[a - 1])) a--;
+            while (b < text.length && !SENTENCE_SPLIT_RE.test(text[b])) b++;
+            return { text: text.slice(a, b), start: a, end: b };
+        }
+        function globalOf(re) {
+            if (!re) return null;
+            try { return new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'); } catch (e) { return null; }
+        }
+
+        /**
+         * Presence verdict for one member against one message.
+         * @param {object} masked   from mask()
+         * @param {object} member   { key, label, hex, nameRe, aliasRe }
+         * @param {object} opts     { tables, hexLabel(hex)->label, locChanged }
+         * @returns {{key, score, evidence:string[], vetoes:string[], present:boolean, strong:boolean, detail:string}}
+         */
+        function evaluate(masked, member, opts) {
+            const T = (opts && opts.tables) || compileTables();
+            const hexLabel = (opts && opts.hexLabel) || function (h) { return h; };
+            const evidence = []; const vetoes = [];
+            let score = 0; let strong = false;
+            const text = masked.text; const narr = masked.narr;
+            const lower = text.toLowerCase();
+            // 1. Own coloured dialogue: decisive.
+            if (member.hex && lower.indexOf(String(member.hex).toLowerCase()) >= 0) {
+                score += 10; strong = true; evidence.push('own dialogue ' + member.hex);
+            }
+            // 2. Name / alias occurrences.
+            let lastArrivalIdx = -1; let anyNarrationName = false; let anyQuotedName = false;
+            for (const re of [member.nameRe, member.aliasRe]) {
+                const g = globalOf(re);
+                if (!g) continue;
+                g.lastIndex = 0;
+                let m;
+                while ((m = g.exec(text)) !== null) {
+                    if (m.index === g.lastIndex) g.lastIndex++;
+                    const owner = ownerAt(masked, m.index);
+                    if (owner) {
+                        if (owner.kind === 'span' && member.hex && owner.hex === String(member.hex).toLowerCase()) continue; // own line
+                        anyQuotedName = true;
+                        vetoes.push("inside " + (owner.kind === 'span' ? hexLabel(owner.hex) + "'s" : 'quoted') + ' dialogue');
+                        continue;
+                    }
+                    anyNarrationName = true;
+                    const sent = sentenceAround(narr, m.index);
+                    if (T.absence && T.absence.test(sent.text)) {
+                        const am = T.absence.exec(sent.text);
+                        vetoes.push('absence "' + (am ? am[0] : '') + '"');
+                        continue;
+                    }
+                    const win = narr.slice(Math.max(0, m.index - 40), Math.min(narr.length, m.index + m[0].length + 40));
+                    const cue = T.arrival ? T.arrival.exec(win) : null;
+                    if (cue) { score += 4; evidence.push('cue "' + cue[0] + '"'); lastArrivalIdx = Math.max(lastArrivalIdx, m.index); continue; }
+                    const act = T.action ? T.action.exec(sent.text) : null;
+                    if (act) { score += 2; evidence.push('action "' + act[0] + '"'); }
+                }
+            }
+            // A name that appears ONLY inside others' speech is a mention.
+            if (anyQuotedName && !anyNarrationName && !strong) { /* veto already recorded */ }
+            // 3. Named in the 📍 header ("with Martha").
+            if (masked.header) {
+                for (const re of [member.nameRe, member.aliasRe]) if (re && re.test(masked.header)) { score += 3; evidence.push('header'); break; }
+            }
+            // 4. Explicit departure after the last arrival cue.
+            if (T.depart) {
+                T.depart.lastIndex = 0;
+                let dm;
+                while ((dm = T.depart.exec(narr)) !== null) {
+                    if (dm.index === T.depart.lastIndex) T.depart.lastIndex++;
+                    if (dm.index < lastArrivalIdx) continue;
+                    // Only when it is about this member: name within 160 chars before.
+                    const before = narr.slice(Math.max(0, dm.index - 160), dm.index);
+                    if ((member.nameRe && member.nameRe.test(before)) || (member.aliasRe && member.aliasRe.test(before))) {
+                        vetoes.push('departure "' + dm[0] + '"');
+                        break;
+                    }
+                }
+            }
+            // 5. Location changed with no fresh evidence.
+            if (opts && opts.locChanged && score === 0) vetoes.push('location changed, no fresh evidence');
+            // Quoted-only mention vetoes only matter when there is no real evidence.
+            const realVetoes = vetoes.filter(function (v) { return !(v.indexOf('inside ') === 0 && score > 0 && anyNarrationName); });
+            const present = score >= 4 && realVetoes.length === 0;
+            const detail = 'presence ' + member.key + ': +' + score + (evidence.length ? ' (' + evidence.join(', ') + ')' : '')
+                + (realVetoes.length ? ' veto[' + realVetoes.join('; ') + ']' : '') + ' → ' + (present ? 'present' : 'absent');
+            return { key: member.key, score, evidence, vetoes: realVetoes, present, strong, detail };
+        }
+
+        /** Prop verdict: { score, vetoes, present, detail }. ownHex = the main character's colour. */
+        function evaluateProp(masked, prop, opts) {
+            const T = (opts && opts.tables) || compileTables();
+            const ownHex = opts && opts.ownHex ? String(opts.ownHex).toLowerCase() : null;
+            let score = 0; const evidence = []; const vetoes = [];
+            const g = globalOf(prop.re);
+            if (!g) return { score: 0, vetoes: [], present: false, detail: 'prop ' + prop.key + ': no regex' };
+            g.lastIndex = 0;
+            let m;
+            while ((m = g.exec(masked.text)) !== null) {
+                if (m.index === g.lastIndex) g.lastIndex++;
+                const owner = ownerAt(masked, m.index);
+                let src = masked.narr;
+                if (owner) {
+                    if (owner.kind === 'span' && ownHex && owner.hex === ownHex) {
+                        // Own dialogue counts; use the span text as the sentence source.
+                        src = masked.text;
+                    } else { vetoes.push('inside other dialogue'); continue; }
+                }
+                const sent = sentenceAround(src, m.index);
+                if (T.memory && T.memory.test(sent.text)) { vetoes.push('memory/plan context'); continue; }
+                if (T.handled && T.handled.test(sent.text)) { score += 3; evidence.push('handled'); }
+                else { score += 1; evidence.push('mentioned'); }
+            }
+            const real = score >= 3 ? [] : vetoes;
+            const present = score >= 3 && real.length === 0;
+            return { score, vetoes: real, present, detail: 'prop ' + prop.key + ': +' + score + (evidence.length ? ' (' + evidence.join(', ') + ')' : '') + (real.length ? ' veto[' + real.join('; ') + ']' : '') + ' → ' + (present ? 'shown' : 'hidden') };
+        }
+
+        /** True when `re` matches in NARRATION with a live (non-memory/plan) sentence. */
+        function liveMatch(masked, re, opts) {
+            const T = (opts && opts.tables) || compileTables();
+            const g = globalOf(re);
+            if (!g) return false;
+            g.lastIndex = 0;
+            let m;
+            while ((m = g.exec(masked.narr)) !== null) {
+                if (m.index === g.lastIndex) g.lastIndex++;
+                const sent = sentenceAround(masked.narr, m.index);
+                if (T.memory && T.memory.test(sent.text)) continue;
+                return true;
+            }
+            return false;
+        }
+
+        /** Name guess for an unknown speaker from NARRATION before its first span. */
+        const CAPS_NAME_RE = /\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b/g;
+        const CAP_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
+        function nameGuess(masked, spanStart, stopWords) {
+            const before = masked.narr.slice(Math.max(0, spanStart - 200), spanStart);
+            let label = null; let cm;
+            CAPS_NAME_RE.lastIndex = 0;
+            while ((cm = CAPS_NAME_RE.exec(before)) !== null) label = cm[1].toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+            if (!label) {
+                const near = before.slice(-140);
+                CAP_NAME_RE.lastIndex = 0;
+                while ((cm = CAP_NAME_RE.exec(near)) !== null) {
+                    if (!(stopWords && stopWords.has(cm[1].split(' ')[0]))) label = cm[1];
+                }
+            }
+            return label;
+        }
+
+        return { DEFAULTS: { arrival: DEFAULT_ARRIVAL, action: DEFAULT_ACTION, absence: DEFAULT_ABSENCE, depart: DEFAULT_DEPART, handled: DEFAULT_HANDLED, memory: DEFAULT_MEMORY },
+            compileTables, mask, ownerAt, sentenceAround, evaluate, evaluateProp, liveMatch, nameGuess };
+    })();
+    // === PRESENCE ENGINE (pure) END ===
+
 
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
     const spanRegexCache = new Map(); // hex -> RegExp ('gi')
@@ -1122,60 +1368,57 @@
      * One pass over the cast (audit item 1): presence + last-hex position +
      * speaker, computed together. Returns { present: [{member,pos}], speakerKey }.
      */
-    function analyzeCast(scene, settings) {
+    let presenceTablesCache = { key: null, tables: null };
+    function presenceTables(settings) {
+        const key = [settings.presenceArrivalRegex, settings.presenceActionRegex, settings.absenceContextRegex, settings.presenceDepartRegex].join('|');
+        if (presenceTablesCache.key !== key) {
+            presenceTablesCache = { key, tables: PresenceEngine.compileTables({
+                arrival: settings.presenceArrivalRegex || null, action: settings.presenceActionRegex || null,
+                absence: settings.absenceContextRegex || null, depart: settings.presenceDepartRegex || null }) };
+        }
+        return presenceTablesCache.tables;
+    }
+    /**
+     * v0.6.4: presence verdict per cast member via PresenceEngine — evidence
+     * (own dialogue +10, arrival cue +4, action +2, header +3) minus vetoes
+     * (name only inside someone else's speech, absence/reported-speech
+     * sentence, departure, location change without fresh evidence).
+     */
+    function analyzeCast(scene, settings, locChanged) {
         const present = [];
+        const verdicts = [];
         let speakerKey = null;
         let speakerPos = -1;
-        if (!scene.text) return { present, speakerKey };
-        const lower = scene.lower;
-        const cueRe = compileRegex(settings.presenceCueRegex ? '\\b(?:' + settings.presenceCueRegex + ')\\b' : '');
-        const absRe = compileRegex(settings.absenceContextRegex ? '\\b(?:' + settings.absenceContextRegex + ')\\b' : '');
+        if (!scene.text) return { present, speakerKey, masked: null, verdicts };
+        const masked = PresenceEngine.mask(scene.text);
+        const T = presenceTables(settings);
+        const ownHex = ownColorHex(SillyTavern.getContext(), settings);
+        const hexLabel = function (h) {
+            if (ownHex && h === ownHex) return SillyTavern.getContext().name2 || 'the character';
+            const m = settings.cast.find(function (x) { return x.colorHex && x.colorHex.toLowerCase() === h; });
+            if (m) return m.label;
+            const u = unknownInfo.get('unk:' + h);
+            return u ? u.label : h;
+        };
         for (const member of settings.cast) {
-            let pos = -1;
-            let hit = false;
-            let hitAt = -1;
-            let evidence = null;
-            if (member.colorHex) {
-                pos = lower.lastIndexOf(member.colorHex.toLowerCase());
-                if (pos >= 0) { hit = true; hitAt = pos; evidence = 'hex ' + member.colorHex; }
-            }
-            // Name or alias: only with a cue within ~40 chars, never inside
-            // a phone/absence sentence.
-            if (!hit && cueRe) {
-                for (const src of [member.nameRegex, member.aliasRegex]) {
-                    if (!src || hit) continue;
-                    const g = compileRegex(src, 'gi');
-                    if (!g) continue;
-                    g.lastIndex = 0;
-                    let m;
-                    while ((m = g.exec(scene.text)) !== null) {
-                        if (m.index === g.lastIndex) g.lastIndex++;
-                        if (absRe && absRe.test(sentenceAround(scene.text, m.index))) continue;
-                        const win = scene.text.slice(Math.max(0, m.index - 40),
-                            Math.min(scene.text.length, m.index + m[0].length + 40));
-                        const cue = cueRe.exec(win);
-                        if (cue) { hit = true; hitAt = m.index; evidence = `cue "${cue[0]}" near "${m[0]}"`; break; }
-                    }
-                }
-            }
-            if (hit) {
-                const win = scene.text.slice(hitAt,
-                    Math.min(scene.text.length, hitAt + 160));
-                const dep = DEPART_RE.exec(win);
-                if (dep) {
-                    if (castPresence.has(member.key)) dbg(`cast -${member.key} (departure "${dep[0]}")`);
-                    castPresence.delete(member.key);
-                    continue;
-                }
-                if (!castPresence.has(member.key)) dbg(`cast +${member.key} (${evidence})`);
-                present.push({ member, pos, evidence });
-            }
-            if (member.colorHex && pos > speakerPos) {
-                speakerPos = pos;
-                speakerKey = member.key;
+            const r = PresenceEngine.evaluate(masked, {
+                key: member.key, label: member.label, hex: member.colorHex,
+                nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
+            }, { tables: T, hexLabel, locChanged: Boolean(locChanged) });
+            verdicts.push(r);
+            const pos = member.colorHex ? scene.lower.lastIndexOf(member.colorHex.toLowerCase()) : -1;
+            if (pos > speakerPos) { speakerPos = pos; speakerKey = member.key; }
+            if (r.score || r.vetoes.length) dbg(r.detail);
+            if (r.present) {
+                if (!castPresence.has(member.key)) dbg(`cast +${member.key} (${r.evidence.join(', ')})`);
+                present.push({ member, pos, strong: r.strong, evidence: r.evidence.join(', ') });
+            } else if (r.vetoes.length) {
+                if (castPresence.has(member.key)) dbg(`cast -${member.key} (${r.vetoes[0]})`);
+                else if (r.vetoes[0].indexOf('inside') === 0) dbg(`cast ~${member.key} rejected (${r.vetoes[0]})`);
+                castPresence.delete(member.key);
             }
         }
-        return { present, speakerKey };
+        return { present, speakerKey, masked, verdicts };
     }
 
     // v0.5.4: unknown speakers — a dialogue colour on no Cast card gets a
@@ -1223,18 +1466,9 @@
                 const key = 'unk:' + hex;
                 let info = unknownInfo.get(key);
                 if (!info) {
-                    const before = text.slice(Math.max(0, idx - 80), idx);
-                    let label = null; let cm;
-                    CAPS_NAME_RE.lastIndex = 0;
-                    while ((cm = CAPS_NAME_RE.exec(before)) !== null) label = titleCase(cm[1]);
-                    if (!label) {
-                        const near = before.slice(-60);
-                        CAP_NAME_RE.lastIndex = 0;
-                        while ((cm = CAP_NAME_RE.exec(near)) !== null) {
-                            const w = cm[1].split(' ')[0];
-                            if (!NOT_NAMES.has(w) && w !== ownName) label = cm[1];
-                        }
-                    }
+                    // 0.6.4: the name guess comes from NARRATION outside quotes.
+                    const stop = new Set(NOT_NAMES); if (ownName) stop.add(ownName);
+                    const label = PresenceEngine.nameGuess(PresenceEngine.mask(text), idx, stop);
                     const around = lower.slice(Math.max(0, idx - 200), Math.min(lower.length, idx + 300));
                     const f = (around.match(/\b(?:she|her|hers|herself)\b/g) || []).length;
                     const mm = (around.match(/\b(?:he|him|his|himself)\b/g) || []).length;
@@ -1252,7 +1486,7 @@
             const meta = chatMeta(true);
             if (!meta) return;
             const obj = {};
-            for (const [k, v] of castPresence) obj[k] = v;
+            for (const [k, v] of castPresence) obj[k] = (typeof v === 'object' && v) ? { miss: v.miss, strong: Boolean(v.strong) } : { miss: v, strong: true };
             meta.presence = obj;
             meta.presenceLoc = presenceLoc;
             saveMeta();
@@ -1268,8 +1502,10 @@
             const meta = chatMeta(false);
             if (meta && meta.presence && typeof meta.presence === 'object') {
                 for (const k of Object.keys(meta.presence)) {
-                    const v = Number(meta.presence[k]);
-                    if (Number.isFinite(v) && v >= 0 && v < PRESENCE_MISS_LIMIT) castPresence.set(k, v);
+                    const raw = meta.presence[k];
+                    const miss = Number(typeof raw === 'object' && raw ? raw.miss : raw);
+                    const strong = Boolean(typeof raw === 'object' && raw ? raw.strong : true);
+                    if (Number.isFinite(miss) && miss >= 0 && miss < PRESENCE_MISS_LIMIT) castPresence.set(k, { miss, strong });
                 }
                 presenceLoc = meta.presenceLoc || null;
                 return;
@@ -1286,8 +1522,8 @@
             for (let n = msgs.length - 1; n >= 0; n--) {
                 const scene = parseScene(msgs[n], settings);
                 if (n === 0 && scene.location) presenceLoc = scene.location;
-                const { present } = analyzeCast(scene, settings);
-                for (const p of present) castPresence.set(p.member.key, n);
+                const { present } = analyzeCast(scene, settings, false);
+                for (const p of present) castPresence.set(p.member.key, { miss: n, strong: Boolean(p.strong) });
             }
         } catch (e) { /* ignore */ }
     }
@@ -2807,12 +3043,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
         // v0.5.0: a location change clears presence entirely — the strip
         // rebuilds from speaking evidence at the new location.
-        if (scene.location && presenceLoc && scene.location !== presenceLoc) {
+        const locChanged = Boolean(scene.location && presenceLoc && scene.location !== presenceLoc);
+        if (locChanged) {
             for (const [k] of castPresence) dbg(`cast -${k} (location change)`);
             castPresence.clear(); // hard reset — no grace across a move
         }
         if (scene.location) presenceLoc = scene.location;
-        const analysis = analyzeCast(scene, settings);
+        const analysis = analyzeCast(scene, settings, locChanged);
         const present = analysis.present;
         let speakerKey = analysis.speakerKey;
         if (settings.enableUnknownSpeakers) {
@@ -2821,23 +3058,25 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             for (const u of detectUnknownSpeakers(scene, settings)) {
                 if (u.pos > speakerPos) { speakerPos = u.pos; speakerKey = u.key; }
                 if (!castPresence.has(u.key)) dbg(`cast +${u.key} "${u.label}" (${u.gender}, hex ${u.hex})`);
-                present.push({ member: { key: u.key, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } }, pos: u.pos });
+                present.push({ member: { key: u.key, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } }, pos: u.pos, strong: true });
             }
         }
         // Presence hysteresis: seen now -> miss 0; previously established
         // here but silent -> miss+1, chip lingers (dimmed) until the limit.
+        // Grace only for members whose last evidence was decisive (own line).
         const nowKeys = new Set(present.map(function (p) { return p.member.key; }));
-        for (const p of present) castPresence.set(p.member.key, 0);
+        for (const p of present) castPresence.set(p.member.key, { miss: 0, strong: Boolean(p.strong || p.member.unknown) });
         const lingering = [];
-        for (const [k, miss] of castPresence) {
+        for (const [k, st] of castPresence) {
             if (nowKeys.has(k)) continue;
-            const next = miss + 1;
-            if (next >= PRESENCE_MISS_LIMIT) {
-                dbg(`cast -${k} (absent ${next} messages)`);
+            const cur = (typeof st === 'object' && st) ? st : { miss: st, strong: true };
+            const next = cur.miss + 1;
+            if (!cur.strong || next >= PRESENCE_MISS_LIMIT) {
+                dbg(`cast -${k} (${cur.strong ? 'absent ' + next + ' messages' : 'no grace: last evidence was not decisive'})`);
                 castPresence.delete(k);
                 continue;
             }
-            castPresence.set(k, next);
+            castPresence.set(k, { miss: next, strong: cur.strong });
             let member = settings.cast.find(function (m) { return m.key === k; });
             if (!member && unknownInfo.has(k)) {
                 const u = unknownInfo.get(k);
@@ -4137,8 +4376,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['weatherRegex', 'Weather regex', 'Group 1 = weather text, matched against the header line (default: last |-separated segment)'],
         ['rainRegex', 'Rain regex', 'Matched against the lowercased weather text — triggers the rain tint and streaks'],
         ['fireRegex', 'Fire regex', 'Matched against the APPLIED background filename — triggers the fire flicker overlay'],
-        ['presenceCueRegex', 'Presence cue regex', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
-        ['absenceContextRegex', 'Absence context regex', 'Cast Strip: a sentence containing any of these (ring, call, remember, about…) never summons a chip'],
+        ['presenceArrivalRegex', 'Arrival / position cues', 'Presence engine (+4): physical arrival or position verbs in NARRATION within ~40 chars of a name — blank = built-in list'],
+        ['presenceActionRegex', 'Action cues', 'Presence engine (+2): physical action verbs in the narration sentence that names the character — blank = built-in'],
+        ['presenceDepartRegex', 'Departure cues', 'Presence engine veto: leaves / walks out / hangs up… after the last arrival cue — blank = built-in'],
+        ['presenceCueRegex', 'Presence cue regex (legacy)', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
+        ['absenceContextRegex', 'Absence / reported-speech vetoes', 'Presence engine veto: a narration sentence naming the character that also contains any of these (ring, said, would say, remember, about…) — blank = built-in'],
         ['femaleNamesRegex', 'Other female names', 'Mood engine: she/her narration counts as the main character\'s only when none of these appear in the message (e.g. aunt|mary|nurse)'],
         ['ownColorHex', 'Own dialogue colour', 'The main character\'s dialogue colour hex (e.g. #E87BA8) — excluded from Unknown Speakers'],
         ['interiorityRegex', 'Interiority regex', 'Thought tooltips: sentences naming a character AND one of these verbs are shown on hover'],
@@ -4821,7 +5063,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.6.3)');
+            dbg('loaded (v0.6.4)');
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
