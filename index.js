@@ -3,7 +3,7 @@
  *
  * Reads a structured "scene header" out of each incoming AI message, e.g.:
  *
- *   [ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 Granty's kitchen | 🌥️ Overcast ]
+ *   [ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]
  *
  * ...and uses what it finds to direct the scene:
  *
@@ -52,6 +52,32 @@
  *   - Cast chips get a radial-gradient backing behind the portrait, so
  *     transparent-cutout portraits don't float inside the circle.
  *   - tools/cutout.py: batch background removal (rembg) for making cutouts.
+ *
+ * v0.5.0 — stage layout, zero-setup mood tag, presence hysteresis:
+ *
+ *   - The Inline Mood Tag is now ZERO-SETUP and ON by default: the
+ *     instruction is auto-injected near the end of the context via
+ *     ST's setExtensionPrompt (IN_CHAT, depth 1) — no preset edit needed.
+ *     The toggle controls injection + parsing together.
+ *   - Cast strip positioning (four corners; top corners stack a column
+ *     under the HUD) + chip styles (cutout bottom-fade / cloud glow /
+ *     circle / plain) + chip size (auto = match the main sprite's height,
+ *     or a 48–160px slider). HUD corner is pickable too.
+ *   - Presence semantics: a chip now requires the character to actually BE
+ *     in the scene — dialogue colour (they spoke) or their name next to a
+ *     presence cue (speech attribution / physical action). A bare mention
+ *     never summons a chip. Present-but-silent characters linger (dimmed)
+ *     for up to 2 further messages; an explicit departure phrase or a 📍
+ *     location change clears them immediately.
+ *   - /costume fix: bare costume names are issued as
+ *     "<ActiveCharacter>/<name>" — ST resolves a bare argument as a
+ *     top-level sprite folder, so "/costume pajamas" 404'd every sprite.
+ *   - Per-chat state (day trail, last costume, presence memory) moved to
+ *     ST chat metadata (saveMetadataDebounced) so it travels with the chat
+ *     file; deterministic rebuild from the last ~20 messages on
+ *     CHAT_CHANGED; no LLM calls anywhere.
+ *   - Optional chat-panel "glass" (opacity slider + blur toggle), off by
+ *     default.
  *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
@@ -109,8 +135,19 @@
         enableSpeakingOrder: false,
         enablePreload: false,
 
-        // v0.4.1.
-        enableMoodTag: false,
+        // v0.4.1 (default ON since 0.5.0 — the instruction auto-injects).
+        enableMoodTag: true,
+
+        // v0.5.0 stage layout.
+        castPosition: 'top-right',  // top-right|top-left|bottom-left|bottom-right
+        chipStyle: 'fade',          // fade|cloud|circle|plain
+        chipSizeAuto: true,         // chip height follows the main sprite
+        chipSize: 72,               // manual px (48-160) when auto is off
+        hudPosition: 'top-right',
+        holdCostume: false,         // freeze Auto Costumes at the current outfit
+        enableChatGlass: false,     // see-through chat panel
+        chatOpacity: 0.55,
+        chatBlur: true,
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
@@ -157,8 +194,8 @@
         costumeRules: [],
 
         // v0.4.0 Cast cards. Each member:
-        // { "key": "granty", "label": "Granty", "colorHex": "#B0BEC5",
-        //   "nameRegex": "granty", "bio": "", "avatar": "", "moodVariants": false }
+        // { "key": "june", "label": "June", "colorHex": "#B0BEC5",
+        //   "nameRegex": "june", "bio": "", "avatar": "", "moodVariants": false }
         // avatar (optional) = image URL for the chip; empty = the classic
         // /characters/<castFolder>/npc/<key>.png convention.
         cast: [],
@@ -218,6 +255,12 @@
         'nervousness', 'optimism', 'pride', 'realization', 'relief',
         'remorse', 'sadness', 'surprise', 'neutral'];
     const EXPRESSION_LABEL_SET = new Set(EXPRESSION_LABELS);
+    // v0.5.0 presence semantics: in-scene evidence for name-regex hits, and
+    // explicit departures. A bare mention never summons a chip.
+    const PRESENT_CUE_RE = /\b(?:says?|said|asks?|asked|replie[sd]|answer(?:s|ed)|murmur(?:s|ed)|whisper(?:s|ed)|mutter(?:s|ed)|calls? out|greets?|greeted|nods?|nodded|smil(?:es|ed|ing)|laugh(?:s|ed|ing)|chuckl(?:es|ed)|sigh(?:s|ed)|shrugs?|frowns?|glanc(?:es|ed|ing)|look(?:s|ed)? (?:up|over|at)|watch(?:es|ed|ing)|step(?:s|ped)? (?:in|inside|closer|forward)|enter(?:s|ed)|arriv(?:es|ed|ing)|walk(?:s|ed)? (?:in|over)|com(?:es|ing) (?:in|over)|came (?:in|over)|join(?:s|ed)|sits?|sat|sitting|seated|settl(?:es|ed)|stands?|stood|standing|lean(?:s|ed|ing)|beside|next to|across from|opposite|waits?|waiting|hand(?:s|ed) (?:her|him|you|them)|holds? out|reach(?:es|ed)|ris(?:es|ing)|rose|turn(?:s|ed) to)\b/i;
+    const DEPART_RE = /\b(?:leaves|left|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|departs?|departed|head(?:s|ed) (?:out|off|home)|goodbye|good night)\b/i;
+    const PRESENCE_MISS_LIMIT = 3;
+
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
     const spanRegexCache = new Map(); // hex -> RegExp ('gi')
     function spanRegexFor(hex) {
@@ -256,6 +299,8 @@
     let lastOverlayState = null;   // weather overlay only touches the DOM on change
     let lastSpriteFilterState = null;
     let conflicts = { prome: false, weatherCycle: false }; // compat guards
+    const castPresence = new Map(); // key -> miss count (0 = seen this message)
+    let presenceLoc = null;
 
     // Timer registry — every setTimeout is tracked so CHAT_CHANGED and page
     // hide can clear them (audit item 5).
@@ -351,6 +396,29 @@
 
     function saveSettings() {
         SillyTavern.getContext().saveSettingsDebounced();
+    }
+
+    // ------------------------------------------------------------------
+    // v0.5.0 — per-chat state in ST chat metadata (travels with the chat
+    // file across devices and branches); quietly no-ops when the metadata
+    // APIs are missing.
+    // ------------------------------------------------------------------
+
+    function chatMeta(create) {
+        try {
+            const ctx = SillyTavern.getContext();
+            const md = ctx.chatMetadata;
+            if (!md) return null;
+            if (!md[MODULE] && create) md[MODULE] = {};
+            return md[MODULE] || null;
+        } catch (e) { return null; }
+    }
+
+    function saveMeta() {
+        try {
+            const ctx = SillyTavern.getContext();
+            if (typeof ctx.saveMetadataDebounced === 'function') ctx.saveMetadataDebounced();
+        } catch (e) { /* ignore */ }
     }
 
     // ------------------------------------------------------------------
@@ -542,21 +610,84 @@
         for (const member of settings.cast) {
             let pos = -1;
             let hit = false;
+            let hitAt = -1;
             if (member.colorHex) {
                 pos = lower.lastIndexOf(member.colorHex.toLowerCase());
-                if (pos >= 0) hit = true;
+                if (pos >= 0) { hit = true; hitAt = pos; }
             }
+            // v0.5.0: a name-regex match alone is only a MENTION — it needs
+            // a presence cue (speech attribution / physical action) nearby
+            // to count as being in the scene.
             if (!hit && member.nameRegex) {
                 const re = compileRegex(member.nameRegex);
-                if (re && re.test(scene.text)) hit = true;
+                const m = re ? re.exec(scene.text) : null;
+                if (m) {
+                    const win = scene.text.slice(Math.max(0, m.index - 40),
+                        Math.min(scene.text.length, m.index + m[0].length + 160));
+                    if (PRESENT_CUE_RE.test(win)) { hit = true; hitAt = m.index; }
+                }
             }
-            if (hit) present.push({ member, pos });
+            if (hit) {
+                // Explicit departure right after the evidence = gone now.
+                const win = scene.text.slice(hitAt,
+                    Math.min(scene.text.length, hitAt + 160));
+                if (DEPART_RE.test(win)) {
+                    castPresence.delete(member.key);
+                    continue;
+                }
+                present.push({ member, pos });
+            }
             if (member.colorHex && pos > speakerPos) {
                 speakerPos = pos;
                 speakerKey = member.key;
             }
         }
         return { present, speakerKey };
+    }
+
+    function persistPresence() {
+        try {
+            const meta = chatMeta(true);
+            if (!meta) return;
+            const obj = {};
+            for (const [k, v] of castPresence) obj[k] = v;
+            meta.presence = obj;
+            meta.presenceLoc = presenceLoc;
+            saveMeta();
+        } catch (e) { /* ignore */ }
+    }
+
+    // Deterministic rebuild on CHAT_CHANGED: metadata first, else re-derive
+    // from the last few AI messages of the loaded chat (pure text parsing).
+    function seedPresenceFromChat(settings) {
+        castPresence.clear();
+        presenceLoc = null;
+        try {
+            const meta = chatMeta(false);
+            if (meta && meta.presence && typeof meta.presence === 'object') {
+                for (const k of Object.keys(meta.presence)) {
+                    const v = Number(meta.presence[k]);
+                    if (Number.isFinite(v) && v >= 0 && v < PRESENCE_MISS_LIMIT) castPresence.set(k, v);
+                }
+                presenceLoc = meta.presenceLoc || null;
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        try {
+            const ctx = SillyTavern.getContext();
+            const chat = ctx.chat || [];
+            const msgs = [];
+            for (let i = chat.length - 1; i >= 0 && msgs.length < PRESENCE_MISS_LIMIT; i--) {
+                const m = chat[i];
+                if (m && !m.is_user && !m.is_system && m.mes) msgs.push(m.mes);
+            }
+            for (let n = msgs.length - 1; n >= 0; n--) {
+                const scene = parseScene(msgs[n], settings);
+                if (n === 0 && scene.location) presenceLoc = scene.location;
+                const { present } = analyzeCast(scene, settings);
+                for (const p of present) castPresence.set(p.member.key, n);
+            }
+        } catch (e) { /* ignore */ }
     }
 
     // ------------------------------------------------------------------
@@ -651,6 +782,7 @@
                     hud = document.createElement('div');
                     hud.id = 'scene-director-hud';
                     document.body.appendChild(hud);
+                    applyHudAppearance(settings);
                 }
                 hud.style.display = '';
                 const joined = parts.join(' · ');
@@ -673,7 +805,43 @@
                 trailDateKey = key;
                 trailLocs = [];
             }
-            if (!trailLocs.includes(location)) trailLocs.push(location);
+            if (!trailLocs.includes(location)) {
+                trailLocs.push(location);
+                // v0.5.0: the trail travels with the chat file.
+                const meta = chatMeta(true);
+                if (meta) {
+                    meta.trailDateKey = trailDateKey;
+                    meta.trailLocs = trailLocs.slice();
+                    saveMeta();
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // v0.5.0: restore the day trail on chat open — metadata first, else a
+    // deterministic rescan of the last ~20 messages (pure text parsing).
+    function restoreTrail(settings) {
+        trailDateKey = null;
+        trailLocs = [];
+        try {
+            const meta = chatMeta(false);
+            if (meta && Array.isArray(meta.trailLocs) && meta.trailLocs.length) {
+                trailDateKey = meta.trailDateKey || null;
+                trailLocs = meta.trailLocs.slice();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        try {
+            if (!settings.enableDayTrail) return;
+            const ctx = SillyTavern.getContext();
+            const chat = ctx.chat || [];
+            const start = Math.max(0, chat.length - 20);
+            for (let i = start; i < chat.length; i++) {
+                const m = chat[i];
+                if (!m || m.is_user || m.is_system || !m.mes) continue;
+                const scene = parseScene(m.mes, settings);
+                if (scene.location) updateDayTrail(scene.date, scene.location, settings);
+            }
         } catch (e) { /* ignore */ }
     }
 
@@ -1380,8 +1548,92 @@
             el = document.createElement('div');
             el.id = 'scene-director-cast-strip';
             document.body.appendChild(el);
+            applyStripAppearance(getSettings(), el);
         }
         return el;
+    }
+
+    // ------------------------------------------------------------------
+    // v0.5.0 stage layout — HUD corner, cast strip corner/style/size, and
+    // the optional chat-panel glass. Layout as a system: HUD in its corner,
+    // the cast strip a COLUMN directly beneath it in a top corner (a row in
+    // a bottom corner), the sprite where the expressions extension puts it.
+    // ------------------------------------------------------------------
+
+    function applyStripAppearance(settings, elArg) {
+        try {
+            const el = elArg || document.getElementById('scene-director-cast-strip');
+            if (!el) return;
+            const pos = settings.castPosition || 'top-right';
+            const isTop = pos.startsWith('top');
+            const hudSameCorner = (settings.hudPosition || 'top-right') === pos;
+            let size;
+            if (settings.chipSizeAuto) {
+                let h = 0;
+                try {
+                    const img = currentSpriteImg();
+                    if (img) h = img.getBoundingClientRect().height;
+                } catch (e) { /* ignore */ }
+                size = (h && h > 100) ? Math.round(h)
+                    : Math.round(window.innerHeight * 0.4);
+                size = Math.min(size, Math.round(window.innerHeight * 0.6));
+            } else {
+                size = Math.max(48, Math.min(160, Number(settings.chipSize) || 72));
+            }
+            el.style.left = pos.endsWith('left') ? '12px' : 'auto';
+            el.style.right = pos.endsWith('right') ? '12px' : 'auto';
+            el.style.top = isTop ? (hudSameCorner ? '56px' : '44px') : 'auto';
+            el.style.bottom = pos.startsWith('bottom') ? '12px' : 'auto';
+            el.style.flexDirection = isTop ? 'column' : 'row';
+            el.style.alignItems = pos.endsWith('right') ? 'flex-end' : 'flex-start';
+            el.style.maxHeight = isTop ? 'calc(100vh - 140px)' : '';
+            el.style.maxWidth = isTop ? '' : 'min(70vw, 640px)';
+            el.style.flexWrap = 'wrap';
+            el.dataset.chipStyle = settings.chipStyle || 'fade';
+            el.style.setProperty('--scene-director-chip-size', size + 'px');
+        } catch (e) { /* ignore */ }
+    }
+
+    function applyHudAppearance(settings) {
+        try {
+            const hud = document.getElementById('scene-director-hud');
+            if (!hud) return;
+            const pos = settings.hudPosition || 'top-right';
+            hud.style.left = pos.endsWith('left') ? '12px' : 'auto';
+            hud.style.right = pos.endsWith('right') ? '12px' : 'auto';
+            hud.style.top = pos.startsWith('top') ? '10px' : 'auto';
+            hud.style.bottom = pos.startsWith('bottom') ? '12px' : 'auto';
+        } catch (e) { /* ignore */ }
+    }
+
+    // See-through chat panel. RGB comes from the theme's own
+    // --SmartThemeChatTintColor; the applied alpha is the SMALLER of the
+    // theme's alpha and the slider, so a theme that is already more
+    // transparent is left alone.
+    const THEME_TINT_RE = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?\s*\)/;
+    function applyChatGlass(settings) {
+        try {
+            const on = Boolean(settings.enableChatGlass);
+            document.body.classList.toggle('scene-director-chat-glass', on);
+            document.body.classList.toggle('scene-director-chat-noblur', on && !settings.chatBlur);
+            if (!on) return;
+            let rgb = '0, 0, 0';
+            let themeAlpha = 1;
+            try {
+                const raw = getComputedStyle(document.body)
+                    .getPropertyValue('--SmartThemeChatTintColor');
+                const m = THEME_TINT_RE.exec(raw || '');
+                if (m) {
+                    rgb = `${m[1]}, ${m[2]}, ${m[3]}`;
+                    if (m[4] !== undefined) themeAlpha = parseFloat(m[4]);
+                }
+            } catch (e) { /* keep black */ }
+            let alpha = Number(settings.chatOpacity);
+            if (!Number.isFinite(alpha)) alpha = 0.55;
+            alpha = Math.max(0, Math.min(1, Math.min(alpha, themeAlpha)));
+            document.documentElement.style.setProperty('--scene-director-chat-tint-rgb', rgb);
+            document.documentElement.style.setProperty('--scene-director-chat-alpha', String(alpha));
+        } catch (e) { /* ignore */ }
     }
 
     function clearCastStrip() {
@@ -1398,9 +1650,10 @@
         return base + encodeURIComponent(member.key) + '.png';
     }
 
-    function buildChip(member, mood, speaking, settings) {
+    function buildChip(member, mood, speaking, settings, lingering) {
         const wrap = document.createElement('div');
-        wrap.className = 'scene-director-chip' + (speaking ? ' speaking' : '');
+        wrap.className = 'scene-director-chip' + (speaking ? ' speaking' : '')
+            + (lingering ? ' lingering' : '');
         wrap.dataset.key = member.key;
         const baseSrc = chipImageSrc(member, 'neutral', settings);
         const img = document.createElement('img');
@@ -1436,7 +1689,7 @@
             });
             wrap.addEventListener('mouseleave', hideBioCard);
         }
-        return { el: wrap, imgEl: img, bubbleEl, mood, speaking, src: img.src };
+        return { el: wrap, imgEl: img, bubbleEl, mood, speaking, lingering: Boolean(lingering), src: img.src };
     }
 
     function updateCastStrip(scene, settings) {
@@ -1445,18 +1698,43 @@
             if (castChips.size || castStripEl(false)) queueDom(clearCastStrip);
             return;
         }
+        // v0.5.0: a location change clears presence entirely — the strip
+        // rebuilds from speaking evidence at the new location.
+        if (scene.location && presenceLoc && scene.location !== presenceLoc) {
+            castPresence.clear();
+        }
+        if (scene.location) presenceLoc = scene.location;
         const { present, speakerKey } = analyzeCast(scene, settings);
+        // Presence hysteresis: seen now -> miss 0; previously established
+        // here but silent -> miss+1, chip lingers (dimmed) until the limit.
+        const nowKeys = new Set(present.map(function (p) { return p.member.key; }));
+        for (const p of present) castPresence.set(p.member.key, 0);
+        const lingering = [];
+        for (const [k, miss] of castPresence) {
+            if (nowKeys.has(k)) continue;
+            const next = miss + 1;
+            if (next >= PRESENCE_MISS_LIMIT) {
+                castPresence.delete(k);
+                continue;
+            }
+            castPresence.set(k, next);
+            const member = settings.cast.find(function (m) { return m.key === k; });
+            if (member) lingering.push({ member, pos: -1, lingering: true });
+        }
+        persistPresence();
         let ordered = present;
         if (settings.enableSpeakingOrder) {
             ordered = present.slice().sort(function (a, b) { return b.pos - a.pos; });
         }
+        ordered = ordered.concat(lingering);
         // Compute desired chip states OUTSIDE the frame (moods are the
         // expensive part), then diff inside one rAF.
         const desired = ordered.map(function (p) {
             return {
                 member: p.member,
-                mood: settings.enableMoods ? detectMood(scene.text, p.member, settings) : 'neutral',
-                speaking: p.member.key === speakerKey,
+                mood: (!p.lingering && settings.enableMoods) ? detectMood(scene.text, p.member, settings) : 'neutral',
+                speaking: !p.lingering && p.member.key === speakerKey,
+                lingering: Boolean(p.lingering),
             };
         });
         queueDom(function () {
@@ -1469,13 +1747,19 @@
                 let chip = castChips.get(key);
                 const needsRebuild = chip && (chip.mood !== d.mood || !chip.el.isConnected);
                 if (!chip || needsRebuild) {
-                    const fresh = buildChip(d.member, d.mood, d.speaking, settings);
+                    const fresh = buildChip(d.member, d.mood, d.speaking, settings, d.lingering);
                     if (chip && chip.el.isConnected) chip.el.replaceWith(fresh.el);
                     chip = fresh;
                     castChips.set(key, chip);
-                } else if (chip.speaking !== d.speaking) {
-                    chip.el.classList.toggle('speaking', d.speaking);
-                    chip.speaking = d.speaking;
+                } else {
+                    if (chip.speaking !== d.speaking) {
+                        chip.el.classList.toggle('speaking', d.speaking);
+                        chip.speaking = d.speaking;
+                    }
+                    if (chip.lingering !== d.lingering) {
+                        chip.el.classList.toggle('lingering', Boolean(d.lingering));
+                        chip.lingering = Boolean(d.lingering);
+                    }
                 }
                 // Ordering: append/move only when out of place.
                 if (!chip.el.isConnected) {
@@ -1500,6 +1784,26 @@
     // Message handling
     // ------------------------------------------------------------------
 
+    /**
+     * v0.5.0 costume fix: ST resolves a bare /costume argument as a
+     * TOP-LEVEL sprite folder, so "/costume pajamas" 404s every sprite. A
+     * bare rule value is therefore issued as "<ActiveCharacter>/<value>",
+     * with the active character taken from the live context (name2, falling
+     * back to the last AI message's name). A value already containing "/"
+     * is used verbatim.
+     */
+    function costumeArg(ctx, desired) {
+        try {
+            if (!desired || desired.includes('/')) return desired;
+            let charName = ctx.name2;
+            if (!charName) {
+                const last = getLastAiMessage(ctx);
+                if (last && last.name) charName = last.name;
+            }
+            return charName ? `${charName}/${desired}` : desired;
+        } catch (e) { return desired; }
+    }
+
     async function runCommand(ctx, cmd) {
         if (ctx.executeSlashCommandsWithOptions) {
             await ctx.executeSlashCommandsWithOptions(cmd, { handleParserErrors: true });
@@ -1521,6 +1825,25 @@
     // emitting it. No tag (or an unknown label) = nothing happens and the
     // expression classifier keeps working exactly as configured.
     // ------------------------------------------------------------------
+
+    // v0.5.0: zero-setup — the instruction auto-injects near the end of the
+    // context via ctx.setExtensionPrompt(key, value, position, depth, scan,
+    // role). Position 1 = extension_prompt_types.IN_CHAT (injects <depth>
+    // messages from the end of the chat, like an Author's Note), role 0 =
+    // SYSTEM — verified against SillyTavern's public/script.js. '' clears
+    // the injection when the toggle goes off.
+    const MOOD_INJECT_KEY = 'scene-director-mood';
+    function updateMoodTagInjection(settings) {
+        try {
+            const ctx = SillyTavern.getContext();
+            if (typeof ctx.setExtensionPrompt !== 'function') return;
+            ctx.setExtensionPrompt(MOOD_INJECT_KEY,
+                settings.enableMoodTag ? MOOD_PROMPT_SNIPPET : '',
+                1 /* IN_CHAT */, 1 /* depth */, false /* scan */, 0 /* SYSTEM */);
+        } catch (e) {
+            console.error(`${LOG} mood-tag injection failed`, e);
+        }
+    }
 
     /** Trailing [MOOD: <label>] in the raw message -> validated label | null. */
     function detectMoodTag(rawText) {
@@ -1603,6 +1926,8 @@
 
             try { updateKenBurns(settings); } catch (e) { /* ignore */ }
             try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
+            // v0.5.0: re-measure for auto chip size + keep the corners set.
+            try { applyStripAppearance(settings); } catch (e) { /* ignore */ }
             if (settings.enableEmotionAccents) {
                 try { sdTimeout(function () { fireEmotionAccent(settings); }, 1500); } catch (e) { /* ignore */ }
             }
@@ -1657,11 +1982,17 @@
             // --- Auto Costumes ---
             if (settings.enableCostumes) {
                 try {
+                    // Drawer toggle or the window flag freezes auto-costume.
+                    if (settings.holdCostume || window.sceneDirectorHoldCostume) return;
                     const desired = pickCostume(location, scene.hour, settings);
                     if (desired !== null && desired !== lastCostume) {
-                        await runCommand(ctx, desired ? `/costume ${desired}` : '/costume');
+                        await runCommand(ctx, desired ? `/costume ${costumeArg(ctx, desired)}` : '/costume');
                         console.log(`${LOG} costume: ${lastCostume || 'default'} -> ${desired || 'default'} (loc="${location}", hour=${scene.hour})`);
                         lastCostume = desired;
+                        try {
+                            const meta = chatMeta(true);
+                            if (meta) { meta.lastCostume = desired; saveMeta(); }
+                        } catch (e2) { /* ignore */ }
                     }
                 } catch (e) {
                     console.error(`${LOG} costume switch failed`, e);
@@ -1693,6 +2024,15 @@
             updateWeatherOverlay(null, settings);
             if (settings.enableCrossfade) setupSpriteCrossfade();
             restoreTabTitle();
+            // v0.5.0: per-chat state back from metadata (or deterministic
+            // rescans of the loaded chat) — trail, costume dedupe, presence.
+            try {
+                const meta = chatMeta(false);
+                lastCostume = (meta && meta.lastCostume !== undefined) ? meta.lastCostume : null;
+            } catch (e) { /* ignore */ }
+            restoreTrail(settings);
+            seedPresenceFromChat(settings);
+            applyStripAppearance(settings);
         } catch (e) { /* ignore */ }
         onMessage();
     }
@@ -2160,7 +2500,7 @@
                 }
                 entry.count++;
                 // Nearby-name guess: the last capitalised word in the ~60
-                // chars before the <font> tag ("Granty said, <font...").
+                // chars before the <font> tag ("June said, <font...").
                 const win = text.slice(Math.max(0, cm.index - 60), cm.index);
                 const words = win.match(CAP_WORD_RE);
                 if (words && words.length) {
@@ -2360,7 +2700,7 @@
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
-        ['enableMoodTag', 'Inline Mood Tag', 'A trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call. Add the prompt snippet below to your preset. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
+        ['enableMoodTag', 'Inline Mood Tag', 'Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
 
     const REGEX_FIELDS = [
@@ -2448,6 +2788,57 @@
                     <div class="scene-director-section">Features</div>
                     ${toggles}
 
+                    <div class="scene-director-section">Stage layout</div>
+                    <small class="scene-director-help">HUD corner, cast strip corner/style/size, and the optional see-through chat panel. These apply instantly.</small>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <label for="sd_hudPosition" style="font-size:12px;">HUD</label>
+                        <select id="sd_hudPosition" class="text_pole" style="width:auto;" title="Corner for the scene HUD chip">
+                            <option value="top-right">Top right</option>
+                            <option value="top-left">Top left</option>
+                            <option value="bottom-right">Bottom right</option>
+                            <option value="bottom-left">Bottom left</option>
+                        </select>
+                        <label for="sd_castPosition" style="font-size:12px;">Cast</label>
+                        <select id="sd_castPosition" class="text_pole" style="width:auto;" title="Corner the cast strip grows from (top corners stack a column under the HUD)">
+                            <option value="top-right">Top right (column)</option>
+                            <option value="top-left">Top left (column)</option>
+                            <option value="bottom-left">Bottom left (row)</option>
+                            <option value="bottom-right">Bottom right (row)</option>
+                        </select>
+                        <select id="sd_chipStyle" class="text_pole" style="width:auto;" title="Portrait chip style">
+                            <option value="fade">Cutout (bottom fade)</option>
+                            <option value="cloud">Cloud (radial glow)</option>
+                            <option value="circle">Circle — use for photos with backgrounds</option>
+                            <option value="plain">Plain (raw cutout)</option>
+                        </select>
+                    </div>
+                    <label class="checkbox_label" title="Chip height follows the main sprite's rendered height (fallback 40% of the window)">
+                        <input type="checkbox" id="sd_chipSizeAuto" />
+                        <span>Auto chip size (match sprite)</span>
+                    </label>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:12px;">Chip size</span>
+                        <input type="range" id="sd_chipSize" min="48" max="160" step="4" style="flex:1;" title="Chip portrait size (px, when auto size is off)" />
+                        <span id="sd_chipSizeVal" style="font-size:12px;min-width:42px;"></span>
+                    </div>
+                    <label class="checkbox_label" title="Freeze Auto Costumes — the outfit stays whatever /costume last set (window.sceneDirectorHoldCostume works too)">
+                        <input type="checkbox" id="sd_holdCostume" />
+                        <span>Hold costume</span>
+                    </label>
+                    <label class="checkbox_label" title="Make the chat panel see-through so the background shows">
+                        <input type="checkbox" id="sd_enableChatGlass" />
+                        <span>Chat panel glass</span>
+                    </label>
+                    <label class="checkbox_label" title="Keep SillyTavern's backdrop blur under the glass">
+                        <input type="checkbox" id="sd_chatBlur" />
+                        <span>Keep blur</span>
+                    </label>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:12px;">Chat opacity</span>
+                        <input type="range" id="sd_chatOpacity" min="0" max="100" step="5" style="flex:1;" title="Chat panel background opacity" />
+                        <span id="sd_chatOpacityVal" style="font-size:12px;min-width:42px;"></span>
+                    </div>
+
                     <div class="scene-director-section">Scan my chat</div>
                     <small class="scene-director-help">Reads the current chat and suggests cast &amp; place cards from what your story already contains.</small>
                     <div class="scene-director-buttons">
@@ -2486,7 +2877,7 @@
                     ${regexes}
 
                     <div class="scene-director-section">Inline Mood Tag</div>
-                    <small class="scene-director-help">With the Inline Mood Tag feature on, the model reports its own mood in a trailing tag and the sprite follows it instantly — no expression-classifier API call for that message. Add this line to your preset / system prompt (the tag never shows in the rendered chat):</small>
+                    <small class="scene-director-help">Zero-setup: with the Inline Mood Tag feature on (the default), this instruction is injected automatically near the end of the context — nothing to paste. The model reports its own mood in a trailing tag, the sprite follows it instantly via /emote, and the tag never shows in the rendered chat. The snippet is shown for reference / for presets that want to carry it themselves:</small>
                     <div class="sd-snippet-wrap">
                         <pre id="sd_mood_snippet" class="sd-snippet">${escapeHtml(MOOD_PROMPT_SNIPPET)}</pre>
                         <div id="sd_copy_mood_snippet" class="menu_button" title="Copy to clipboard">📋 Copy</div>
@@ -2582,6 +2973,10 @@
         }
         if (settings.enableCrossfade) setupSpriteCrossfade(); else teardownSpriteCrossfade();
         if (!weatherFxActive(settings)) updateWeatherOverlay(null, settings);
+        applyStripAppearance(settings);
+        applyHudAppearance(settings);
+        applyChatGlass(settings);
+        updateMoodTagInjection(settings);
         biosPromise = null;     // castFolder may have changed
         mapPreloaded = false;   // maps may have changed
     }
@@ -2765,6 +3160,67 @@
             } catch (e) { /* ignore */ }
         });
 
+        // v0.5.0 stage layout controls — instant apply.
+        function stageChanged() {
+            saveSettings();
+            refreshStatics(getSettings());
+        }
+        const bindSelect = function (id, key) {
+            const el2 = document.getElementById(id);
+            if (!el2) return;
+            el2.value = getSettings()[key];
+            el2.addEventListener('change', function () {
+                getSettings()[key] = el2.value;
+                stageChanged();
+            });
+        };
+        bindSelect('sd_hudPosition', 'hudPosition');
+        bindSelect('sd_castPosition', 'castPosition');
+        bindSelect('sd_chipStyle', 'chipStyle');
+        const bindCheck = function (id, key) {
+            const el2 = document.getElementById(id);
+            if (!el2) return;
+            el2.checked = Boolean(getSettings()[key]);
+            el2.addEventListener('change', function () {
+                getSettings()[key] = el2.checked;
+                stageChanged();
+            });
+            return el2;
+        };
+        const autoCb = bindCheck('sd_chipSizeAuto', 'chipSizeAuto');
+        bindCheck('sd_holdCostume', 'holdCostume');
+        bindCheck('sd_enableChatGlass', 'enableChatGlass');
+        bindCheck('sd_chatBlur', 'chatBlur');
+        const sizeIn = document.getElementById('sd_chipSize');
+        const sizeVal = document.getElementById('sd_chipSizeVal');
+        if (sizeIn) {
+            sizeIn.value = String(getSettings().chipSize || 72);
+            if (sizeVal) sizeVal.textContent = sizeIn.value + 'px';
+            sizeIn.addEventListener('input', function () {
+                if (sizeVal) sizeVal.textContent = sizeIn.value + 'px';
+                const st = getSettings();
+                st.chipSize = Number(sizeIn.value);
+                st.chipSizeAuto = false;
+                if (autoCb) autoCb.checked = false;
+                applyStripAppearance(st);
+            });
+            sizeIn.addEventListener('change', stageChanged);
+        }
+        const opIn = document.getElementById('sd_chatOpacity');
+        const opVal = document.getElementById('sd_chatOpacityVal');
+        if (opIn) {
+            const cur = Number(getSettings().chatOpacity);
+            opIn.value = String(Math.round((Number.isFinite(cur) ? cur : 0.55) * 100));
+            if (opVal) opVal.textContent = opIn.value + '%';
+            opIn.addEventListener('input', function () {
+                if (opVal) opVal.textContent = opIn.value + '%';
+                const st = getSettings();
+                st.chatOpacity = Number(opIn.value) / 100;
+                applyChatGlass(st);
+            });
+            opIn.addEventListener('change', stageChanged);
+        }
+
         const exportBtn = document.getElementById('sd_export');
         const importBtn = document.getElementById('sd_import');
         const io = document.getElementById('sd_io');
@@ -2835,7 +3291,14 @@
             if (settings.enableCrossfade) setupSpriteCrossfade();
             document.addEventListener('visibilitychange', onVisibilityChange);
             refreshStatics(settings);
-            console.log(`${LOG} loaded (v0.4.1)`);
+            // v0.5.0: per-chat state for the chat we open into.
+            try {
+                const meta = chatMeta(false);
+                if (meta && meta.lastCostume !== undefined) lastCostume = meta.lastCostume;
+            } catch (e) { /* ignore */ }
+            try { restoreTrail(settings); } catch (e) { /* ignore */ }
+            try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
+            console.log(`${LOG} loaded (v0.5.0)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

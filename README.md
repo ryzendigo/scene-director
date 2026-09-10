@@ -9,7 +9,7 @@ regex plus day/night/dusk/rain/seasonal background slots) — and Scene Director
 the **scene header** the model already writes at the top of each reply:
 
 ```
-[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 Granty's kitchen | 🌥️ Overcast ]
+[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]
 ```
 
 …then deterministically switches backgrounds, swaps costumes, shows who's on
@@ -49,7 +49,7 @@ guard has kicked in.
 | **Seasonal Swaps** | In a given month, swaps a picked background for a variant (Christmas lights in December…) |
 | **Era Swaps** | Once the *story* year passes a threshold, swaps one background for another (the half-built house is finished from 2027…) |
 | **Auto Costumes** | Switches sprite costumes with `/costume` based on location + time of day (pajamas in the bedroom after 8 pm…) |
-| **Cast Strip** | Shows small circular portrait chips for the Cast-card characters who *speak* in the latest AI message |
+| **Cast Strip** | Portrait chips for the Cast-card characters **in the scene** — they spoke (dialogue colour) or their name appears next to a presence cue. Silent characters linger dimmed for up to two messages; a departure phrase or a 📍 location change clears them *(reworked 0.5.0)* |
 | **Scene HUD** *(0.2.0)* | A small fixed chip top-right showing the parsed header: `🕰 2:14 PM · Tue Aug 11 2026 · 🌥 Overcast, 14°C` |
 | **Cast Mood Bubbles** *(0.2.0)* | Keyword heuristic per NPC chip: a comic thought bubble (😊/😠/😢) and an optional per-mood portrait variant |
 | **Sprite Crossfade** *(0.2.0)* | Fades the previous expression sprite out over the new one on sprite changes |
@@ -68,7 +68,11 @@ guard has kicked in.
 | **Speaking Order** *(0.3.0)* | Cast chips ordered latest-speaker-first |
 | **Asset Preloading** *(0.3.0)* | Idle-callback prefetch of card backgrounds and neutral sprite variants (skipped on data-saver / 2G connections) |
 | **Card system + Scan wizard** *(0.4.0)* | Cast & Place cards replace the raw JSON maps; the Scan-my-chat wizard builds them from your existing chat |
-| **Inline Mood Tag** *(0.4.1)* | The model appends `[MOOD: <label>]` to each reply and the expression sprite follows it directly (`/emote`) — no classifier API call; the tag is hidden from the rendered chat |
+| **Inline Mood Tag** *(0.4.1, zero-setup + default ON in 0.5.0)* | The model appends `[MOOD: <label>]` to each reply and the expression sprite follows it directly (`/emote`) — no classifier API call; the tag is hidden from the rendered chat. The instruction auto-injects into the context — nothing to paste |
+| **Stage layout** *(0.5.0)* | HUD corner picker; cast strip corner (top corners stack a column under the HUD), chip style (cutout bottom-fade / cloud glow / circle / plain) and chip size (auto = match the main sprite, or a 48–160px slider) |
+| **Chat panel glass** *(0.5.0)* | Optional see-through chat panel: opacity slider + blur toggle, honouring the theme's own tint when it is already more transparent (off by default) |
+| **Costume path fix** *(0.5.0)* | Bare costume names are issued as `<ActiveCharacter>/<name>` — SillyTavern resolves a bare `/costume` argument as a *top-level* sprite folder, so `/costume pajamas` silently 404'd every sprite |
+| **Chat-portable state** *(0.5.0)* | Day trail, last costume and cast presence live in ST **chat metadata**, so they travel with the chat file across devices and branches; on chat open the state rebuilds deterministically from the last ~20 messages when missing — pure text parsing, no AI calls |
 
 Every feature is independently toggleable. With no scene header in a message,
 everything no-ops quietly. The extension only reads messages and issues slash
@@ -209,6 +213,13 @@ An empty `costume` — or no rule matching — selects the character's **default
 costume. Costumes only change when the header contained a parseable time, and
 Scene Director never re-issues `/costume` for an unchanged value.
 
+Since 0.5.0 a bare costume name is issued as `<ActiveCharacter>/<name>`
+(SillyTavern resolves a bare argument as a **top-level** sprite folder, so
+`/costume pajamas` used to 404 every sprite and the character went invisible).
+A value already containing `/` is passed through verbatim. A **Hold costume**
+toggle in the drawer (or `window.sceneDirectorHoldCostume = true` from the
+console) freezes auto-costuming at whatever `/costume` last set.
+
 ```json
 [ { "pattern": "bedroom|their room", "fromHour": 20, "toHour": 7, "costume": "pajamas" } ]
 ```
@@ -236,14 +247,19 @@ keyword sets are editable (Advanced JSON):
 It's a heuristic — tune the word lists to your story's prose. It will sometimes
 be wrong; that's what makes the bubbles charming rather than authoritative.
 
-### Inline Mood Tag (0.4.1)
+### Inline Mood Tag (0.4.1 — zero-setup and ON by default since 0.5.0)
 
 Normally the expressions extension classifies each reply (locally or via an
 API call) to pick the sprite. With **Inline Mood Tag** on, the model reports
 its own mood instead: it appends a trailing tag like `[MOOD: joy]` and Scene
 Director runs `/emote joy` immediately — zero classifier round-trips for
-tagged messages. Add this to your preset / system prompt (one-click copy in
-the settings drawer):
+tagged messages.
+
+**Since 0.5.0 this needs no setup**: the instruction below is injected
+automatically near the end of the context (via ST's extension-prompt
+mechanism, IN_CHAT at depth 1, like an Author's Note), so there is nothing to
+paste into your preset. The toggle turns injection and tag parsing on/off
+together. The snippet remains in the drawer for reference:
 
 > At the very end of every reply, on its own line, append [MOOD: \<one word\>]
 > choosing the single best fit from: admiration, amusement, anger, annoyance,
@@ -259,6 +275,10 @@ Details:
 - Fullwidth brackets (`〔MOOD: joy〕`) are accepted too.
 - A missing tag, or an unknown label, does nothing — your configured
   expression classifier keeps working as the fallback.
+- With the tag reliably driving the sprite you can turn the expression
+  classifier off yourself (Extensions → Character Expressions → set the
+  classifier API to **None**) and skip its per-message call entirely. Scene
+  Director never changes another extension's settings for you.
 - **Test last message** shows the detected tag in its dry-run output.
 
 ### Life counters (Advanced JSON)

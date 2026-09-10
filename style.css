@@ -11,7 +11,9 @@
     position: fixed;
     top: 10px;
     right: 12px;
-    z-index: 999;
+    /* Above ST's chat + movable panels (z 2001), below the topbar (3005)
+       and popups (9999). */
+    z-index: 2500;
     pointer-events: none;
     background: rgba(15, 15, 22, 0.72);
     color: #fff;
@@ -28,13 +30,12 @@
 
 #scene-director-cast-strip {
     position: fixed;
-    left: 12px;
-    bottom: 12px;
-    z-index: 999;
+    /* Corner + row/column direction are set by applyStripAppearance(). */
+    z-index: 2500;
     display: flex;
-    flex-direction: row;
     gap: 8px;
     pointer-events: none; /* never block clicks on the chat underneath */
+    --scene-director-chip-size: 72px;
 }
 
 .scene-director-chip {
@@ -49,17 +50,46 @@
 }
 
 .scene-director-chip img {
-    width: 72px;
-    height: 72px;
+    width: var(--scene-director-chip-size, 72px);
+    height: var(--scene-director-chip-size, 72px);
+    object-fit: cover;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ---- v0.5.0 chip styles (data-chip-style on the strip) ---- */
+
+/* cloud: circle crop + radial backing glow (the pre-0.5.0 look). */
+#scene-director-cast-strip[data-chip-style="cloud"] .scene-director-chip img {
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.35);
-    object-fit: cover;
-    /* Subtle radial backing so transparent-cutout portraits don't float:
-       dark grey centre falling to a darker edge, inside the circle. Opaque
-       portraits cover it entirely, so it costs nothing there. */
     background: radial-gradient(circle at 50% 42%,
         rgba(72, 74, 84, 0.95) 0%, rgba(28, 29, 36, 0.95) 78%);
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* circle: circle crop with a subtle ring — use for photos with backgrounds. */
+#scene-director-cast-strip[data-chip-style="circle"] .scene-director-chip img {
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    background: rgba(22, 23, 30, 0.85);
+}
+
+/* fade (default): raw cutout whose bottom fades out, so a transparent
+   portrait doesn't read as a pasted rectangle. */
+#scene-director-cast-strip[data-chip-style="fade"] .scene-director-chip img {
+    border-radius: 0;
+    border: none;
+    background: none;
+    object-fit: contain;
+    -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+}
+
+/* plain: raw cutout, nothing else. */
+#scene-director-cast-strip[data-chip-style="plain"] .scene-director-chip img {
+    border-radius: 0;
+    border: none;
+    background: none;
+    object-fit: contain;
 }
 
 /* The chip whose colour hex appears latest in the message is 'speaking'. */
@@ -68,9 +98,21 @@
     transform: scale(1.06);
 }
 
-.scene-director-chip.speaking img {
+/* Present-but-silent characters linger dimmed for up to two messages. */
+.scene-director-chip.lingering {
+    opacity: 0.55;
+}
+
+#scene-director-cast-strip[data-chip-style="cloud"] .scene-director-chip.speaking img,
+#scene-director-cast-strip[data-chip-style="circle"] .scene-director-chip.speaking img {
     border-color: rgba(255, 255, 255, 0.95);
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 0 12px rgba(255, 255, 255, 0.35);
+}
+
+/* Borderless styles glow via a static drop-shadow instead. */
+#scene-director-cast-strip[data-chip-style="fade"] .scene-director-chip.speaking img,
+#scene-director-cast-strip[data-chip-style="plain"] .scene-director-chip.speaking img {
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.65));
 }
 
 .scene-director-chip-label {
@@ -300,7 +342,7 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 
 #scene-director-bio-card {
     position: fixed;
-    z-index: 1001;
+    z-index: 2600;
     display: none;
     max-width: 260px;
     background: rgba(15, 15, 22, 0.94);
@@ -324,7 +366,7 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     position: fixed;
     right: 12px;
     bottom: 12px;
-    z-index: 999;
+    z-index: 2500;
     pointer-events: auto;
     cursor: pointer;
     font-size: 18px;
@@ -598,4 +640,19 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     word-break: break-word;
     margin: 0;
     user-select: all;
+}
+
+/* ---- v0.5.0: see-through chat panel (Chat panel glass) ----
+   One overriding rule; the RGB comes from the theme's own
+   --SmartThemeChatTintColor and the alpha honours the theme's if lower
+   (both resolved by applyChatGlass()). */
+
+body.scene-director-chat-glass #chat {
+    background-color: rgba(var(--scene-director-chat-tint-rgb, 0, 0, 0),
+        var(--scene-director-chat-alpha, 0.55)) !important;
+}
+
+body.scene-director-chat-glass.scene-director-chat-noblur #chat {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }

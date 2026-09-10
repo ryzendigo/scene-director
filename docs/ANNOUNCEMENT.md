@@ -10,7 +10,7 @@ posting (see PUBLISHING-CHECKLIST.md).
 > **Scene Director** — scene-header-driven auto backgrounds, costumes and cast
 >
 > If your preset makes the model start every reply with a status line like
-> `[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 Granty's kitchen | 🌥️ Overcast ]`
+> `[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]`
 > (Freaky Frankenstein-style time trackers), this extension reads that header and
 > directs the scene for you:
 >
@@ -48,7 +48,7 @@ release. If your preset makes the model begin each reply with a structured scene
 header — the "Freaky Frankenstein"-style time tracker, e.g.
 
 ```
-[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 Granty's kitchen | 🌥️ Overcast ]
+[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]
 ```
 
 — then that line already knows where you are, what time it is, and what the date
