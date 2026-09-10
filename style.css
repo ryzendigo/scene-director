@@ -1,0 +1,90 @@
+/* Scene Director — cast strip + settings styles */
+
+/* ---- Cast strip (portrait chips, bottom-left) ---- */
+
+#scene-director-cast-strip {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 999;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    pointer-events: none; /* never block clicks on the chat underneath */
+}
+
+.scene-director-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+}
+
+.scene-director-chip img {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    object-fit: cover;
+}
+
+.scene-director-chip-label {
+    font-size: 11px;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    margin-top: 2px;
+}
+
+/* ---- Settings drawer ---- */
+
+#scene_director_settings .scene-director-section {
+    font-weight: bold;
+    opacity: 0.8;
+    margin: 10px 0 4px;
+    text-transform: uppercase;
+    font-size: 0.8em;
+    letter-spacing: 0.05em;
+}
+
+#scene_director_settings .scene-director-field {
+    margin-bottom: 8px;
+}
+
+#scene_director_settings .scene-director-field label {
+    display: block;
+    font-weight: 600;
+}
+
+#scene_director_settings .scene-director-field small {
+    display: block;
+    opacity: 0.7;
+    margin-bottom: 2px;
+}
+
+#scene_director_settings textarea {
+    width: 100%;
+    font-family: monospace;
+    font-size: 0.85em;
+    resize: vertical;
+}
+
+#scene_director_settings .scene-director-error {
+    color: #e57373;
+    font-size: 0.85em;
+    min-height: 1em;
+}
+
+#scene_director_settings .scene-director-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+#scene_director_settings .scene-director-test-output {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    margin-top: 6px;
+}
