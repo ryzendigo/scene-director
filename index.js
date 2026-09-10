@@ -216,6 +216,11 @@
         chipSizeAuto: true,         // 28vh tall (window-relative), gutter-capped
         chipSize: 28,               // manual height in vh (10-40) when auto is off
         hudPosition: 'top-right',
+        // 0.6.3 HUD styling.
+        hudStyle: 'stacked',        // stacked|line|minimal|game
+        hudScale: 1,                // 0.8-1.6
+        hudOpacity: 0.85,
+        hudDate: true, hudLoc: true, hudWeather: true, hudCounters: true,
         holdCostume: false,         // freeze Auto Costumes at the current outfit
         enableChatGlass: false,     // see-through chat panel
         chatOpacity: 0.55,
@@ -1399,21 +1404,73 @@
     const MON_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+    const WX_ICON_RE = /(\p{Extended_Pictographic}\uFE0F?)/u;
+    function weatherIcon(text) {
+        const m = WX_ICON_RE.exec(text || '');
+        if (m) return m[1];
+        const t = (text || '').toLowerCase();
+        if (/storm|thunder/.test(t)) return '⛈️';
+        if (/rain|shower|drizzl/.test(t)) return '🌧️';
+        if (/snow|sleet/.test(t)) return '❄️';
+        if (/fog|mist/.test(t)) return '🌫️';
+        if (/overcast|cloud/.test(t)) return '☁️';
+        if (/wind/.test(t)) return '🌬️';
+        if (/clear|sun|fine/.test(t)) return '☀️';
+        return '🌤️';
+    }
+    /** 0.6.3: structured header parts for the stacked HUD (null = nothing parsed). */
     function buildHudParts(scene) {
         if (!scene.headerLine) return null;
-        const parts = [];
-        if (scene.timeMatch) parts.push(scene.timeMatch[0].replace(WS_RE, ' ').trim());
+        const out = { time: null, ampm: '', date: null, loc: null, weather: null, wxIcon: '', any: false };
+        if (scene.timeMatch) {
+            const tm = /(\d{1,2}:\d{2})\s*(AM|PM)?/i.exec(scene.timeMatch[0]);
+            if (tm) { out.time = tm[1]; out.ampm = (tm[2] || '').toUpperCase(); }
+            else out.time = scene.timeMatch[0].replace(WS_RE, ' ').trim();
+            out.any = true;
+        }
         const date = scene.date;
         if (date) {
             if (date.day) {
                 const js = new Date(date.year, date.month - 1, date.day);
-                parts.push(`${DAY_NAMES[js.getDay()]} ${MON_NAMES[date.month - 1]} ${date.day} ${date.year}`);
-            } else {
-                parts.push(`${MON_NAMES[date.month - 1]} ${date.year}`);
-            }
+                out.date = `${DAY_NAMES[js.getDay()]} ${MON_NAMES[date.month - 1]} ${date.day} ${date.year}`;
+            } else out.date = `${MON_NAMES[date.month - 1]} ${date.year}`;
+            out.any = true;
         }
-        if (scene.weather) parts.push(scene.weather);
-        return parts.length ? parts : null;
+        if (scene.location) { out.loc = scene.location; out.any = true; }
+        if (scene.weather) {
+            out.wxIcon = weatherIcon(scene.weather);
+            out.weather = scene.weather.replace(WX_ICON_RE, '').replace(WS_RE, ' ').trim();
+            out.any = true;
+        }
+        return out.any ? out : null;
+    }
+    function hudPartsLine(parts) {
+        const p = [];
+        if (parts.time) p.push(parts.time + (parts.ampm ? ' ' + parts.ampm : ''));
+        if (parts.date) p.push(parts.date);
+        if (parts.weather || parts.wxIcon) p.push((parts.wxIcon + ' ' + (parts.weather || '')).trim());
+        return p;
+    }
+    function hudAccentFor(scene) {
+        return scene.state === 'night' ? '#6fa3e0' : scene.state === 'rain' ? '#9aa3ad' : scene.state === 'dusk' ? '#e08a5a' : '#f0b35a';
+    }
+    let hudResizeObserver = null;
+    function setHudRow(hud, cls, html, title) {
+        let row = hud.querySelector('.sd-hud-row.' + cls);
+        if (!html) { if (row) row.remove(); return; }
+        if (!row) { row = document.createElement('div'); row.className = 'sd-hud-row ' + cls; hud.appendChild(row); }
+        if (row.innerHTML !== html) {
+            row.innerHTML = html;
+            row.classList.remove('changed');
+            void row.offsetWidth;
+            row.classList.add('changed');
+        }
+        if (title !== undefined) row.title = title || '';
+    }
+    function orderHudRows(hud) {
+        for (const cls of ['sd-hud-time', 'sd-hud-date', 'sd-hud-loc', 'sd-hud-wx', 'sd-hud-counters']) {
+            const r = hud.querySelector('.' + cls); if (r) hud.appendChild(r);
+        }
     }
 
     function updateSceneHud(scene, settings) {
@@ -1421,7 +1478,6 @@
             let hud = document.getElementById('scene-director-hud');
             const parts = settings.enableHud ? buildHudParts(scene) : null;
             if (!parts) {
-                // Feature off (or no header): zero cost — no element created.
                 if (hud) queueDom(function () { hud.style.display = 'none'; });
                 return;
             }
@@ -1431,10 +1487,30 @@
                     hud.id = 'scene-director-hud';
                     document.body.appendChild(hud);
                     applyHudAppearance(settings);
+                    try {
+                        if (typeof ResizeObserver === 'function') {
+                            hudResizeObserver = new ResizeObserver(function () { queueDom(function () { applyStripAppearance(getSettings()); }); });
+                            hudResizeObserver.observe(hud);
+                        }
+                    } catch (e) { /* ignore */ }
                 }
                 hud.style.display = '';
-                const joined = parts.join(' · ');
-                if (hud.textContent !== joined) hud.textContent = joined;
+                const esc = escapeHtml;
+                hud.dataset.hudStyle = settings.hudStyle || 'stacked';
+                hud.style.setProperty('--sd-hud-scale', String(Math.max(0.8, Math.min(1.6, Number(settings.hudScale) || 1))));
+                hud.style.setProperty('--sd-hud-alpha', String(Math.max(0.2, Math.min(1, Number(settings.hudOpacity) || 0.85))));
+                hud.style.setProperty('--sd-hud-accent', hudAccentFor(scene));
+                hud.classList.toggle('sd-hud-blur', Boolean(settings.enableChatGlass && settings.chatBlur));
+                setHudRow(hud, 'sd-hud-time', parts.time
+                    ? `<span class="sd-hud-clock">${esc(parts.time)}</span>${parts.ampm ? `<span class="sd-hud-ampm">${esc(parts.ampm)}</span>` : ''}` : null);
+                setHudRow(hud, 'sd-hud-date', settings.hudDate && parts.date ? esc(parts.date) : null);
+                setHudRow(hud, 'sd-hud-loc', settings.hudLoc && parts.loc ? '📍 ' + esc(parts.loc) : null, parts.loc || '');
+                setHudRow(hud, 'sd-hud-wx', settings.hudWeather && (parts.weather || parts.wxIcon)
+                    ? `<span class="sd-hud-wxicon">${esc(parts.wxIcon)}</span> ${esc(parts.weather || '')}` : null);
+                let counters = '';
+                try { if (settings.hudCounters) counters = buildCounters((scene.date && scene.date.day) ? scene.date : lastParsedDate, settings); } catch (e) { /* ignore */ }
+                setHudRow(hud, 'sd-hud-counters', counters ? esc(counters) : null);
+                orderHudRows(hud);
             });
         } catch (e) {
             console.error(`${LOG} scene HUD failed`, e);
@@ -2489,7 +2565,12 @@
                 const gutter = window.innerWidth - left - right;
                 const compact = gutter < 110;
                 el.dataset.compact = compact ? '1' : '0';
-                const topPx = hudSameCorner ? 56 : 44;
+                let topPx = 44;
+                if (hudSameCorner) {
+                    const hud = document.getElementById('scene-director-hud');
+                    const hr = hud && hud.style.display !== 'none' ? hud.getBoundingClientRect() : null;
+                    topPx = hr && hr.height ? Math.round(hr.bottom + 8) : 56;
+                }
                 el.style.top = topPx + 'px';
                 el.style.bottom = 'auto';
                 el.style.left = compact ? (onRight ? 'auto' : '12px') : left + 'px';
@@ -2588,6 +2669,7 @@
             const hud = document.getElementById('scene-director-hud');
             if (!hud) return;
             const pos = settings.hudPosition || 'top-right';
+            hud.dataset.side = pos.endsWith('left') ? 'left' : 'right';
             hud.style.left = pos.endsWith('left') ? '12px' : 'auto';
             hud.style.right = pos.endsWith('right') ? '12px' : 'auto';
             hud.style.top = pos.startsWith('top') ? '10px' : 'auto';
@@ -4153,6 +4235,12 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                             <option value="bottom-right">Bottom right</option>
                             <option value="bottom-left">Bottom left</option>
                         </select>
+                        <select id="sd_hudStyle" class="text_pole" style="width:auto;" title="HUD style">
+                            <option value="stacked">Stacked</option>
+                            <option value="line">Line</option>
+                            <option value="minimal">Minimal (clock, hover expands)</option>
+                            <option value="game">Game (accent bar + weather badge)</option>
+                        </select>
                         <label for="sd_castPosition" style="font-size:12px;">Cast</label>
                         <select id="sd_castPosition" class="text_pole" style="width:auto;" title="Corner the cast strip grows from (top corners stack a column under the HUD)">
                             <option value="top-right">Top right (column)</option>
@@ -4166,6 +4254,20 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                             <option value="circle">Circle — use for photos with backgrounds</option>
                             <option value="plain">Plain (raw cutout)</option>
                         </select>
+                    </div>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:12px;">HUD scale</span>
+                        <input type="range" id="sd_hudScale" min="80" max="160" step="5" style="flex:1;" title="HUD scale" />
+                        <span id="sd_hudScaleVal" style="font-size:12px;min-width:42px;"></span>
+                        <span style="font-size:12px;">HUD opacity</span>
+                        <input type="range" id="sd_hudOpacity" min="20" max="100" step="5" style="flex:1;" title="HUD card opacity" />
+                        <span id="sd_hudOpacityVal" style="font-size:12px;min-width:42px;"></span>
+                    </div>
+                    <div class="scene-director-card-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <label class="checkbox_label"><input type="checkbox" id="sd_hudDate" /><span>Date row</span></label>
+                        <label class="checkbox_label"><input type="checkbox" id="sd_hudLoc" /><span>Location row</span></label>
+                        <label class="checkbox_label"><input type="checkbox" id="sd_hudWeather" /><span>Weather row</span></label>
+                        <label class="checkbox_label"><input type="checkbox" id="sd_hudCounters" /><span>Counters row</span></label>
                     </div>
                     <label class="checkbox_label" title="28% of the window height, capped to the free gutter beside the chat panel; a tall column shrinks to fit">
                         <input type="checkbox" id="sd_chipSizeAuto" />
@@ -4457,7 +4559,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             lines.push(`weather    : ${scene.weather ?? '(not found)'}${scene.raining ? ' [rain]' : ''}`);
             lines.push(`scene state: ${scene.state}`);
             const hudParts = buildHudParts(scene);
-            lines.push(`hud        : ${hudParts ? hudParts.join(' · ') : '(nothing parsed)'}`);
+            lines.push(`hud        : ${hudParts ? hudPartsLine(hudParts).join(' · ') : '(nothing parsed)'}`);
             const counters = buildCounters(scene.date, settings);
             lines.push(`counters   : ${counters || '(none)'}`);
             const { present, speakerKey } = analyzeCast(scene, settings);
@@ -4538,6 +4640,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         function stageChanged() {
             saveSettings();
             refreshStatics(getSettings());
+            onMessage(); // re-render the HUD with the new style/rows
         }
         const bindSelect = function (id, key) {
             const el2 = document.getElementById(id);
@@ -4549,6 +4652,22 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
         };
         bindSelect('sd_hudPosition', 'hudPosition');
+        bindSelect('sd_hudStyle', 'hudStyle');
+        for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters']) bindCheck('sd_' + k, k);
+        for (const [id, key, dflt] of [['sd_hudScale', 'hudScale', 1], ['sd_hudOpacity', 'hudOpacity', 0.85]]) {
+            const el2 = document.getElementById(id); const val = document.getElementById(id + 'Val');
+            if (!el2) continue;
+            el2.value = String(Math.round((Number(getSettings()[key]) || dflt) * 100));
+            if (val) val.textContent = el2.value + '%';
+            el2.addEventListener('input', function () {
+                if (val) val.textContent = el2.value + '%';
+                const st = getSettings(); st[key] = Number(el2.value) / 100;
+                const hud = document.getElementById('scene-director-hud');
+                if (hud) hud.style.setProperty(key === 'hudScale' ? '--sd-hud-scale' : '--sd-hud-alpha', String(st[key]));
+                applyStripAppearance(st);
+            });
+            el2.addEventListener('change', stageChanged);
+        }
         bindSelect('sd_castPosition', 'castPosition');
         bindSelect('sd_chipStyle', 'chipStyle');
         const bindCheck = function (id, key) {
@@ -4702,7 +4821,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.6.2)');
+            dbg('loaded (v0.6.3)');
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);

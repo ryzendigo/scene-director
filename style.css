@@ -8,23 +8,52 @@
 /* ---- Scene HUD (small fixed chip, top-right) ---- */
 
 #scene-director-hud {
+    /* 0.6.3: stacked game-HUD. One surface (shadow only, no border), one
+       focal point (the clock). Sizes: clock 28px, date 14px, rest 11px
+       (14/11 = 1.27); weights 600/400. --sd-hud-scale multiplies all. */
     position: fixed;
     top: 10px;
     right: 12px;
-    /* Above ST's chat + movable panels (z 2001), below the topbar (3005)
-       and popups (9999). */
     z-index: 2500;
-    pointer-events: none;
-    background: rgba(15, 15, 22, 0.72);
+    pointer-events: auto;
+    --sd-hud-scale: 1; --sd-hud-alpha: 0.85; --sd-hud-accent: transparent;
+    background: rgba(15, 15, 22, var(--sd-hud-alpha));
     color: #fff;
-    font-size: 12px;
-    line-height: 1;
-    padding: 7px 12px;
-    border-radius: 999px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    font-size: calc(11px * var(--sd-hud-scale));
+    line-height: 1.25;
+    padding: calc(10px * var(--sd-hud-scale)) calc(12px * var(--sd-hud-scale));
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    text-align: right;
     white-space: nowrap;
     animation: scene-director-fade-rise 0.3s ease-out;
+    display: flex; flex-direction: column; gap: calc(2px * var(--sd-hud-scale));
 }
+#scene-director-hud[data-side="left"] { text-align: left; }
+#scene-director-hud .sd-hud-clock {
+    font-size: calc(28px * var(--sd-hud-scale)); font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.01em; line-height: 1.05;
+}
+#scene-director-hud .sd-hud-ampm { font-size: calc(11px * var(--sd-hud-scale)); font-weight: 400; opacity: 0.85; margin-left: calc(4px * var(--sd-hud-scale)); }
+#scene-director-hud .sd-hud-date { font-size: calc(14px * var(--sd-hud-scale)); font-weight: 600; }
+#scene-director-hud .sd-hud-loc, #scene-director-hud .sd-hud-wx, #scene-director-hud .sd-hud-counters { font-weight: 400; opacity: 0.72; }
+#scene-director-hud .sd-hud-loc { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
+#scene-director-hud .sd-hud-wx .sd-hud-wxicon { font-size: calc(13px * var(--sd-hud-scale)); }
+@keyframes sd-hud-change { from { opacity: 0.2; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+#scene-director-hud .sd-hud-row.changed { animation: sd-hud-change 0.3s ease-out; }
+/* line preset */
+#scene-director-hud[data-hud-style="line"] { flex-direction: row; gap: 0; border-radius: 999px; padding: 7px 12px; font-size: calc(12px * var(--sd-hud-scale)); }
+#scene-director-hud[data-hud-style="line"] .sd-hud-clock, #scene-director-hud[data-hud-style="line"] .sd-hud-date { font-size: calc(12px * var(--sd-hud-scale)); font-weight: 400; }
+#scene-director-hud[data-hud-style="line"] .sd-hud-row { display: inline; opacity: 1; }
+#scene-director-hud[data-hud-style="line"] .sd-hud-row + .sd-hud-row::before { content: ' · '; opacity: 0.7; }
+/* minimal preset */
+#scene-director-hud[data-hud-style="minimal"] .sd-hud-row:not(.sd-hud-time) { display: none; }
+#scene-director-hud[data-hud-style="minimal"]:hover .sd-hud-row { display: block; }
+/* game preset */
+#scene-director-hud[data-hud-style="game"] { border-right: 2px solid var(--sd-hud-accent); }
+#scene-director-hud[data-hud-style="game"][data-side="left"] { border-right: none; border-left: 2px solid var(--sd-hud-accent); }
+#scene-director-hud[data-hud-style="game"] .sd-hud-wx .sd-hud-wxicon { font-size: calc(20px * var(--sd-hud-scale)); display: inline-block; vertical-align: middle; margin: 0 calc(4px * var(--sd-hud-scale)); }
+#scene-director-hud.sd-hud-blur { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 
 /* ---- Cast strip (portrait chips, bottom-left) ---- */
 
