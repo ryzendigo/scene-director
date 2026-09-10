@@ -160,6 +160,12 @@
  * self-test), and a requestAnimationFrame drift that actually moves #bg1
  * (its background-attachment: fixed defeated CSS animations).
  *
+ * v0.7.2 — orphan-sprite fix (coalesced /emote, holder reconciliation,
+ * ghosts on untracked timeouts, size rule on every holder img), lexicon
+ * grief/shock tells + wet-eye anger veto, classifier-aware lexicon
+ * override, nearest-sprite mapping that never falls to neutral, tooltips
+ * from the same L0 material as the mood engine.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -288,7 +294,7 @@
         femaleNamesRegex: '',          // other female characters (she/her is the main character's only when none of these appear)
         moodLexicon: null,             // null = built-in table (MoodEngine.DEFAULT_LEXICON); else [[regex, label, weight, [vetoes]], ...]
         ownColorHex: '',            // the main character's dialogue colour (never an "unknown")
-        interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
+        interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)?|breath(?:es|ed|e)|exhal(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)|goes? white|went white|pale|jaw works?|eyes come up|shine|colou?r (?:comes|came|drains|drained)|blinks?|lip trembl|goes? still|trembl|voice (?:goes|is|drops|cracks|wavers)|quiet(?:ly)?|flatly|softly',
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 40,     // one Ken Burns sweep (alternates back)
@@ -481,8 +487,14 @@
             // anger / annoyance
             ['(?<!\\bit\\s)(?<!\\blet\\s)\\bsnap(?:s|ped)\\b(?!\\s+(?:back|shut|closed|open|the|it|a\\b))', 'anger', 2.5, []],
             ['\\bdr(?:y|ier|yly)\\b', 'amusement', 1, []],
-            ['flat\\s+voice|voice\\s+(?:goes\\s+)?flat|flatly', 'anger', 2, []],
-            ['jaw\\s+(?:sets?|tight(?:ens)?|clench(?:es|ed)?|works)', 'anger', 2.5, []],
+            ['jaw\\s+(?:sets?|set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)', 'anger', 2.5, []],
+            ['bites?\\s+(?:it\\s+)?off|through\\s+her\\s+teeth|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],
+            // grief / shock physical tells (controlled, not angry)
+            ['jaw\\s+works?|jaw\\s+working|swallows?\\s+(?:nothing|hard\\s+on\\s+nothing)|swallow(?:s|ed)\\s+nothing', 'grief', 3, []],
+            ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes|went)|colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'grief', 3, []],
+            ['wet\\s+shine|shine\\s+(?:along|on|in)\\s+(?:the|her)\\s+(?:lower\\s+)?(?:lid|lids|lashes|eyes)|lower\\s+lid|not\\s+falling', 'grief', 3, ['joy', 'amusement', 'pride']],
+            ['practi[cs]ed\\s+(?:exhale|breath)|lets?\\s+(?:it|the\\s+breath)\\s+out\\s+slow(?:ly)?', 'sadness', 1.5, []],
+            ['eyes\\s+come\\s+up|looks?\\s+up\\s+slowly', 'realization', 1, []],
             ['glar(?:es|ed|ing)', 'anger', 3, []],
             ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'anger', 2, []],
             ['furious|fury|rage', 'anger', 3, []],
@@ -490,7 +502,6 @@
             ['hiss(?:es|ed)?\\b', 'anger', 2, []],
             ['slam(?:s|med)?', 'anger', 2, []],
             ['\\bsharp(?:ly)?\\b', 'annoyance', 1, []],
-            ['\\bcold(?:ly)?\\b', 'annoyance', 1, []],
             ['rolls?\\s+her\\s+eyes', 'annoyance', 2, []],
             ['(?:sighs?|breathes?)\\s+through\\s+her\\s+nose', 'annoyance', 1.5, []],
             ['\\bhuff(?:s|ed)?\\b', 'annoyance', 2, []],
@@ -676,7 +687,7 @@
             const cues = [];
             const vetoes = new Set();
             let hitWeight = 0; let hitCount = 0;
-            let laughter = false; let tears = false;
+            let laughter = false; let tears = false; let wetEyes = false; let explicitAnger = false;
             for (const p of ext.parts) {
                 for (const cue of table) {
                     cue.re.lastIndex = 0;
@@ -692,12 +703,17 @@
                         for (const v of cue.vetoes) vetoes.add(v);
                         if (cue.label === 'amusement' && /laugh|giggl|chuckl/i.test(m[0])) laughter = true;
                         if (cue.label === 'sadness' && /tear|cr(?:y|ies|ied|ying)|we(?:ep|pt)|sob/i.test(m[0])) tears = true;
+                        if (/tear|wet|shine|lid|eyes\s+(?:fill|sting|burn|well|prick)/i.test(m[0])) wetEyes = true;
+                        if (cue.label === 'anger' && cue.w >= 2.5) explicitAnger = true;
                     }
                 }
             }
             // Hard vetoes.
             if (laughter) for (const l of ['sadness', 'grief', 'anger', 'fear']) vetoes.add(l);
             if (tears) for (const l of ['joy', 'amusement', 'pride']) vetoes.add(l);
+            // Wet eyes / tears rule out anger unless an explicit anger cue
+            // (glare, snap, jaw set, slam, through her teeth) is also there.
+            if ((wetEyes || tears) && !explicitAnger) { vetoes.add('anger'); vetoes.add('annoyance'); }
             // A label cannot veto itself out of the running when it has strong
             // direct evidence AND the veto came only from a weaker cue.
             let top = null; let topScore = 0;
@@ -749,11 +765,27 @@
                 return { final: tag, rule: '1 tag', hold: false };
             }
             const strongLex = Boolean(lex.top && lex.top !== 'neutral' && lex.topScore >= 4);
+            // A lexicon override is "contradicted" when the classifier is
+            // confident (top-2 both >= 0.30 share) and neither of those labels
+            // is in the lexicon label's family.
+            const FAMILY = {
+                sadness: ['sadness', 'grief', 'remorse', 'disappointment'], grief: ['grief', 'sadness', 'remorse', 'disappointment'],
+                anger: ['anger', 'annoyance', 'disapproval', 'disgust'], annoyance: ['annoyance', 'anger', 'disapproval'],
+                fear: ['fear', 'nervousness'], nervousness: ['nervousness', 'fear'],
+                joy: ['joy', 'amusement', 'excitement', 'love'], amusement: ['amusement', 'joy'],
+                love: ['love', 'desire', 'caring', 'joy'], desire: ['desire', 'love'],
+                embarrassment: ['embarrassment', 'nervousness'], surprise: ['surprise', 'realization', 'curiosity'],
+            };
+            const contradicted = function (label) {
+                if (local.length < 2 || local[0].share < 0.30 || local[1].share < 0.30) return false;
+                const fam = FAMILY[label] || [label];
+                return !fam.includes(local[0].label) && !fam.includes(local[1].label);
+            };
             if (local.length) {
                 const t = local[0];
                 const strongLocal = !vetoed(t.label) && t.share >= need(t.label) && (t.label !== 'neutral' || okNeutral(t.share));
                 // 3a: strong lexicon evidence beats a merely-adequate classifier.
-                if (strongLex && !(strongLocal && t.share >= 0.45 && t.label === lex.top)) {
+                if (strongLex && !contradicted(lex.top) && !(strongLocal && t.share >= 0.45 && t.label === lex.top)) {
                     if (!strongLocal || t.share < 0.45) return { final: lex.top, rule: '3a lexicon (strong)', hold: false };
                 }
                 if (strongLocal) return { final: t.label, rule: '3b local top', hold: false };
@@ -773,23 +805,25 @@
 
         // Nearest available sprite when the folder lacks the label.
         const NEAREST = {
-            amusement: ['joy', 'love'], annoyance: ['anger', 'disapproval'], grief: ['sadness'],
-            nervousness: ['fear', 'sadness'], admiration: ['love', 'joy', 'surprise'],
-            approval: ['joy', 'love', 'pride'], gratitude: ['caring', 'love', 'joy'],
-            caring: ['love', 'joy'], optimism: ['joy', 'curiosity'], pride: ['joy', 'love'],
-            relief: ['joy', 'caring'], realization: ['surprise', 'curiosity'],
-            excitement: ['joy', 'surprise'], disappointment: ['sadness'], disapproval: ['anger', 'annoyance'],
-            disgust: ['anger', 'disapproval'], remorse: ['sadness', 'embarrassment'],
-            confusion: ['curiosity', 'surprise'], desire: ['love'], love: ['desire', 'caring', 'joy'],
-            joy: ['amusement', 'love'], fear: ['nervousness', 'surprise'], anger: ['annoyance', 'disapproval'],
-            sadness: ['grief', 'disappointment'], surprise: ['curiosity', 'realization'],
-            embarrassment: ['nervousness', 'surprise'], curiosity: ['surprise'],
+            anger: ['sadness', 'nervousness', 'disapproval', 'annoyance'], annoyance: ['sadness', 'nervousness', 'anger', 'disapproval'],
+            disgust: ['sadness', 'nervousness', 'disapproval', 'anger'], disapproval: ['sadness', 'nervousness', 'anger'],
+            grief: ['sadness', 'nervousness'], sadness: ['grief', 'nervousness', 'disappointment'],
+            fear: ['nervousness', 'sadness', 'surprise'], nervousness: ['fear', 'sadness'],
+            confusion: ['curiosity', 'surprise', 'nervousness'], realization: ['curiosity', 'surprise'], curiosity: ['surprise', 'realization'],
+            admiration: ['caring', 'love', 'joy'], approval: ['caring', 'joy', 'pride'], gratitude: ['caring', 'love', 'joy'],
+            caring: ['love', 'joy'], optimism: ['caring', 'joy'], relief: ['caring', 'joy'],
+            excitement: ['joy', 'amusement', 'surprise'], joy: ['amusement', 'love', 'caring'], amusement: ['joy', 'love'],
+            love: ['desire', 'caring', 'joy'], desire: ['love', 'caring'], pride: ['joy', 'caring'],
+            disappointment: ['sadness', 'nervousness'], remorse: ['sadness', 'embarrassment'],
+            embarrassment: ['nervousness', 'surprise'], surprise: ['curiosity', 'realization'],
         };
         function mapToAvailable(label, available) {
             if (!label) return null;
             if (!available || !available.size || available.has(label)) return label;
             for (const alt of (NEAREST[label] || [])) if (available.has(alt)) return alt;
-            return available.has('neutral') ? 'neutral' : label;
+            // Never neutral for a non-neutral verdict: nearest broad fallback.
+            for (const alt of ['caring', 'curiosity', 'joy', 'sadness', 'nervousness']) if (available.has(alt)) return alt;
+            return label;
         }
 
         // NPC -happy/-angry/-sad variant for a verdict label.
@@ -2093,6 +2127,43 @@
             || document.querySelector('#expression-holder img:not(.scene-director-sprite-ghost)');
     }
 
+    // 0.7.2: reconciliation — ST's setExpression clones EVERY img.expression
+    // in #expression-holder and promotes the clone, so a stray extra img
+    // doubles on each swap. 1.5 s after any sprite change exactly one img
+    // may remain: #expression-image if present, else the last with a src.
+    let spriteChangeCount = 0;
+    let reconcileTimer = null;
+    function scheduleReconcile() {
+        if (reconcileTimer) clearTimeout(reconcileTimer);
+        reconcileTimer = setTimeout(reconcileSprite, 1500);
+    }
+    function reconcileSprite() {
+        reconcileTimer = null;
+        try {
+            const holder = document.getElementById('expression-holder');
+            if (holder) {
+                const imgs = Array.from(holder.querySelectorAll('img')).filter(function (i) { return !i.classList.contains('scene-director-sprite-ghost'); });
+                if (imgs.length > 1) {
+                    if (holder.querySelector('.expression-animating, .expression-clone')) { scheduleReconcile(); return; }
+                    let keep = document.getElementById('expression-image');
+                    if (!keep) { for (const i of imgs) if (i.getAttribute('src')) keep = i; }
+                    let removed = 0;
+                    for (const i of imgs) if (i !== keep) { try { i.remove(); removed++; } catch (e) { /* ignore */ } }
+                    if (keep && !keep.id) keep.id = 'expression-image';
+                    if (removed) dbg('sprite reconcile: removed ' + removed + ' orphaned img(s) from #expression-holder');
+                }
+            }
+            const now = Date.now();
+            for (const g of document.querySelectorAll('.scene-director-sprite-ghost')) {
+                if (now - Number(g.dataset.born || 0) > 4000) { try { g.remove(); } catch (e) { /* ignore */ } }
+            }
+        } catch (e) { /* ignore */ }
+    }
+    function spriteBusy() {
+        const holder = document.getElementById('expression-holder');
+        return Boolean(holder && holder.querySelector('.expression-animating, .expression-clone'));
+    }
+
     function teardownSpriteCrossfade() {
         if (spriteObserver) {
             try { spriteObserver.disconnect(); } catch (e) { /* ignore */ }
@@ -2134,7 +2205,13 @@
                     ghost.style.width = rect.width + 'px';
                     ghost.style.height = rect.height + 'px';
                     ghost.style.opacity = '1';
+                    ghost.dataset.born = String(Date.now());
                     document.body.appendChild(ghost);
+                    // 0.7.2: hard-remove on an UNTRACKED timeout (the tracked
+                    // registry is cleared on chat change / page hide).
+                    setTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 3700);
+                    spriteChangeCount++;
+                    scheduleReconcile();
                     // 0.5.5: keep the old image fully visible until the new
                     // file has painted, then a 1.2s cross-blend.
                     let waited = 0;
@@ -2145,7 +2222,7 @@
                             return;
                         }
                         requestAnimationFrame(function () { ghost.style.opacity = '0'; });
-                        sdTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 1300);
+                        setTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 1300);
                     };
                     startFade();
                 } catch (e) { /* never break on sprite changes */ }
@@ -3014,21 +3091,21 @@
             let raw = last.mes || '';
             const reasoning = last.extra && last.extra.reasoning;
             if (reasoning) raw = String(reasoning) + '\n' + raw;
-            raw = raw.replace(/<[^>]+>/g, '');
-            const text = raw.length > MAX_SCAN ? raw.slice(0, MAX_SCAN) : raw;
-            const hits = [];
-            let prevAbout = false;
-            SENTENCE_RE.lastIndex = 0;
-            let m;
-            while ((m = SENTENCE_RE.exec(text)) !== null) {
-                const sent = m[0].trim();
-                if (!sent) continue;
-                let about = (nameRe && nameRe.test(sent)) || (aliasRe && aliasRe.test(sent));
-                if (!about && prevAbout && PRONOUN_RE.test(sent)) about = true;
-                prevAbout = Boolean(nameRe && nameRe.test(sent));
-                if (about && interRe && interRe.test(sent)) hits.push(sent);
+            // 0.7.2: the SAME L0 speaker material as the mood engine.
+            let ext;
+            if (String(key).indexOf('main:') === 0) {
+                const femaleRe = compileRegex(settings.femaleNamesRegex || '');
+                const others = [];
+                for (const m of settings.cast) { const r = compileRegex(m.nameRegex || ''); if (r) others.push(r); const a2 = compileRegex(m.aliasRegex || ''); if (a2) others.push(a2); }
+                ext = MoodEngine.extractOwn(raw, { hex: ownColorHex(ctx, settings), nameRe, aliasRe: null, otherNameRes: others, soloFemale: !(femaleRe && femaleRe.test(raw)) });
+            } else {
+                const member = settings.cast.find(function (m) { return m.key === key; });
+                ext = member ? memberExtract(raw, member, settings) : { parts: [] };
             }
-            let out = hits.slice(-2).join(' ');
+            const hits = ext.parts.filter(function (p) { return interRe && interRe.test(p.text); })
+                .sort(function (x, y) { return ((y.kind === 'narration') - (x.kind === 'narration')) || (y.w - x.w); })
+                .slice(0, 2).map(function (p) { return p.text; });
+            let out = hits.join(' ');
             if (out.length > 220) out = out.slice(0, 217).replace(/\s+\S*$/, '') + '…';
             thoughtCache.map.set(key, out);
             return out;
@@ -3661,21 +3738,32 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         } catch (e) { /* ignore */ }
     }
 
+    let lastEmoteTs = 0;
+    async function waitSpriteIdle(ms) {
+        const until = Date.now() + (ms || 1000);
+        while (spriteBusy() && Date.now() < until) await new Promise(function (r) { setTimeout(r, 100); });
+    }
+    async function emote(ctx, label) {
+        await waitSpriteIdle(1000); // never while ST's clone is mid-fade
+        lastEmoteTs = Date.now();
+        try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* ignore */ }
+        scheduleReconcile();
+    }
     async function assertExpression(ctx, label) {
         if (!label) return;
         const my = ++assertSeq;
         lastMoodLabel = label;
         syncFallback(ctx, label);
-        try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* retried below */ }
+        await emote(ctx, label);
         let tries = 0;
         const check = async function () {
             if (my !== assertSeq) return;
-            if (spriteIsBlank() && tries < 4) {
+            // 0.7.2: at most ONE re-assert, only if really blank, never
+            // within 3 s of any emit.
+            if (spriteIsBlank() && tries < 1 && Date.now() - lastEmoteTs >= 3000) {
                 tries++;
-                // The label may not exist in the active costume folder —
-                // after two misses fall back to neutral.
-                const use = tries >= 3 ? 'neutral' : label;
-                try { await runCommand(ctx, `/emote ${use}`); } catch (e) { /* ignore */ }
+                const use = label;
+                await emote(ctx, use);
                 if (Date.now() < hydrateUntil) {
                     dbg(`initial hydrate: sprite not drawn yet -> /emote ${use} (${tries})`);
                 } else {
@@ -3683,9 +3771,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     spriteDebug(ctx, use);
                 }
             }
-            if (tries < 4) sdTimeout(check, 1500);
+            if (tries < 1) sdTimeout(check, 3200);
         };
-        sdTimeout(check, 1200);
+        sdTimeout(check, 3200);
     }
 
     /** 0.5.2 diagnostics printed when a re-assert was needed. */
@@ -3890,6 +3978,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
 
             lastActivityTs = Date.now();
             onGenerationEnd(); // a landed message always ends the typing state
+            if (spriteChangeCount > 1) dbg('sprite changed ' + spriteChangeCount + 'x during the previous message (expect 1)');
+            spriteChangeCount = 0;
 
             // ONE extraction + ONE header parse for the whole event (item 1).
             const scene = parseScene(last.mes, settings);
@@ -4840,7 +4930,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         <div id="scene_director_settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Scene Director v0.7.1</b>
+                    <b>Scene Director v0.7.2</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -5567,7 +5657,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.7.1)');
+            dbg('loaded (v0.7.2)');
             try { setupPrivacy(); } catch (e) { /* ignore */ }
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {

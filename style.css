@@ -742,7 +742,7 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 
 /* ---- 0.6.2: fixed rendered sprite height (static and animated identical);
    the crossfade clone matches the same selector, so blends never pop. ---- */
-#expression-holder img.expression,
+#expression-holder img:not(.scene-director-sprite-ghost),
 #expression-image {
     height: var(--scene-director-sprite-h, 62vh) !important;
     width: auto !important;
