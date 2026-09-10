@@ -122,7 +122,10 @@
     inset: 0;
     z-index: -1; /* ST backgrounds sit at -3/-2; the UI sits above 0 */
     pointer-events: none;
-    transition: background-color 1s ease;
+    /* Perf: the tint colour is SET once per scene-state change; only opacity
+       (compositor-friendly) is transitioned for the slow 1s grade. */
+    opacity: 0;
+    transition: opacity 1s ease;
     overflow: hidden;
 }
 
@@ -368,4 +371,226 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 
 #scene-director-hud {
     pointer-events: auto; /* needed for the hover tooltip */
+}
+
+/* ==== v0.4.0 — card system ============================================= */
+
+#scene_director_settings .scene-director-banner {
+    background: rgba(80, 130, 200, 0.15);
+    border: 1px solid rgba(80, 130, 200, 0.4);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 8px 0;
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+#scene_director_settings .scene-director-compat {
+    background: rgba(200, 160, 60, 0.15);
+    border: 1px solid rgba(200, 160, 60, 0.4);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 0.85em;
+}
+
+#scene_director_settings .scene-director-help {
+    display: block;
+    opacity: 0.7;
+    margin-bottom: 4px;
+}
+
+#scene_director_settings .scene-director-empty {
+    opacity: 0.65;
+    font-size: 0.88em;
+    font-style: italic;
+    padding: 8px 4px;
+    line-height: 1.4;
+}
+
+#scene_director_settings .scene-director-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#scene_director_settings .scene-director-card-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#scene_director_settings .scene-director-card-main {
+    flex: 1;
+    min-width: 0;
+}
+
+#scene_director_settings .scene-director-card-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+#scene_director_settings .scene-director-card-row .text_pole {
+    margin: 0;
+}
+
+#scene_director_settings .sd-card-name { flex: 2; min-width: 90px; }
+#scene_director_settings .sd-card-key  { flex: 1; min-width: 60px; font-family: monospace; font-size: 0.85em; }
+#scene_director_settings .sd-card-regex { flex: 1; font-family: monospace; font-size: 0.85em; }
+#scene_director_settings .sd-card-bio  { flex: 1; font-size: 0.85em; }
+
+#scene_director_settings .sd-card-color {
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+#scene_director_settings .sd-card-color-clear {
+    cursor: pointer;
+    opacity: 0.6;
+    width: 12px;
+    text-align: center;
+}
+
+#scene_director_settings .sd-card-mood {
+    cursor: pointer;
+    opacity: 0.25;
+    filter: grayscale(1);
+    user-select: none;
+}
+
+#scene_director_settings .sd-card-mood.on {
+    opacity: 1;
+    filter: none;
+}
+
+#scene_director_settings .scene-director-card-del {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    opacity: 0.7;
+}
+
+#scene_director_settings .sd-invalid {
+    outline: 1px solid #e57373;
+}
+
+#scene_director_settings .sd-slots-row {
+    gap: 4px;
+}
+
+#scene_director_settings .sd-slot {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+#scene_director_settings .sd-slot-label {
+    font-size: 0.9em;
+}
+
+#scene_director_settings .sd-slot-select {
+    max-width: 130px;
+    font-size: 0.8em;
+}
+
+#scene_director_settings .sd-slot-month {
+    width: 46px;
+    margin: 0;
+}
+
+/* ---- Scan-my-chat wizard ---- */
+
+#scene_director_settings .scene-director-scan {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 6px;
+    font-size: 0.88em;
+}
+
+#scene_director_settings .sd-scan-section {
+    margin-bottom: 8px;
+}
+
+#scene_director_settings .sd-scan-sample {
+    font-family: monospace;
+    font-size: 0.85em;
+    opacity: 0.85;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin-top: 3px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+#scene_director_settings .sd-scan-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+#scene_director_settings .sd-scan-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+}
+
+#scene_director_settings .sd-scan-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#scene_director_settings .sd-scan-create {
+    padding: 1px 8px;
+    font-size: 0.85em;
+    flex-shrink: 0;
+}
+
+#scene_director_settings .sd-scan-done {
+    opacity: 0.55;
+    font-size: 0.85em;
+    flex-shrink: 0;
+}
+
+/* ---- Prompt snippet ---- */
+
+#scene_director_settings .sd-snippet-wrap {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+#scene_director_settings .sd-snippet {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 0.8em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    user-select: all;
 }
