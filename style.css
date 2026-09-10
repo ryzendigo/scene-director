@@ -50,17 +50,40 @@
 }
 
 .scene-director-chip img {
-    width: var(--scene-director-chip-size, 72px);
-    height: var(--scene-director-chip-size, 72px);
-    object-fit: cover;
+    /* 0.5.2: fluid — never wider than the gutter box, never taller than
+       the vh cap; aspect preserved. */
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: var(--scene-director-chip-max, 28vh);
+    object-fit: contain;
+    display: block;
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
+
+.scene-director-chip { max-width: 100%; }
+
+#scene-director-cast-strip[data-compact="1"] .scene-director-chip img {
+    width: 48px;
+    height: 48px;
+    max-height: none;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    background: rgba(22, 23, 30, 0.85);
+    -webkit-mask-image: none;
+    mask-image: none;
+}
+
+.scene-director-chip-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- v0.5.0 chip styles (data-chip-style on the strip) ---- */
 
 /* cloud: circle crop + radial backing glow (the pre-0.5.0 look). */
 #scene-director-cast-strip[data-chip-style="cloud"] .scene-director-chip img {
     border-radius: 50%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
     border: 2px solid rgba(255, 255, 255, 0.35);
     background: radial-gradient(circle at 50% 42%,
         rgba(72, 74, 84, 0.95) 0%, rgba(28, 29, 36, 0.95) 78%);
@@ -69,6 +92,8 @@
 /* circle: circle crop with a subtle ring — use for photos with backgrounds. */
 #scene-director-cast-strip[data-chip-style="circle"] .scene-director-chip img {
     border-radius: 50%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
     border: 2px solid rgba(255, 255, 255, 0.55);
     background: rgba(22, 23, 30, 0.85);
 }
@@ -125,10 +150,13 @@
 /* ---- Mood thought bubble (comic style: bubble + two trailing dots) ---- */
 
 .scene-director-mood-bubble {
+    /* 0.5.2: diagonally up-left of the head, not touching. */
     position: absolute;
-    top: -32px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: -10%;
+    left: 6%;
+    transform: translate(-40%, -60%);
+    transition: opacity 0.6s ease;
+    z-index: 2510;
     background: #fff;
     border-radius: 10px;
     padding: 3px 7px;
@@ -143,7 +171,7 @@
     content: '';
     position: absolute;
     bottom: -5px;
-    left: 38%;
+    left: 62%;
     width: 7px;
     height: 7px;
     background: #fff;
@@ -155,7 +183,7 @@
     content: '';
     position: absolute;
     bottom: -11px;
-    left: 55%;
+    left: 80%;
     width: 4px;
     height: 4px;
     background: #fff;
@@ -642,17 +670,19 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     user-select: all;
 }
 
-/* ---- v0.5.0: see-through chat panel (Chat panel glass) ----
-   One overriding rule; the RGB comes from the theme's own
-   --SmartThemeChatTintColor and the alpha honours the theme's if lower
-   (both resolved by applyChatGlass()). */
+/* ---- 0.5.2: chat glass rules are injected by applyChatGlass() only
+   while the option is on (no #chat rule at all when off). ---- */
 
-body.scene-director-chat-glass #chat {
-    background-color: rgba(var(--scene-director-chat-tint-rgb, 0, 0, 0),
-        var(--scene-director-chat-alpha, 0.55)) !important;
-}
+.scene-director-mood-bubble.scene-director-bubble-out { opacity: 0; }
 
-body.scene-director-chat-glass.scene-director-chat-noblur #chat {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+@keyframes scene-director-dot {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30%           { opacity: 1;    transform: translateY(-3px); }
 }
+.scene-director-dots { display: inline-flex; gap: 3px; align-items: flex-end; }
+.scene-director-dots i {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #333; animation: scene-director-dot 1.2s ease-in-out infinite;
+}
+.scene-director-dots i:nth-child(2) { animation-delay: 0.2s; }
+.scene-director-dots i:nth-child(3) { animation-delay: 0.4s; }

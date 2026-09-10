@@ -90,6 +90,20 @@
  *     asserted and verified, and the last tagged mood is replayed after
  *     chat load and costume switches.
  *
+ * v0.5.2:
+ *
+ *   - Cast column is a fixed box filling the gutter beside #sheld (chips
+ *     max-width:100%, height:auto, 28vh cap); gutter < 110px collapses to
+ *     48px circles. Re-measured on #sheld resize, window resize and ST's
+ *     panel/settings events.
+ *   - Thought bubbles: typing dots while generating, then the mood emoji
+ *     (configurable map) up-left of the head for a few seconds; NPC chips
+ *     get the same treatment. Transform/opacity-only.
+ *   - Chat glass injects its #chat rule only while on; drawer hint points
+ *     at ST's own Blur Tint alpha.
+ *   - Sprite: after two blank re-asserts the replay falls back to neutral
+ *     (a costume subfolder may lack the label) and logs a sprite-debug line.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -159,6 +173,19 @@
         enableChatGlass: false,     // see-through chat panel
         chatOpacity: 0.55,
         chatBlur: true,
+
+        // v0.5.2 thought bubbles: mood label -> emoji (main sprite);
+        // NPC chips use happy/angry/sad.
+        moodEmoji: {
+            love: '❤️', anger: '💢', surprise: '❗', curiosity: '❓', embarrassment: '😳',
+            joy: '✨', sadness: '💧', fear: '😨', desire: '🔥', amusement: '😏',
+            admiration: '🤩', annoyance: '😒', approval: '👍', caring: '🤗',
+            confusion: '🤔', disappointment: '😞', disapproval: '👎', disgust: '🤢',
+            excitement: '🎉', gratitude: '🙏', grief: '💔', nervousness: '😰',
+            optimism: '🌤️', pride: '😌', realization: '💡', relief: '😮‍💨', remorse: '😔',
+            happy: '✨', angry: '💢', sad: '💧',
+        },
+        bubbleSeconds: 6,
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
@@ -708,7 +735,7 @@
     // ------------------------------------------------------------------
 
     const MOODS = ['happy', 'angry', 'sad'];
-    const MOOD_EMOJI = { happy: '😊', angry: '😠', sad: '😢' };
+    const MOOD_EMOJI = { happy: '✨', angry: '💢', sad: '💧' };
 
     function detectMood(text, member, settings) {
         try {
@@ -1094,6 +1121,49 @@
     // only when Typing Presence or Idle Presence is enabled.
     // ------------------------------------------------------------------
 
+    // 0.5.2: one bubble element for the main sprite — typing dots while a
+    // generation is in flight, then the mood emoji for a few seconds.
+    let mainBubbleSeq = 0;
+    function mainBubbleEl() {
+        let bubble = document.getElementById('scene-director-typing-bubble');
+        if (!bubble) {
+            bubble = document.createElement('div');
+            bubble.id = 'scene-director-typing-bubble';
+            bubble.className = 'scene-director-mood-bubble';
+            document.body.appendChild(bubble);
+        }
+        return bubble;
+    }
+    function positionMainBubble(bubble) {
+        const img = currentSpriteImg();
+        if (!img) return false;
+        const rect = img.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        const off = rect.height * 0.10; // diagonally up-left of the head
+        bubble.style.position = 'fixed';
+        bubble.style.transform = 'none';
+        bubble.style.left = Math.max(4, rect.left + rect.width * 0.38 - off) + 'px';
+        bubble.style.top = Math.max(4, rect.top - off) + 'px';
+        return true;
+    }
+    function showMainMoodEmoji(label, settings) {
+        try {
+            if (!settings.enableTypingPresence) return;
+            const emoji = settings.moodEmoji && settings.moodEmoji[label];
+            const bubble = mainBubbleEl();
+            const my = ++mainBubbleSeq;
+            if (!emoji || !positionMainBubble(bubble)) { bubble.style.display = 'none'; return; }
+            bubble.textContent = emoji;
+            bubble.classList.remove('scene-director-bubble-out');
+            bubble.style.display = '';
+            const ms = (Number(settings.bubbleSeconds) || 6) * 1000;
+            sdTimeout(function () { if (my === mainBubbleSeq) bubble.classList.add('scene-director-bubble-out'); }, ms);
+            sdTimeout(function () {
+                if (my === mainBubbleSeq) { bubble.style.display = 'none'; bubble.classList.remove('scene-director-bubble-out'); }
+            }, ms + 700);
+        } catch (e) { /* ignore */ }
+    }
+
     function onGenerationStart() {
         try {
             generating = true;
@@ -1101,22 +1171,11 @@
             const settings = getSettings();
             if (!settings.enableTypingPresence) return;
             document.body.classList.add('scene-director-typing');
-            const img = currentSpriteImg();
-            if (!img) return;
-            const rect = img.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-            let bubble = document.getElementById('scene-director-typing-bubble');
-            if (!bubble) {
-                bubble = document.createElement('div');
-                bubble.id = 'scene-director-typing-bubble';
-                bubble.className = 'scene-director-mood-bubble';
-                bubble.textContent = '…';
-                document.body.appendChild(bubble);
-            }
-            bubble.style.position = 'fixed';
-            bubble.style.transform = 'none';
-            bubble.style.left = (rect.left + rect.width * 0.6) + 'px';
-            bubble.style.top = Math.max(4, rect.top + rect.height * 0.08) + 'px';
+            const bubble = mainBubbleEl();
+            mainBubbleSeq++;
+            if (!positionMainBubble(bubble)) return;
+            bubble.innerHTML = '<span class="scene-director-dots"><i></i><i></i><i></i></span>';
+            bubble.classList.remove('scene-director-bubble-out');
             bubble.style.display = '';
         } catch (e) {
             console.error(`${LOG} typing presence failed`, e);
@@ -1582,38 +1641,64 @@
             const onRight = pos.endsWith('right');
             const hudSameCorner = (settings.hudPosition || 'top-right') === pos;
             const vh = window.innerHeight / 100;
-            // 0.5.1: size is RELATIVE TO THE WINDOW (vh, clamped 120px-40vh),
-            // never the sprite's pixel height.
-            const vhWanted = settings.chipSizeAuto
+            const maxVh = settings.chipSizeAuto
                 ? 28 : Math.max(10, Math.min(40, Number(settings.chipSize) || 28));
-            let size = Math.round(vhWanted * vh);
-            size = Math.max(120, Math.min(Math.round(40 * vh), size));
-            // Cap to the free gutter between #sheld and the viewport edge.
-            try {
-                const sheld = document.getElementById('sheld');
-                if (sheld) {
-                    const r = sheld.getBoundingClientRect();
-                    const gutter = (onRight ? window.innerWidth - r.right : r.left) - 24;
-                    if (gutter >= 60 && gutter < size) size = Math.floor(gutter);
-                }
-            } catch (e) { /* ignore */ }
-            const topPx = isTop ? (hudSameCorner ? 56 : 44) : 12;
-            el.style.left = onRight ? 'auto' : '12px';
-            el.style.right = onRight ? '12px' : 'auto';
-            el.style.top = isTop ? topPx + 'px' : 'auto';
-            el.style.bottom = isTop ? 'auto' : '12px';
-            el.style.flexDirection = isTop ? 'column' : 'row';
-            el.style.alignItems = onRight ? 'flex-end' : 'flex-start';
-            el.style.flexWrap = isTop ? 'nowrap' : 'wrap';
-            el.style.maxWidth = isTop ? '' : 'min(70vw, 640px)';
-            // A column that would run into the send form shrinks every chip.
-            if (isTop && castChips.size > 1) {
-                const avail = window.innerHeight - topPx - 90;
-                const needed = castChips.size * (size + 26);
-                if (needed > avail) size = Math.max(48, Math.floor(avail / castChips.size) - 26);
-            }
             el.dataset.chipStyle = settings.chipStyle || 'fade';
-            el.style.setProperty('--scene-director-chip-size', size + 'px');
+            el.style.setProperty('--scene-director-chip-max', maxVh + 'vh');
+            if (isTop) {
+                // 0.5.2: a fixed box filling the gutter between #sheld and the
+                // viewport edge (2000px window, 1000px centred chat -> right
+                // side x in [1512, 2000]); chips are max-width:100% /
+                // height:auto inside it, so they can never cover the chat.
+                // Gutter < 110px -> compact 48px circles instead.
+                const sheld = document.getElementById('sheld');
+                const r = sheld ? sheld.getBoundingClientRect() : null;
+                let left; let right;
+                if (r && r.width > 0) {
+                    left = onRight ? Math.round(r.right + 12) : 0;
+                    right = onRight ? 0 : Math.max(0, Math.round(window.innerWidth - r.left + 12));
+                } else {
+                    left = onRight ? Math.round(window.innerWidth * 0.75) : 0;
+                    right = onRight ? 0 : Math.round(window.innerWidth * 0.75);
+                }
+                const gutter = window.innerWidth - left - right;
+                const compact = gutter < 110;
+                el.dataset.compact = compact ? '1' : '0';
+                const topPx = hudSameCorner ? 56 : 44;
+                el.style.top = topPx + 'px';
+                el.style.bottom = 'auto';
+                el.style.left = compact ? (onRight ? 'auto' : '12px') : left + 'px';
+                el.style.right = compact ? (onRight ? '12px' : 'auto') : right + 'px';
+                el.style.width = compact ? 'auto' : Math.max(0, gutter) + 'px';
+                el.style.maxWidth = '';
+                el.style.padding = compact ? '0' : '0 12px';
+                el.style.boxSizing = 'border-box';
+                el.style.flexDirection = 'column';
+                el.style.alignItems = onRight ? 'flex-end' : 'flex-start';
+                el.style.flexWrap = 'nowrap';
+                el.style.maxHeight = (window.innerHeight - topPx - 90) + 'px';
+                el.style.overflow = 'hidden';
+                if (!compact && castChips.size > 1) {
+                    const avail = window.innerHeight - topPx - 90;
+                    const per = avail / castChips.size - 26;
+                    const capVh = Math.max(8, Math.min(maxVh, per / vh));
+                    el.style.setProperty('--scene-director-chip-max', capVh.toFixed(1) + 'vh');
+                }
+            } else {
+                el.dataset.compact = '0';
+                el.style.top = 'auto';
+                el.style.bottom = '12px';
+                el.style.left = onRight ? 'auto' : '12px';
+                el.style.right = onRight ? '12px' : 'auto';
+                el.style.width = 'auto';
+                el.style.padding = '0';
+                el.style.maxWidth = 'min(70vw, 640px)';
+                el.style.maxHeight = '';
+                el.style.overflow = '';
+                el.style.flexDirection = 'row';
+                el.style.alignItems = 'flex-end';
+                el.style.flexWrap = 'wrap';
+            }
         } catch (e) { /* ignore */ }
     }
 
@@ -1628,6 +1713,14 @@
             stripResizeObserver = new ResizeObserver(rerun);
             stripResizeObserver.observe(sheld);
             window.addEventListener('resize', rerun);
+            // The chat-width slider / movable panels move #sheld too.
+            try {
+                const ctx = SillyTavern.getContext();
+                const et = ctx.eventTypes || ctx.event_types || {};
+                for (const k of ['MOVABLE_PANELS_RESET', 'SETTINGS_UPDATED', 'SETTINGS_LOADED_AFTER']) {
+                    if (et[k]) ctx.eventSource.on(et[k], function () { sdTimeout(rerun, 50); });
+                }
+            } catch (e) { /* ignore */ }
         } catch (e) { /* ignore */ }
     }
 
@@ -1648,12 +1741,30 @@
     // theme's alpha and the slider, so a theme that is already more
     // transparent is left alone.
     const THEME_TINT_RE = /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:[\s,/]+([\d.]+))?\s*\)/;
+    const GLASS_CSS = `body.scene-director-chat-glass #chat {
+    background-color: rgba(var(--scene-director-chat-tint-rgb, 0, 0, 0),
+        var(--scene-director-chat-alpha, 0.55)) !important;
+}
+body.scene-director-chat-glass.scene-director-chat-noblur #chat {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}`;
     function applyChatGlass(settings) {
         try {
             const on = Boolean(settings.enableChatGlass);
             document.body.classList.toggle('scene-director-chat-glass', on);
             document.body.classList.toggle('scene-director-chat-noblur', on && !settings.chatBlur);
-            if (!on) return;
+            let st = document.getElementById('scene-director-glass-style');
+            if (!on) {
+                if (st) st.remove(); // off = no chat rule injected at all
+                return;
+            }
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'scene-director-glass-style';
+                st.textContent = GLASS_CSS;
+                document.head.appendChild(st);
+            }
             let rgb = '0, 0, 0';
             let themeAlpha = 1;
             try {
@@ -1709,8 +1820,13 @@
         if (mood !== 'neutral') {
             bubbleEl = document.createElement('div');
             bubbleEl.className = 'scene-director-mood-bubble';
-            bubbleEl.textContent = MOOD_EMOJI[mood];
+            bubbleEl.textContent = (settings.moodEmoji && settings.moodEmoji[mood]) || MOOD_EMOJI[mood];
             wrap.appendChild(bubbleEl);
+            // 0.5.2: linger, then fade (opacity-only, tracked timeouts).
+            const ms = (Number(settings.bubbleSeconds) || 6) * 1000;
+            const b = bubbleEl;
+            sdTimeout(function () { b.classList.add('scene-director-bubble-out'); }, ms);
+            sdTimeout(function () { try { b.remove(); } catch (e) { /* ignore */ } }, ms + 700);
         }
         const label = document.createElement('div');
         label.className = 'scene-director-chip-label';
@@ -1938,12 +2054,47 @@
             if (my !== assertSeq) return;
             if (spriteIsBlank() && tries < 4) {
                 tries++;
-                try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* ignore */ }
-                console.log(`${LOG} sprite was blank -> re-asserted /emote ${label} (${tries})`);
+                // The label may not exist in the active costume folder —
+                // after two misses fall back to neutral.
+                const use = tries >= 3 ? 'neutral' : label;
+                try { await runCommand(ctx, `/emote ${use}`); } catch (e) { /* ignore */ }
+                console.log(`${LOG} sprite was blank -> re-asserted /emote ${use} (${tries})`);
+                spriteDebug(ctx, use);
             }
             if (tries < 4) sdTimeout(check, 1500);
         };
         sdTimeout(check, 1200);
+    }
+
+    /** 0.5.2 diagnostics printed when a re-assert was needed. */
+    async function spriteDebug(ctx, label) {
+        try {
+            const img = currentSpriteImg();
+            let folder = null;
+            try {
+                const ch = (ctx.characters || [])[ctx.characterId];
+                const ov = ((ctx.extensionSettings || {}).expressionOverrides || [])
+                    .find(function (o) { return ch && o.name === ch.avatar; });
+                folder = ov ? ov.path : (ctx.name2 || null);
+            } catch (e) { /* ignore */ }
+            let count = 'n/a';
+            let hasLabel = 'n/a';
+            if (folder) {
+                const r = await fetch('/api/sprites/get?name=' + encodeURIComponent(folder));
+                const list = r.ok ? await r.json() : [];
+                count = list.length;
+                hasLabel = list.some(function (x) { return x.label === label; });
+            }
+            const holder = document.getElementById('expression-holder');
+            console.log(`${LOG} sprite-debug`, {
+                img: img ? ('#' + (img.id || '?') + '.' + (img.className || '')) : '(no img)',
+                src: img ? img.getAttribute('src') : null,
+                holderDisplay: holder ? getComputedStyle(holder).display : null,
+                overrideFolder: folder, spritesListed: count, folderHasLabel: hasLabel, wanted: label,
+                fallback: (ctx.extensionSettings.expressions || {}).fallback_expression,
+                api: (ctx.extensionSettings.expressions || {}).api,
+            });
+        } catch (e) { console.log(`${LOG} sprite-debug failed`, e); }
     }
 
     /** Last [MOOD:] tag in the loaded chat (scans back a few AI messages). */
@@ -1976,6 +2127,7 @@
             const label = detectMoodTag(rawText);
             if (!label) return;
             stripMoodTagFromDom();
+            sdTimeout(function () { showMainMoodEmoji(label, settings); }, 400);
             await assertExpression(ctx, label);
             console.log(`${LOG} mood tag -> /emote ${label}`);
         } catch (e) {
@@ -2760,6 +2912,13 @@
             }
             return null;
         },
+        moodEmoji(value) {
+            if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be a JSON object of label -> emoji';
+            for (const k of Object.keys(value)) {
+                if (typeof value[k] !== 'string') return `"${k}" must be a string`;
+            }
+            return null;
+        },
         counters(value) {
             if (!Array.isArray(value)) return 'must be a JSON array';
             for (const [i, e] of value.entries()) {
@@ -2821,6 +2980,7 @@
         ['eraRules', 'Era rules', '[{"minYear": 2027, "pattern": "build site", "from": "frame.jpg", "to": "finished.jpg"}]'],
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
         ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
+        ['moodEmoji', 'Mood bubble emoji', '{"joy": "✨", "anger": "💢", "happy": "✨", "angry": "💢", "sad": "💧"} — label -> emoji shown in the thought bubble after a reply (NPC chips use happy/angry/sad)'],
         ['counters', 'Life counters', '[{"label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days"}] — computed from the parsed STORY date; "weeks" renders as 6w2d'],
     ];
 
@@ -2936,6 +3096,7 @@
                         <input type="range" id="sd_chatOpacity" min="0" max="100" step="5" style="flex:1;" title="Chat panel background opacity" />
                         <span id="sd_chatOpacityVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
+                    <small class="scene-director-help">Tip: for translucent chat use ST's User Settings → UI Theme → Blur Tint colour alpha — the glass above is only for when you want it independent of the theme.</small>
 
                     <div class="scene-director-section">Scan my chat</div>
                     <small class="scene-director-help">Reads the current chat and suggests cast &amp; place cards from what your story already contains.</small>
@@ -3109,7 +3270,7 @@
         }
 
         for (const [key] of JSON_FIELDS) {
-            const raw = document.getElementById(`sd_${key}`).value.trim() || (key === 'moodKeywords' ? '{}' : '[]');
+            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : '[]');
             let parsed;
             try {
                 parsed = JSON.parse(raw);
@@ -3362,6 +3523,10 @@
         holder.innerHTML = buildSettingsHtml();
         panel.appendChild(holder.firstElementChild);
         loadSettingsIntoForm();
+        try {
+            const content = document.querySelector('#scene_director_settings .inline-drawer-content');
+            console.log(`${LOG} settings drawer registered in #${panel.id}: ${content ? content.querySelectorAll('input, select, textarea').length : 0} controls`);
+        } catch (e) { /* ignore */ }
         document.getElementById('sd_apply').addEventListener('click', applyForm);
         document.getElementById('sd_test').addEventListener('click', testLastMessage);
         wireCardUi();
@@ -3398,7 +3563,7 @@
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            console.log(`${LOG} loaded (v0.5.1)`);
+            console.log(`${LOG} loaded (v0.5.2)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }
