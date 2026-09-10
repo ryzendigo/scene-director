@@ -104,6 +104,18 @@
  *   - Sprite: after two blank re-asserts the replay falls back to neutral
  *     (a costume subfolder may lack the label) and logs a sprite-debug line.
  *
+ * v0.5.3:
+ *
+ *   - Presence tightened: hex = only strong evidence; name/alias needs a
+ *     cue within ~40 chars and no phone/absence context in the sentence;
+ *     kinship aliases (cast card field) never count alone; every chip
+ *     add/remove is logged with its evidence.
+ *   - Thought Tooltips: hover the sprite or a chip for bio, mood emoji and
+ *     the last sentences about that character's inner state.
+ *   - Flicker-free None-classifier path: fallback label kept equal to the
+ *     mood on screen (only when the user already runs api=None with a
+ *     fallback set); idle neutral variants come from /api/sprites/get.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -186,6 +198,12 @@
             happy: '✨', angry: '💢', sad: '💧',
         },
         bubbleSeconds: 6,
+
+        // v0.5.3 presence + thought tooltips (regex sources, 'i' flag).
+        presenceCueRegex: 'enter(?:s|ed)?|walk(?:s|ed)? in|walk(?:s|ed)? over|com(?:es|ing) in|came in|appear(?:s|ed)|opens? the door|opened the door|arriv(?:es|ed|ing)|join(?:s|ed)|sits?|sat|sitting|seated|stands?|stood|standing|is (?:there|here)|was (?:there|here)|beside|next to|across (?:from|the table)|opposite|lean(?:s|ed|ing)|steps? (?:in|closer|forward)|says?|said|asks?|asked|replie[sd]|murmur(?:s|ed)|whisper(?:s|ed)|nods?|nodded|smil(?:es|ed)|frowns?|glanc(?:es|ed)|looks? (?:up|over|at)|watch(?:es|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|turn(?:s|ed) to',
+        absenceContextRegex: 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|miss(?:es|ed|ing)?|remember(?:s|ed|ing)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|tell(?:s|ing)?|told|mention(?:s|ed)?|about|wonder(?:s|ed|ing)?|wish(?:es|ed)?|promised?|later|tomorrow|afterwards',
+        enableThoughtTips: true,
+        interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
@@ -293,10 +311,18 @@
         'nervousness', 'optimism', 'pride', 'realization', 'relief',
         'remorse', 'sadness', 'surprise', 'neutral'];
     const EXPRESSION_LABEL_SET = new Set(EXPRESSION_LABELS);
-    // v0.5.0 presence semantics: in-scene evidence for name-regex hits, and
-    // explicit departures. A bare mention never summons a chip.
-    const PRESENT_CUE_RE = /\b(?:says?|said|asks?|asked|replie[sd]|answer(?:s|ed)|murmur(?:s|ed)|whisper(?:s|ed)|mutter(?:s|ed)|calls? out|greets?|greeted|nods?|nodded|smil(?:es|ed|ing)|laugh(?:s|ed|ing)|chuckl(?:es|ed)|sigh(?:s|ed)|shrugs?|frowns?|glanc(?:es|ed|ing)|look(?:s|ed)? (?:up|over|at)|watch(?:es|ed|ing)|step(?:s|ped)? (?:in|inside|closer|forward)|enter(?:s|ed)|arriv(?:es|ed|ing)|walk(?:s|ed)? (?:in|over)|com(?:es|ing) (?:in|over)|came (?:in|over)|join(?:s|ed)|sits?|sat|sitting|seated|settl(?:es|ed)|stands?|stood|standing|lean(?:s|ed|ing)|beside|next to|across from|opposite|waits?|waiting|hand(?:s|ed) (?:her|him|you|them)|holds? out|reach(?:es|ed)|ris(?:es|ing)|rose|turn(?:s|ed) to)\b/i;
+    // v0.5.3 presence: the dialogue-colour hex is the only STRONG evidence;
+    // a name (or kinship alias) counts only with a presence/arrival/speech
+    // cue within ~40 chars AND outside a phone/absence sentence ("ring the aunt
+    // later" summons nobody). Cue/absence regexes are settings.
     const DEPART_RE = /\b(?:leaves|left|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|departs?|departed|head(?:s|ed) (?:out|off|home)|goodbye|good night)\b/i;
+    const SENTENCE_SPLIT_RE = /[.!?\n]/;
+    function sentenceAround(text, idx) {
+        let a2 = idx; let b2 = idx;
+        while (a2 > 0 && !SENTENCE_SPLIT_RE.test(text[a2 - 1])) a2--;
+        while (b2 < text.length && !SENTENCE_SPLIT_RE.test(text[b2])) b2++;
+        return text.slice(a2, b2);
+    }
     const PRESENCE_MISS_LIMIT = 3;
 
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
@@ -404,6 +430,7 @@
                     if (m.bio === undefined) m.bio = '';
                     if (m.avatar === undefined) m.avatar = '';
                     if (m.moodVariants === undefined) m.moodVariants = false;
+                    if (m.aliasRegex === undefined) m.aliasRegex = '';
                 }
             }
         } catch (e) {
@@ -647,35 +674,47 @@
         let speakerPos = -1;
         if (!scene.text) return { present, speakerKey };
         const lower = scene.lower;
+        const cueRe = compileRegex(settings.presenceCueRegex ? '\\b(?:' + settings.presenceCueRegex + ')\\b' : '');
+        const absRe = compileRegex(settings.absenceContextRegex ? '\\b(?:' + settings.absenceContextRegex + ')\\b' : '');
         for (const member of settings.cast) {
             let pos = -1;
             let hit = false;
             let hitAt = -1;
+            let evidence = null;
             if (member.colorHex) {
                 pos = lower.lastIndexOf(member.colorHex.toLowerCase());
-                if (pos >= 0) { hit = true; hitAt = pos; }
+                if (pos >= 0) { hit = true; hitAt = pos; evidence = 'hex ' + member.colorHex; }
             }
-            // v0.5.0: a name-regex match alone is only a MENTION — it needs
-            // a presence cue (speech attribution / physical action) nearby
-            // to count as being in the scene.
-            if (!hit && member.nameRegex) {
-                const re = compileRegex(member.nameRegex);
-                const m = re ? re.exec(scene.text) : null;
-                if (m) {
-                    const win = scene.text.slice(Math.max(0, m.index - 40),
-                        Math.min(scene.text.length, m.index + m[0].length + 160));
-                    if (PRESENT_CUE_RE.test(win)) { hit = true; hitAt = m.index; }
+            // Name or alias: only with a cue within ~40 chars, never inside
+            // a phone/absence sentence.
+            if (!hit && cueRe) {
+                for (const src of [member.nameRegex, member.aliasRegex]) {
+                    if (!src || hit) continue;
+                    const g = compileRegex(src, 'gi');
+                    if (!g) continue;
+                    g.lastIndex = 0;
+                    let m;
+                    while ((m = g.exec(scene.text)) !== null) {
+                        if (m.index === g.lastIndex) g.lastIndex++;
+                        if (absRe && absRe.test(sentenceAround(scene.text, m.index))) continue;
+                        const win = scene.text.slice(Math.max(0, m.index - 40),
+                            Math.min(scene.text.length, m.index + m[0].length + 40));
+                        const cue = cueRe.exec(win);
+                        if (cue) { hit = true; hitAt = m.index; evidence = `cue "${cue[0]}" near "${m[0]}"`; break; }
+                    }
                 }
             }
             if (hit) {
-                // Explicit departure right after the evidence = gone now.
                 const win = scene.text.slice(hitAt,
                     Math.min(scene.text.length, hitAt + 160));
-                if (DEPART_RE.test(win)) {
+                const dep = DEPART_RE.exec(win);
+                if (dep) {
+                    if (castPresence.has(member.key)) console.log(`${LOG} cast -${member.key} (departure "${dep[0]}")`);
                     castPresence.delete(member.key);
                     continue;
                 }
-                present.push({ member, pos });
+                if (!castPresence.has(member.key)) console.log(`${LOG} cast +${member.key} (${evidence})`);
+                present.push({ member, pos, evidence });
             }
             if (member.colorHex && pos > speakerPos) {
                 speakerPos = pos;
@@ -1502,12 +1541,14 @@
     }
 
     function getNeutralVariants(folder, ext) {
+        // v0.5.3: from the server's sprite list (no 404 probes).
         const cacheKey = folder + '|' + ext;
         if (!neutralVariantCache[cacheKey]) {
-            const names = ['neutral', 'neutral-1', 'neutral-2', 'neutral-3'];
-            neutralVariantCache[cacheKey] = Promise.all(
-                names.map(function (n) { return verifyImageUrl(folder + n + ext); })
-            ).then(function (urls) { return urls.filter(Boolean); });
+            const apiName = decodeURIComponent(folder.replace(/^\/characters\//, '').replace(/\/$/, ''));
+            neutralVariantCache[cacheKey] = spriteList(apiName).then(function (list) {
+                return list.filter(function (x) { return x.label === 'neutral'; })
+                    .map(function (x) { return x.path.split('?')[0]; });
+            });
         }
         return neutralVariantCache[cacheKey];
     }
@@ -1526,7 +1567,8 @@
             const { folder, ext } = spriteFolderAndExt(img.src);
             const variants = await getNeutralVariants(folder, ext);
             if (!variants || variants.length < 2) return;
-            const others = variants.filter(function (u) { return u !== img.src; });
+            const curPath = (img.getAttribute('src') || '').split('?')[0];
+            const others = variants.filter(function (u) { return u !== curPath && !img.src.endsWith(u); });
             if (!others.length) return;
             if (generating || Date.now() - lastActivityTs < (Number(settings.idleAfterSeconds) || 90) * 1000) return;
             const cur = currentSpriteImg();
@@ -1613,6 +1655,125 @@
 
     // key -> { el, imgEl, bubbleEl, labelEl, mood, speaking, src }
     const castChips = new Map();
+
+    // ------------------------------------------------------------------
+    // v0.5.3 thought tooltips — hover the sprite or a chip: bio line, mood
+    // emoji, and the last 1–2 sentences about the character's inner state
+    // (regex over the last AI message + its reasoning; cached per message).
+    // ------------------------------------------------------------------
+
+    const SENTENCE_RE = /[^.!?\n]+[.!?]?/g;
+    const PRONOUN_RE = /^\s*(?:she|her|he|his|him|they|their)\b/i;
+    const thoughtCache = { key: null, map: new Map() };
+
+    function thoughtsFor(key, nameRe, aliasRe, settings) {
+        try {
+            const ctx = SillyTavern.getContext();
+            const chat = ctx.chat || [];
+            let last = null; let idx = -1;
+            for (let i = chat.length - 1; i >= 0; i--) {
+                const m = chat[i];
+                if (m && !m.is_user && !m.is_system && m.mes) { last = m; idx = i; break; }
+            }
+            if (!last) return '';
+            const ck = idx + ':' + (last.mes || '').length + ':' + (last.swipe_id || 0);
+            if (thoughtCache.key !== ck) { thoughtCache.key = ck; thoughtCache.map.clear(); }
+            if (thoughtCache.map.has(key)) return thoughtCache.map.get(key);
+            const interRe = compileRegex(settings.interiorityRegex ? '\\b(?:' + settings.interiorityRegex + ')\\b' : '');
+            let raw = last.mes || '';
+            const reasoning = last.extra && last.extra.reasoning;
+            if (reasoning) raw = String(reasoning) + '\n' + raw;
+            raw = raw.replace(/<[^>]+>/g, '');
+            const text = raw.length > MAX_SCAN ? raw.slice(0, MAX_SCAN) : raw;
+            const hits = [];
+            let prevAbout = false;
+            SENTENCE_RE.lastIndex = 0;
+            let m;
+            while ((m = SENTENCE_RE.exec(text)) !== null) {
+                const sent = m[0].trim();
+                if (!sent) continue;
+                let about = (nameRe && nameRe.test(sent)) || (aliasRe && aliasRe.test(sent));
+                if (!about && prevAbout && PRONOUN_RE.test(sent)) about = true;
+                prevAbout = Boolean(nameRe && nameRe.test(sent));
+                if (about && interRe && interRe.test(sent)) hits.push(sent);
+            }
+            let out = hits.slice(-2).join(' ');
+            if (out.length > 220) out = out.slice(0, 217).replace(/\s+\S*$/, '') + '…';
+            thoughtCache.map.set(key, out);
+            return out;
+        } catch (e) { return ''; }
+    }
+
+    let tipTimer = null;
+    function tooltipEl() {
+        let tip = document.getElementById('scene-director-thought-tip');
+        if (!tip) {
+            tip = document.createElement('div');
+            tip.id = 'scene-director-thought-tip';
+            document.body.appendChild(tip);
+        }
+        return tip;
+    }
+    function showThoughtTip(anchorEl, opts) {
+        try {
+            const settings = getSettings();
+            if (!settings.enableThoughtTips) return;
+            const tip = tooltipEl();
+            tip.innerHTML = '';
+            const head = el('div', 'sd-tip-head', opts.label + (opts.emoji ? ' ' + opts.emoji : ''));
+            tip.appendChild(head);
+            const bioEl = el('div', 'sd-tip-bio', '');
+            tip.appendChild(bioEl);
+            if (opts.extra) tip.appendChild(el('div', 'sd-tip-extra', opts.extra));
+            const t = thoughtsFor(opts.key, opts.nameRe, opts.aliasRe, settings);
+            tip.appendChild(el('div', 'sd-tip-body', t || '(nothing written about their inner state in the last reply)'));
+            if (opts.bio) {
+                opts.bio.then(function (line) { if (line && tip.contains(bioEl)) bioEl.textContent = String(line); })
+                    .catch(function () { /* ignore */ });
+            }
+            const r = anchorEl.getBoundingClientRect();
+            tip.style.display = 'block';
+            tip.style.opacity = '0';
+            const w = tip.offsetWidth; const h = tip.offsetHeight;
+            let left = r.left + r.width / 2 - w / 2;
+            left = Math.max(8, Math.min(window.innerWidth - w - 8, left));
+            let top = r.top - h - 10;
+            if (top < 8) top = Math.min(window.innerHeight - h - 8, r.bottom + 10);
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
+            requestAnimationFrame(function () { tip.style.opacity = '1'; });
+        } catch (e) { /* ignore */ }
+    }
+    function hideThoughtTip() {
+        try {
+            const tip = document.getElementById('scene-director-thought-tip');
+            if (!tip) return;
+            tip.style.opacity = '0';
+            if (tipTimer) clearTimeout(tipTimer);
+            tipTimer = setTimeout(function () { tip.style.display = 'none'; }, 250);
+        } catch (e) { /* ignore */ }
+    }
+    let spriteHoverWired = false;
+    function setupSpriteHover() {
+        if (spriteHoverWired) return;
+        const holder = document.getElementById('expression-holder');
+        if (!holder) return;
+        spriteHoverWired = true;
+        holder.addEventListener('mouseenter', function () {
+            const settings = getSettings();
+            const img = currentSpriteImg();
+            if (!img || !img.getAttribute('src')) return;
+            const ctx = SillyTavern.getContext();
+            const name = ctx.name2 || 'Character';
+            const nameRe = compileRegex('\\b' + name.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&') + '\\b');
+            showThoughtTip(img, {
+                key: 'main:' + name, label: name, nameRe, aliasRe: null,
+                emoji: (settings.moodEmoji && settings.moodEmoji[lastMoodLabel]) || '',
+                extra: lastMoodLabel ? 'mood: ' + lastMoodLabel : null, bio: null,
+            });
+        });
+        holder.addEventListener('mouseleave', hideThoughtTip);
+    }
 
     function castStripEl(create) {
         let el = document.getElementById('scene-director-cast-strip');
@@ -1833,7 +1994,17 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         label.textContent = member.label;
         wrap.appendChild(img);
         wrap.appendChild(label);
-        if (settings.enableBioCards) {
+        if (settings.enableThoughtTips) {
+            wrap.addEventListener('mouseenter', function () {
+                showThoughtTip(wrap, {
+                    key: member.key, label: member.label,
+                    nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
+                    emoji: mood !== 'neutral' ? ((settings.moodEmoji && settings.moodEmoji[mood]) || MOOD_EMOJI[mood]) : '',
+                    extra: null, bio: settings.enableBioCards ? bioLineFor(member, settings) : null,
+                });
+            });
+            wrap.addEventListener('mouseleave', hideThoughtTip);
+        } else if (settings.enableBioCards) {
             const label2 = member.label;
             wrap.addEventListener('mouseenter', function () {
                 bioLineFor(member, settings).then(function (line) {
@@ -1854,7 +2025,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         // v0.5.0: a location change clears presence entirely — the strip
         // rebuilds from speaking evidence at the new location.
         if (scene.location && presenceLoc && scene.location !== presenceLoc) {
-            castPresence.clear();
+            for (const [k] of castPresence) console.log(`${LOG} cast -${k} (location change)`);
+            castPresence.clear(); // hard reset — no grace across a move
         }
         if (scene.location) presenceLoc = scene.location;
         const { present, speakerKey } = analyzeCast(scene, settings);
@@ -1867,6 +2039,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (nowKeys.has(k)) continue;
             const next = miss + 1;
             if (next >= PRESENCE_MISS_LIMIT) {
+                console.log(`${LOG} cast -${k} (absent ${next} messages)`);
                 castPresence.delete(k);
                 continue;
             }
@@ -2044,10 +2217,48 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         const img = currentSpriteImg();
         return !img || !img.getAttribute('src');
     }
+    // v0.5.3: sprite folder listings via /api/sprites/get, cached per folder.
+    const spriteListCache = new Map();
+    function spriteList(folder) {
+        if (!folder) return Promise.resolve([]);
+        let pr = spriteListCache.get(folder);
+        if (!pr) {
+            pr = fetch('/api/sprites/get?name=' + encodeURIComponent(folder))
+                .then(function (r) { return r.ok ? r.json() : []; })
+                .catch(function () { return []; });
+            spriteListCache.set(folder, pr);
+        }
+        return pr;
+    }
+    function activeSpriteFolder(ctx) {
+        try {
+            const ch = (ctx.characters || [])[ctx.characterId];
+            const ov = ((ctx.extensionSettings || {}).expressionOverrides || [])
+                .find(function (o) { return ch && o.name === ch.avatar; });
+            return ov ? ov.path : (ctx.name2 || null);
+        } catch (e) { return null; }
+    }
+    // With the classifier set to None, ST resolves its '' path to
+    // fallback_expression; keeping that equal to the mood on screen makes the
+    // path pick the same file (setExpression skips an identical src) — no
+    // flicker while streaming. Only touched when the user already runs the
+    // None classifier (api 99) with a fallback set; never otherwise.
+    async function syncFallback(ctx, label) {
+        try {
+            const es = ctx.extensionSettings && ctx.extensionSettings.expressions;
+            if (!es || es.api !== 99 || !es.fallback_expression) return;
+            const list = await spriteList(activeSpriteFolder(ctx));
+            const has = list.some(function (x) { return x.label === label; });
+            const want = has ? label : 'neutral';
+            if (es.fallback_expression !== want) { es.fallback_expression = want; saveSettings(); }
+        } catch (e) { /* ignore */ }
+    }
+
     async function assertExpression(ctx, label) {
         if (!label) return;
         const my = ++assertSeq;
         lastMoodLabel = label;
+        syncFallback(ctx, label);
         try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* retried below */ }
         let tries = 0;
         const check = async function () {
@@ -2173,6 +2384,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
             // v0.5.0: re-measure for auto chip size + keep the corners set.
             try { applyStripAppearance(settings); } catch (e) { /* ignore */ }
+            try { setupSpriteHover(); } catch (e) { /* ignore */ }
             if (settings.enableEmotionAccents) {
                 try { sdTimeout(function () { fireEmotionAccent(settings); }, 1500); } catch (e) { /* ignore */ }
             }
@@ -2506,6 +2718,19 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         });
         row2.appendChild(regexIn);
         main.appendChild(row2);
+
+        const rowAlias = el('div', 'scene-director-card-row');
+        const aliasIn = input('sd-card-regex', member.aliasRegex || '', 'kinship alias regex (optional, e.g. mum|mama)',
+            'Aliases count only next to a presence cue, never alone');
+        aliasIn.addEventListener('change', function () {
+            const v = aliasIn.value.trim();
+            if (v && !compileRegex(v)) { aliasIn.classList.add('sd-invalid'); return; }
+            aliasIn.classList.remove('sd-invalid');
+            member.aliasRegex = v;
+            commitCards();
+        });
+        rowAlias.appendChild(aliasIn);
+        main.appendChild(rowAlias);
 
         const row3 = el('div', 'scene-director-card-row');
         const bioIn = input('sd-card-bio', member.bio || '', 'one-line bio (hover card)',
@@ -2957,6 +3182,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
+        ['enableThoughtTips', 'Thought Tooltips', 'Hover the sprite or a cast chip: bio line, mood emoji and the last sentences the model wrote about that character\'s inner state (regex over the last reply + its reasoning; no AI calls)'],
         ['enableMoodTag', 'Inline Mood Tag', 'Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
 
@@ -2967,6 +3193,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['weatherRegex', 'Weather regex', 'Group 1 = weather text, matched against the header line (default: last |-separated segment)'],
         ['rainRegex', 'Rain regex', 'Matched against the lowercased weather text — triggers the rain tint and streaks'],
         ['fireRegex', 'Fire regex', 'Matched against the APPLIED background filename — triggers the fire flicker overlay'],
+        ['presenceCueRegex', 'Presence cue regex', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
+        ['absenceContextRegex', 'Absence context regex', 'Cast Strip: a sentence containing any of these (ring, call, remember, about…) never summons a chip'],
+        ['interiorityRegex', 'Interiority regex', 'Thought tooltips: sentences naming a character AND one of these verbs are shown on hover'],
     ];
 
     const NUMBER_FIELDS = [
@@ -3563,7 +3792,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            console.log(`${LOG} loaded (v0.5.2)`);
+            console.log(`${LOG} loaded (v0.5.3)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

@@ -686,3 +686,18 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 }
 .scene-director-dots i:nth-child(2) { animation-delay: 0.2s; }
 .scene-director-dots i:nth-child(3) { animation-delay: 0.4s; }
+
+/* ---- 0.5.3: thought tooltip card ---- */
+#scene-director-thought-tip {
+    position: fixed; z-index: 2600; display: none; opacity: 0;
+    max-width: 280px; padding: 9px 11px; border-radius: 10px;
+    background: rgba(15, 15, 22, 0.94); color: #fff;
+    font-size: 13px; line-height: 1.4; pointer-events: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    transition: opacity 0.2s ease;
+}
+#scene-director-thought-tip .sd-tip-head { font-weight: 600; font-size: 14px; }
+#scene-director-thought-tip .sd-tip-bio { opacity: 0.7; font-size: 12px; margin: 1px 0 5px; }
+#scene-director-thought-tip .sd-tip-bio:empty { display: none; }
+#scene-director-thought-tip .sd-tip-extra { opacity: 0.8; font-size: 12px; margin-bottom: 4px; }
+#scene-director-thought-tip .sd-tip-body { opacity: 0.92; font-style: italic; }
