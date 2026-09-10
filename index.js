@@ -2228,43 +2228,77 @@
         return false;
     }
 
+    // 0.6.1: prefetch through a small queue (concurrency 2, ~150 ms spacing,
+    // one retry after 5 s; 502/503 are transient and silent) — a burst on
+    // chat load can overwhelm a reverse proxy in front of ST. Order: the
+    // current place's slots, then the day trail's places by recency, then
+    // the rest. Starts only after the first real background has applied.
+    const prefetchDone = new Set();
+    let prefetchRunning = false;
+    function placeFiles(place) {
+        const slots = place.slots || {};
+        return ['day', 'night', 'dusk', 'rain', 'seasonal'].map(function (k) { return slots[k]; }).filter(Boolean);
+    }
+    function prefetchOrder(settings) {
+        const ordered = [];
+        const push = function (f) { if (f && !ordered.includes(f)) ordered.push(f); };
+        const placeFor = function (loc) {
+            for (const p of settings.places) { const re = compileRegex(p.pattern); if (re && re.test(loc)) return p; }
+            return null;
+        };
+        if (lastParsedLoc) { const p = placeFor(lastParsedLoc); if (p) placeFiles(p).forEach(push); }
+        for (const loc of trailLocs.slice().reverse()) { const p = placeFor(loc); if (p) placeFiles(p).forEach(push); }
+        for (const p of settings.places) placeFiles(p).forEach(push);
+        for (const e of settings.backgroundMap) push(e.background);
+        for (const sw of settings.seasonalMap) push(sw.to);
+        for (const r of settings.eraRules) push(r.to);
+        return ordered.filter(function (f) { return !prefetchDone.has(f); });
+    }
+    async function prefetchOne(file, attempt) {
+        const url = 'backgrounds/' + encodeURIComponent(file);
+        try {
+            const r = await fetch(url, { credentials: 'same-origin' });
+            if (r.ok) { prefetchDone.add(file); return; }
+            if ((r.status === 502 || r.status === 503) && !attempt) {
+                await new Promise(function (res) { sdTimeout(res, 5000); });
+                return prefetchOne(file, 1);
+            }
+            dbg('prefetch ' + file + ' -> HTTP ' + r.status);
+        } catch (e) {
+            if (!attempt) { await new Promise(function (res) { sdTimeout(res, 5000); }); return prefetchOne(file, 1); }
+            dbg('prefetch ' + file + ' failed');
+        }
+    }
+    async function runPrefetchQueue(settings) {
+        if (prefetchRunning) return;
+        prefetchRunning = true;
+        try {
+            const files = prefetchOrder(settings);
+            let i = 0;
+            const worker = async function () {
+                while (i < files.length) {
+                    await prefetchOne(files[i++], 0);
+                    await new Promise(function (res) { sdTimeout(res, 150); });
+                }
+            };
+            await Promise.all([worker(), worker()]); // concurrency 2
+            dbg('prefetched ' + prefetchDone.size + ' backgrounds');
+        } finally { prefetchRunning = false; }
+    }
     function schedulePreload(settings) {
         try {
-            if (!settings.enablePreload) return;
+            if (!settings.enablePreload || !lastBg || mapPreloaded) return;
             if (connectionIsSlow()) return;
+            mapPreloaded = true;
             const run = function () {
+                runPrefetchQueue(settings);
                 try {
-                    if (!mapPreloaded) {
-                        mapPreloaded = true;
-                        const files = new Set();
-                        for (const p of settings.places) {
-                            const slots = p.slots || {};
-                            for (const k of ['day', 'night', 'dusk', 'rain', 'seasonal']) {
-                                if (slots[k]) files.add(slots[k]);
-                            }
-                        }
-                        for (const e of settings.backgroundMap) files.add(e.background);
-                        for (const s of settings.seasonalMap) files.add(s.to);
-                        for (const r of settings.eraRules) files.add(r.to);
-                        files.forEach(function (f) {
-                            if (!f) return;
-                            const im = new Image();
-                            im.src = 'backgrounds/' + encodeURIComponent(f);
-                        });
-                        dbg(`prefetched ${files.size} backgrounds`);
-                    }
                     const img = currentSpriteImg();
-                    if (img && img.src) {
-                        const { folder, ext } = spriteFolderAndExt(img.src);
-                        getNeutralVariants(folder, ext);
-                    }
+                    if (img && img.src) { const { folder, ext } = spriteFolderAndExt(img.src); getNeutralVariants(folder, ext); }
                 } catch (e) { /* ignore */ }
             };
-            if (typeof requestIdleCallback === 'function') {
-                requestIdleCallback(run, { timeout: 10000 });
-            } else {
-                sdTimeout(run, 5000);
-            }
+            if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 10000 });
+            else sdTimeout(run, 5000);
         } catch (e) { /* ignore */ }
     }
 
@@ -3157,8 +3191,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (settings.enableEmotionAccents) {
                 try { sdTimeout(function () { fireEmotionAccent(settings); }, 1500); } catch (e) { /* ignore */ }
             }
-            try { schedulePreload(settings); } catch (e) { /* ignore */ }
-
             const location = scene.location;
             if (!location) {
                 updateWeatherOverlay(null, settings);
@@ -3188,6 +3220,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     console.error(`${LOG} background switch failed`, e);
                 }
             }
+
+            // 0.6.1: idle prefetch — only once a real background has applied.
+            try { schedulePreload(settings); } catch (e) { /* ignore */ }
 
             // --- Weather & Lighting Overlay (after bg, so graded variants
             //     suppress the tint) ---
@@ -4580,7 +4615,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.6.0)');
+            dbg('loaded (v0.6.1)');
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
