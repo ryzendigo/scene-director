@@ -241,6 +241,11 @@
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
         enableDebug: false,         // v0.5.5: console diagnostics off by default
+        // v0.6.2 character sprite size.
+        spriteAuto: true,           // match ST's size for the static sprites
+        spriteVh: null,             // height in vh when auto is off (30-100)
+        spriteDx: 0,                // horizontal offset, vw (-20..20)
+        spriteDy: 0,                // vertical offset, vh (-10..10)
         // v0.6.0 mood engine.
         enableLocalClassifier: true,   // L2: ST's server-side go_emotions classifier
         femaleNamesRegex: '',          // other female characters (she/her is the main character's only when none of these appear)
@@ -1563,6 +1568,7 @@
                     if (!cur || !cur.src || cur.src === lastSpriteSrc) return;
                     const prev = lastSpriteSrc;
                     lastSpriteSrc = cur.src;
+                    sdTimeout(function () { applySpriteSize(getSettings()); }, 60); // aspect may differ
                     if (!prev) return;
                     if (!getSettings().enableCrossfade) return;
                     if (cur.classList.contains('expression-animating')
@@ -2456,8 +2462,12 @@
             const onRight = pos.endsWith('right');
             const hudSameCorner = (settings.hudPosition || 'top-right') === pos;
             const vh = window.innerHeight / 100;
-            const maxVh = settings.chipSizeAuto
-                ? 28 : Math.max(10, Math.min(40, Number(settings.chipSize) || 28));
+            let maxVh = Math.max(10, Math.min(40, Number(settings.chipSize) || 28));
+            if (settings.chipSizeAuto) {
+                // 0.6.2: 45% of the rendered sprite height (28vh fallback).
+                const hs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scene-director-sprite-h')) || 0;
+                maxVh = hs > 0 ? Math.max(10, Math.min(40, (hs * 0.45) / vh)) : 28;
+            }
             el.dataset.chipStyle = settings.chipStyle || 'fade';
             el.style.setProperty('--scene-director-chip-max', maxVh + 'vh');
             if (isTop) {
@@ -2524,7 +2534,7 @@
             if (stripResizeObserver || typeof ResizeObserver !== 'function') return;
             const sheld = document.getElementById('sheld');
             if (!sheld) return;
-            const rerun = function () { queueDom(function () { applyStripAppearance(getSettings()); }); };
+            const rerun = function () { queueDom(function () { const st = getSettings(); applySpriteSize(st); applyStripAppearance(st); }); };
             stripResizeObserver = new ResizeObserver(rerun);
             stripResizeObserver.observe(sheld);
             window.addEventListener('resize', rerun);
@@ -2536,6 +2546,40 @@
                     if (et[k]) ctx.eventSource.on(et[k], function () { sdTimeout(rerun, 50); });
                 }
             } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+    }
+
+    // v0.6.2: one fixed rendered height for the expression sprite so a
+    // low-res animated webp and a high-res static PNG are identical on
+    // screen. ST's rule (expressions/style.css) is intrinsic-size driven,
+    // capped at max-height 90vh / max-width 90vh / holder width
+    // (100vw - sheldWidth)/2. Default = ST's static size: min(90vh, gutter /
+    // aspect), aspect measured from the current image (0.8 fallback).
+    let spriteRefAspect = 0.8;
+    function applySpriteSize(settings) {
+        try {
+            const vh = window.innerHeight / 100;
+            const sheld = document.getElementById('sheld');
+            const r = sheld ? sheld.getBoundingClientRect() : null;
+            const gutter = r && r.width > 0 ? Math.max(120, r.left - 8) : window.innerWidth * 0.25;
+            const img = currentSpriteImg();
+            let aspect = spriteRefAspect;
+            if (img && img.naturalWidth && img.naturalHeight) {
+                aspect = img.naturalWidth / img.naturalHeight;
+                if (Math.abs(aspect - 1) > 0.05) spriteRefAspect = aspect; // remember a non-square (static) aspect
+            }
+            const defaultVh = Math.min(90, (gutter / spriteRefAspect) / vh);
+            let targetVh = (settings.spriteAuto || !settings.spriteVh) ? defaultVh : Number(settings.spriteVh);
+            targetVh = Math.max(30, Math.min(100, targetVh));
+            let hPx = targetVh * vh;
+            if (hPx * aspect > gutter) hPx = gutter / aspect; // never over the chat
+            hPx = Math.min(hPx, window.innerHeight - 8);
+            const root = document.documentElement.style;
+            root.setProperty('--scene-director-sprite-h', Math.round(hPx) + 'px');
+            root.setProperty('--scene-director-sprite-dx', (Number(settings.spriteDx) || 0) + 'vw');
+            root.setProperty('--scene-director-sprite-dy', (Number(settings.spriteDy) || 0) + 'vh');
+            const lab = document.getElementById('sd_spriteVhVal');
+            if (lab) lab.textContent = Math.round(hPx / vh) + 'vh' + (settings.spriteAuto ? ' (auto = ' + defaultVh.toFixed(0) + 'vh)' : '');
         } catch (e) { /* ignore */ }
     }
 
@@ -3185,7 +3229,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
 
             try { updateKenBurns(settings); } catch (e) { /* ignore */ }
             try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
-            // v0.5.0: re-measure for auto chip size + keep the corners set.
+            // 0.6.2: sprite size first, then chip auto-size keyed off it.
+            try { applySpriteSize(settings); } catch (e) { /* ignore */ }
             try { applyStripAppearance(settings); } catch (e) { /* ignore */ }
             try { setupSpriteHover(); } catch (e) { /* ignore */ }
             if (settings.enableEmotionAccents) {
@@ -4131,6 +4176,23 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         <input type="range" id="sd_chipSize" min="10" max="40" step="1" style="flex:1;" title="Chip height as % of the window height (when auto size is off)" />
                         <span id="sd_chipSizeVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
+                    <label class="checkbox_label" title="Match SillyTavern's own size for the static sprites (min(90vh, gutter / aspect)); animated sprites get the same height">
+                        <input type="checkbox" id="sd_spriteAuto" />
+                        <span>Character auto size (match static)</span>
+                    </label>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:12px;">Character size</span>
+                        <input type="range" id="sd_spriteVh" min="30" max="100" step="1" style="flex:1;" title="Character height, % of the window height" />
+                        <span id="sd_spriteVhVal" style="font-size:12px;min-width:42px;"></span>
+                    </div>
+                    <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
+                        <span style="font-size:12px;">X offset</span>
+                        <input type="range" id="sd_spriteDx" min="-20" max="20" step="1" style="flex:1;" title="Horizontal offset, % of the window width" />
+                        <span id="sd_spriteDxVal" style="font-size:12px;min-width:42px;"></span>
+                        <span style="font-size:12px;">Y offset</span>
+                        <input type="range" id="sd_spriteDy" min="-10" max="10" step="1" style="flex:1;" title="Vertical offset, % of the window height" />
+                        <span id="sd_spriteDyVal" style="font-size:12px;min-width:42px;"></span>
+                    </div>
                     <label class="checkbox_label" title="Freeze Auto Costumes — the outfit stays whatever /costume last set (window.sceneDirectorHoldCostume works too)">
                         <input type="checkbox" id="sd_holdCostume" />
                         <span>Hold costume</span>
@@ -4284,6 +4346,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
         if (settings.enableCrossfade) setupSpriteCrossfade(); else teardownSpriteCrossfade();
         if (!weatherFxActive(settings)) updateWeatherOverlay(null, settings);
+        applySpriteSize(settings);
         applyStripAppearance(settings);
         applyHudAppearance(settings);
         applyChatGlass(settings);
@@ -4517,6 +4580,30 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
             sizeIn.addEventListener('change', stageChanged);
         }
+        // 0.6.2 character size / offsets.
+        const spAuto = bindCheck('sd_spriteAuto', 'spriteAuto');
+        const spVh = document.getElementById('sd_spriteVh');
+        if (spVh) {
+            spVh.value = String(getSettings().spriteVh || 62);
+            spVh.addEventListener('input', function () {
+                const st = getSettings(); st.spriteVh = Number(spVh.value); st.spriteAuto = false;
+                if (spAuto) spAuto.checked = false;
+                applySpriteSize(st); applyStripAppearance(st);
+            });
+            spVh.addEventListener('change', stageChanged);
+        }
+        for (const [id, key, unit] of [['sd_spriteDx', 'spriteDx', 'vw'], ['sd_spriteDy', 'spriteDy', 'vh']]) {
+            const el2 = document.getElementById(id); const val = document.getElementById(id + 'Val');
+            if (!el2) continue;
+            el2.value = String(getSettings()[key] || 0);
+            if (val) val.textContent = el2.value + unit;
+            el2.addEventListener('input', function () {
+                if (val) val.textContent = el2.value + unit;
+                const st = getSettings(); st[key] = Number(el2.value);
+                applySpriteSize(st);
+            });
+            el2.addEventListener('change', stageChanged);
+        }
         const opIn = document.getElementById('sd_chatOpacity');
         const opVal = document.getElementById('sd_chatOpacityVal');
         if (opIn) {
@@ -4615,7 +4702,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.6.1)');
+            dbg('loaded (v0.6.2)');
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);

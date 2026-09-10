@@ -713,3 +713,23 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     animation: scene-director-drift-up 4s ease-out forwards;
 }
 #scene-director-cast-strip .scene-director-chip.unknown img { opacity: 0.9; }
+
+/* ---- 0.6.2: fixed rendered sprite height (static and animated identical);
+   the crossfade clone matches the same selector, so blends never pop. ---- */
+#expression-holder img.expression,
+#expression-image {
+    height: var(--scene-director-sprite-h, 62vh) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    object-fit: contain;
+}
+#expression-holder {
+    height: var(--scene-director-sprite-h, 62vh) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    transform: translate(var(--scene-director-sprite-dx, 0vw), var(--scene-director-sprite-dy, 0vh));
+}
