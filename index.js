@@ -116,6 +116,15 @@
  *     mood on screen (only when the user already runs api=None with a
  *     fallback set); idle neutral variants come from /api/sprites/get.
  *
+ * v0.5.4:
+ *
+ *   - Typing dots only while a real generation is in flight (dry-run
+ *     GENERATION_STARTED events are ignored; cleared on message/chat
+ *     change; 90s safety). Idle > 2 min: the last mood emoji drifts up
+ *     and fades every ~90s.
+ *   - Unknown Speakers: a dialogue colour on no Cast card gets a tinted
+ *     silhouette chip (pronoun-gendered, best-guess name).
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -203,6 +212,9 @@
         presenceCueRegex: 'enter(?:s|ed)?|walk(?:s|ed)? in|walk(?:s|ed)? over|com(?:es|ing) in|came in|appear(?:s|ed)|opens? the door|opened the door|arriv(?:es|ed|ing)|join(?:s|ed)|sits?|sat|sitting|seated|stands?|stood|standing|is (?:there|here)|was (?:there|here)|beside|next to|across (?:from|the table)|opposite|lean(?:s|ed|ing)|steps? (?:in|closer|forward)|says?|said|asks?|asked|replie[sd]|murmur(?:s|ed)|whisper(?:s|ed)|nods?|nodded|smil(?:es|ed)|frowns?|glanc(?:es|ed)|looks? (?:up|over|at)|watch(?:es|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|turn(?:s|ed) to',
         absenceContextRegex: 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|miss(?:es|ed|ing)?|remember(?:s|ed|ing)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|tell(?:s|ing)?|told|mention(?:s|ed)?|about|wonder(?:s|ed|ing)?|wish(?:es|ed)?|promised?|later|tomorrow|afterwards',
         enableThoughtTips: true,
+        // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
+        enableUnknownSpeakers: true,
+        ownColorHex: '',            // the main character's dialogue colour (never an "unknown")
         interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
 
         // v0.3.0 numeric tuning.
@@ -724,6 +736,75 @@
         return { present, speakerKey };
     }
 
+    // v0.5.4: unknown speakers — a dialogue colour on no Cast card gets a
+    // silhouette chip (inline SVG tinted with the colour), named from the
+    // text before its first span, gendered by nearby pronouns.
+    const FONT_SPAN_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi;
+    const CAPS_NAME_RE = /\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b(?![^<]*>)/g;
+    const CAP_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
+    const NOT_NAMES = new Set(['The', 'She', 'He', 'They', 'Her', 'His', 'Then', 'And', 'But', 'When', 'Mood']);
+    const unknownInfo = new Map(); // 'unk:#hex' -> { label, gender, hex }
+
+    function silhouetteSrc(hex, gender) {
+        const tint = hex || '#888888';
+        const head = gender === 'male' ? 'M32 8a11 11 0 1 0 0 22a11 11 0 1 0 0-22z' : 'M32 6a12 12 0 1 0 0 24a12 12 0 1 0 0-24z';
+        const hair = gender === 'female' ? '<path d="M18 22c-2-12 8-18 14-18s16 6 14 18c-3-6-6-9-14-9s-11 3-14 9z" fill="#111" opacity=".9"/>' :
+            (gender === 'male' ? '<path d="M21 14c2-8 20-8 22 0c-4-3-8-4-11-4s-7 1-11 4z" fill="#111" opacity=".9"/>' : '');
+        const body = gender === 'female' ? 'M10 64c1-16 8-24 22-26c14 2 21 10 22 26z' : 'M8 64c1-15 9-23 24-25c15 2 23 10 24 25z';
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+            + '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + tint + '" stop-opacity=".55"/><stop offset="1" stop-color="' + tint + '" stop-opacity=".15"/></linearGradient></defs>'
+            + '<path d="' + body + '" fill="#1b1c24"/><path d="' + body + '" fill="url(#g)"/>'
+            + '<path d="' + head + '" fill="#1b1c24"/><path d="' + head + '" fill="url(#g)"/>' + hair + '</svg>';
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+    function titleCase(str) {
+        return str.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+    }
+    /** [{ key, label, hex, gender, pos }] for colours on no Cast card. */
+    function detectUnknownSpeakers(scene, settings) {
+        const out = [];
+        try {
+            const text = scene.text; const lower = scene.lower;
+            const known = new Set();
+            if (settings.ownColorHex) known.add(String(settings.ownColorHex).toLowerCase());
+            for (const m of settings.cast) if (m.colorHex) known.add(m.colorHex.toLowerCase());
+            const first = new Map();
+            FONT_SPAN_RE.lastIndex = 0;
+            let m;
+            while ((m = FONT_SPAN_RE.exec(text)) !== null) {
+                const hex = m[1].toLowerCase();
+                if (known.has(hex)) continue;
+                if (!first.has(hex)) first.set(hex, m.index);
+            }
+            const ownName = (SillyTavern.getContext().name2 || '').split(' ')[0];
+            for (const [hex, idx] of first) {
+                const key = 'unk:' + hex;
+                let info = unknownInfo.get(key);
+                if (!info) {
+                    const before = text.slice(Math.max(0, idx - 80), idx);
+                    let label = null; let cm;
+                    CAPS_NAME_RE.lastIndex = 0;
+                    while ((cm = CAPS_NAME_RE.exec(before)) !== null) label = titleCase(cm[1]);
+                    if (!label) {
+                        const near = before.slice(-60);
+                        CAP_NAME_RE.lastIndex = 0;
+                        while ((cm = CAP_NAME_RE.exec(near)) !== null) {
+                            const w = cm[1].split(' ')[0];
+                            if (!NOT_NAMES.has(w) && w !== ownName) label = cm[1];
+                        }
+                    }
+                    const around = lower.slice(Math.max(0, idx - 200), Math.min(lower.length, idx + 300));
+                    const f = (around.match(/\b(?:she|her|hers|herself)\b/g) || []).length;
+                    const mm = (around.match(/\b(?:he|him|his|himself)\b/g) || []).length;
+                    info = { label: label || 'Unknown', gender: f > mm ? 'female' : (mm > f ? 'male' : 'neutral'), hex };
+                    unknownInfo.set(key, info);
+                }
+                out.push({ key, label: info.label, hex, gender: info.gender, pos: lower.lastIndexOf(hex) });
+            }
+        } catch (e) { /* ignore */ }
+        return out;
+    }
+
     function persistPresence() {
         try {
             const meta = chatMeta(true);
@@ -1203,10 +1284,16 @@
         } catch (e) { /* ignore */ }
     }
 
-    function onGenerationStart() {
+    let genSafetyTimer = null;
+    function onGenerationStart(type, params, dryRun) {
         try {
+            // ST emits GENERATION_STARTED for dry runs (prompt assembly while
+            // typing) with no matching END — gate on the dryRun argument.
+            if (dryRun) return;
             generating = true;
             lastActivityTs = Date.now();
+            if (genSafetyTimer) clearTimeout(genSafetyTimer);
+            genSafetyTimer = setTimeout(onGenerationEnd, 90000); // never stuck
             const settings = getSettings();
             if (!settings.enableTypingPresence) return;
             document.body.classList.add('scene-director-typing');
@@ -1225,6 +1312,7 @@
         try {
             generating = false;
             lastActivityTs = Date.now();
+            if (genSafetyTimer) { clearTimeout(genSafetyTimer); genSafetyTimer = null; }
             document.body.classList.remove('scene-director-typing');
             const bubble = document.getElementById('scene-director-typing-bubble');
             if (bubble) bubble.style.display = 'none';
@@ -1553,9 +1641,43 @@
         return neutralVariantCache[cacheKey];
     }
 
+    // v0.5.4: while idle > 2 min, every ~90s the last mood emoji drifts up
+    // from the head and fades (transform/opacity only); chips with a mood too.
+    let lastDriftTs = 0;
+    function driftEmoji(rect, emoji) {
+        try {
+            if (!emoji || !rect || !rect.width) return;
+            const d = document.createElement('div');
+            d.className = 'scene-director-drift';
+            d.textContent = emoji;
+            d.style.left = (rect.left + rect.width * 0.5) + 'px';
+            d.style.top = (rect.top + rect.height * 0.05) + 'px';
+            document.body.appendChild(d);
+            sdTimeout(function () { try { d.remove(); } catch (e) { /* ignore */ } }, 4200);
+        } catch (e) { /* ignore */ }
+    }
+    function idleDriftTick(settings) {
+        try {
+            if (!settings.enableTypingPresence || generating || document.hidden) return;
+            const now = Date.now();
+            if (now - lastActivityTs < 120000 || now - lastDriftTs < 90000) return;
+            lastDriftTs = now;
+            const img = currentSpriteImg();
+            if (img && img.getAttribute('src') && lastMoodLabel) {
+                driftEmoji(img.getBoundingClientRect(), settings.moodEmoji && settings.moodEmoji[lastMoodLabel]);
+            }
+            for (const [, chip] of castChips) {
+                if (chip.mood && chip.mood !== 'neutral' && chip.el.isConnected) {
+                    driftEmoji(chip.el.getBoundingClientRect(), (settings.moodEmoji && settings.moodEmoji[chip.mood]) || MOOD_EMOJI[chip.mood]);
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     async function idleTick() {
         try {
             const settings = getSettings();
+            idleDriftTick(settings);
             if (!settings.enableIdlePresence || generating) return;
             const now = Date.now();
             if (now - lastActivityTs < (Number(settings.idleAfterSeconds) || 90) * 1000) return;
@@ -1962,12 +2084,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function buildChip(member, mood, speaking, settings, lingering) {
         const wrap = document.createElement('div');
         wrap.className = 'scene-director-chip' + (speaking ? ' speaking' : '')
-            + (lingering ? ' lingering' : '');
+            + (lingering ? ' lingering' : '') + (member.unknown ? ' unknown' : '');
         wrap.dataset.key = member.key;
-        const baseSrc = chipImageSrc(member, 'neutral', settings);
+        const baseSrc = member.unknown ? silhouetteSrc(member.unknown.hex, member.unknown.gender)
+            : chipImageSrc(member, 'neutral', settings);
         const img = document.createElement('img');
         img.alt = member.label;
-        if (mood !== 'neutral') {
+        if (member.unknown) {
+            img.src = baseSrc;
+        } else if (mood !== 'neutral') {
             img.onerror = function () {
                 this.onerror = function () { try { wrap.remove(); } catch (e) { /* ignore */ } };
                 this.src = baseSrc;
@@ -2029,7 +2154,18 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             castPresence.clear(); // hard reset — no grace across a move
         }
         if (scene.location) presenceLoc = scene.location;
-        const { present, speakerKey } = analyzeCast(scene, settings);
+        const analysis = analyzeCast(scene, settings);
+        const present = analysis.present;
+        let speakerKey = analysis.speakerKey;
+        if (settings.enableUnknownSpeakers) {
+            let speakerPos = -1;
+            for (const p of present) if (p.pos > speakerPos) speakerPos = p.pos;
+            for (const u of detectUnknownSpeakers(scene, settings)) {
+                if (u.pos > speakerPos) { speakerPos = u.pos; speakerKey = u.key; }
+                if (!castPresence.has(u.key)) console.log(`${LOG} cast +${u.key} "${u.label}" (${u.gender}, hex ${u.hex})`);
+                present.push({ member: { key: u.key, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } }, pos: u.pos });
+            }
+        }
         // Presence hysteresis: seen now -> miss 0; previously established
         // here but silent -> miss+1, chip lingers (dimmed) until the limit.
         const nowKeys = new Set(present.map(function (p) { return p.member.key; }));
@@ -2044,7 +2180,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 continue;
             }
             castPresence.set(k, next);
-            const member = settings.cast.find(function (m) { return m.key === k; });
+            let member = settings.cast.find(function (m) { return m.key === k; });
+            if (!member && unknownInfo.has(k)) {
+                const u = unknownInfo.get(k);
+                member = { key: k, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } };
+            }
             if (member) lingering.push({ member, pos: -1, lingering: true });
         }
         persistPresence();
@@ -2058,7 +2198,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         const desired = ordered.map(function (p) {
             return {
                 member: p.member,
-                mood: (!p.lingering && settings.enableMoods) ? detectMood(scene.text, p.member, settings) : 'neutral',
+                mood: (!p.lingering && !p.member.unknown && settings.enableMoods) ? detectMood(scene.text, p.member, settings) : 'neutral',
                 speaking: !p.lingering && p.member.key === speakerKey,
                 lingering: Boolean(p.lingering),
             };
@@ -2213,6 +2353,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // re-issued. With a real classifier configured this never fires.
     let lastMoodLabel = null;
     let assertSeq = 0;
+    let hydrateUntil = 0; // re-asserts inside the load window are debug-level
     function spriteIsBlank() {
         const img = currentSpriteImg();
         return !img || !img.getAttribute('src');
@@ -2269,8 +2410,12 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 // after two misses fall back to neutral.
                 const use = tries >= 3 ? 'neutral' : label;
                 try { await runCommand(ctx, `/emote ${use}`); } catch (e) { /* ignore */ }
-                console.log(`${LOG} sprite was blank -> re-asserted /emote ${use} (${tries})`);
-                spriteDebug(ctx, use);
+                if (Date.now() < hydrateUntil) {
+                    console.debug(`${LOG} initial hydrate: sprite not drawn yet -> /emote ${use} (${tries})`);
+                } else {
+                    console.log(`${LOG} sprite was blank -> re-asserted /emote ${use} (${tries})`);
+                    spriteDebug(ctx, use);
+                }
             }
             if (tries < 4) sdTimeout(check, 1500);
         };
@@ -2329,6 +2474,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (!settings.enableMoodTag) return;
         const label = lastMoodLabel || lastMoodLabelFromChat(ctx);
         if (!label) return; // no tag in this chat -> leave the classifier alone
+        if (delayMs) hydrateUntil = Date.now() + delayMs + 8000;
         sdTimeout(function () { assertExpression(ctx, label); }, delayMs || 0);
     }
 
@@ -2362,6 +2508,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (!last) return;
 
             lastActivityTs = Date.now();
+            onGenerationEnd(); // a landed message always ends the typing state
 
             // ONE extraction + ONE header parse for the whole event (item 1).
             const scene = parseScene(last.mes, settings);
@@ -2469,6 +2616,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         lastBg = null;
         lastBgGraded = false;
         lastCostume = null;
+        try { onGenerationEnd(); } catch (e) { /* ignore */ }
         trailDateKey = null;
         trailLocs = [];
         lastParsedDate = null;
@@ -2508,7 +2656,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 clearAllTimeouts();
             } else {
                 lastActivityTs = Date.now();
-                if (getSettings().enableIdlePresence) startIdleLoop();
+                if (getSettings().enableIdlePresence || getSettings().enableTypingPresence) startIdleLoop();
             }
         } catch (e) { /* ignore */ }
     }
@@ -3182,6 +3330,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
+        ['enableUnknownSpeakers', 'Unknown Speakers', 'A tinted silhouette chip (male/female/neutral by nearby pronouns, best-guess name) for any dialogue colour not on a Cast card'],
         ['enableThoughtTips', 'Thought Tooltips', 'Hover the sprite or a cast chip: bio line, mood emoji and the last sentences the model wrote about that character\'s inner state (regex over the last reply + its reasoning; no AI calls)'],
         ['enableMoodTag', 'Inline Mood Tag', 'Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
@@ -3195,6 +3344,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['fireRegex', 'Fire regex', 'Matched against the APPLIED background filename — triggers the fire flicker overlay'],
         ['presenceCueRegex', 'Presence cue regex', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
         ['absenceContextRegex', 'Absence context regex', 'Cast Strip: a sentence containing any of these (ring, call, remember, about…) never summons a chip'],
+        ['ownColorHex', 'Own dialogue colour', 'The main character\'s dialogue colour hex (e.g. #E87BA8) — excluded from Unknown Speakers'],
         ['interiorityRegex', 'Interiority regex', 'Thought tooltips: sentences naming a character AND one of these verbs are shown on hover'],
     ];
 
@@ -3455,7 +3605,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
         try { updateFireOverlay(settings); } catch (e) { /* ignore */ }
         if (!settings.enableTabTitle) restoreTabTitle();
-        if (settings.enableIdlePresence) startIdleLoop(); else stopIdleLoop();
+        if (settings.enableIdlePresence || settings.enableTypingPresence) startIdleLoop(); else stopIdleLoop();
         if (settings.enableTypingPresence || settings.enableIdlePresence) {
             ensureGenHooks(SillyTavern.getContext());
         }
@@ -3792,7 +3942,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            console.log(`${LOG} loaded (v0.5.3)`);
+            console.log(`${LOG} loaded (v0.5.4)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

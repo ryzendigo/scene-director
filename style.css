@@ -701,3 +701,15 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 #scene-director-thought-tip .sd-tip-bio:empty { display: none; }
 #scene-director-thought-tip .sd-tip-extra { opacity: 0.8; font-size: 12px; margin-bottom: 4px; }
 #scene-director-thought-tip .sd-tip-body { opacity: 0.92; font-style: italic; }
+
+/* ---- 0.5.4: idle thought drift + unknown-speaker silhouettes ---- */
+@keyframes scene-director-drift-up {
+    0%   { opacity: 0;   transform: translate(-50%, 0) scale(0.9); }
+    15%  { opacity: 0.9; }
+    100% { opacity: 0;   transform: translate(-50%, -70px) scale(1.05); }
+}
+.scene-director-drift {
+    position: fixed; z-index: 2505; pointer-events: none; font-size: 20px;
+    animation: scene-director-drift-up 4s ease-out forwards;
+}
+#scene-director-cast-strip .scene-director-chip.unknown img { opacity: 0.9; }
