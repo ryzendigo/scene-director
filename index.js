@@ -79,6 +79,17 @@
  *   - Optional chat-panel "glass" (opacity slider + blur toggle), off by
  *     default.
  *
+ * v0.5.1:
+ *
+ *   - Cast chip size is window-relative (28vh by default, 120px–40vh,
+ *     capped to the free gutter beside the chat panel via a
+ *     ResizeObserver; a tall column shrinks to fit above the send form).
+ *   - Sprite blank fix: with the expressions classifier set to None (the
+ *     natural companion of the mood tag) ST clears the sprite on chat
+ *     load, inside /costume and on its worker tick. Every /emote is now
+ *     asserted and verified, and the last tagged mood is replayed after
+ *     chat load and costume switches.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -141,8 +152,8 @@
         // v0.5.0 stage layout.
         castPosition: 'top-right',  // top-right|top-left|bottom-left|bottom-right
         chipStyle: 'fade',          // fade|cloud|circle|plain
-        chipSizeAuto: true,         // chip height follows the main sprite
-        chipSize: 72,               // manual px (48-160) when auto is off
+        chipSizeAuto: true,         // 28vh tall (window-relative), gutter-capped
+        chipSize: 28,               // manual height in vh (10-40) when auto is off
         hudPosition: 'top-right',
         holdCostume: false,         // freeze Auto Costumes at the current outfit
         enableChatGlass: false,     // see-through chat panel
@@ -358,6 +369,8 @@
                 s.backgroundMap = [];
                 console.log(`${LOG} migrated ${s.places.length} background-map rows into place cards`);
             }
+            // 0.5.1: chipSize changed from px to vh.
+            if (Number(s.chipSize) > 40) s.chipSize = defaultSettings.chipSize;
             // Cast members gain optional fields.
             if (Array.isArray(s.cast)) {
                 for (const m of s.cast) {
@@ -1566,31 +1579,55 @@
             if (!el) return;
             const pos = settings.castPosition || 'top-right';
             const isTop = pos.startsWith('top');
+            const onRight = pos.endsWith('right');
             const hudSameCorner = (settings.hudPosition || 'top-right') === pos;
-            let size;
-            if (settings.chipSizeAuto) {
-                let h = 0;
-                try {
-                    const img = currentSpriteImg();
-                    if (img) h = img.getBoundingClientRect().height;
-                } catch (e) { /* ignore */ }
-                size = (h && h > 100) ? Math.round(h)
-                    : Math.round(window.innerHeight * 0.4);
-                size = Math.min(size, Math.round(window.innerHeight * 0.6));
-            } else {
-                size = Math.max(48, Math.min(160, Number(settings.chipSize) || 72));
-            }
-            el.style.left = pos.endsWith('left') ? '12px' : 'auto';
-            el.style.right = pos.endsWith('right') ? '12px' : 'auto';
-            el.style.top = isTop ? (hudSameCorner ? '56px' : '44px') : 'auto';
-            el.style.bottom = pos.startsWith('bottom') ? '12px' : 'auto';
+            const vh = window.innerHeight / 100;
+            // 0.5.1: size is RELATIVE TO THE WINDOW (vh, clamped 120px-40vh),
+            // never the sprite's pixel height.
+            const vhWanted = settings.chipSizeAuto
+                ? 28 : Math.max(10, Math.min(40, Number(settings.chipSize) || 28));
+            let size = Math.round(vhWanted * vh);
+            size = Math.max(120, Math.min(Math.round(40 * vh), size));
+            // Cap to the free gutter between #sheld and the viewport edge.
+            try {
+                const sheld = document.getElementById('sheld');
+                if (sheld) {
+                    const r = sheld.getBoundingClientRect();
+                    const gutter = (onRight ? window.innerWidth - r.right : r.left) - 24;
+                    if (gutter >= 60 && gutter < size) size = Math.floor(gutter);
+                }
+            } catch (e) { /* ignore */ }
+            const topPx = isTop ? (hudSameCorner ? 56 : 44) : 12;
+            el.style.left = onRight ? 'auto' : '12px';
+            el.style.right = onRight ? '12px' : 'auto';
+            el.style.top = isTop ? topPx + 'px' : 'auto';
+            el.style.bottom = isTop ? 'auto' : '12px';
             el.style.flexDirection = isTop ? 'column' : 'row';
-            el.style.alignItems = pos.endsWith('right') ? 'flex-end' : 'flex-start';
-            el.style.maxHeight = isTop ? 'calc(100vh - 140px)' : '';
+            el.style.alignItems = onRight ? 'flex-end' : 'flex-start';
+            el.style.flexWrap = isTop ? 'nowrap' : 'wrap';
             el.style.maxWidth = isTop ? '' : 'min(70vw, 640px)';
-            el.style.flexWrap = 'wrap';
+            // A column that would run into the send form shrinks every chip.
+            if (isTop && castChips.size > 1) {
+                const avail = window.innerHeight - topPx - 90;
+                const needed = castChips.size * (size + 26);
+                if (needed > avail) size = Math.max(48, Math.floor(avail / castChips.size) - 26);
+            }
             el.dataset.chipStyle = settings.chipStyle || 'fade';
             el.style.setProperty('--scene-director-chip-size', size + 'px');
+        } catch (e) { /* ignore */ }
+    }
+
+    // Keep the strip inside the gutter as the chat panel moves/resizes.
+    let stripResizeObserver = null;
+    function setupStripResizeObserver() {
+        try {
+            if (stripResizeObserver || typeof ResizeObserver !== 'function') return;
+            const sheld = document.getElementById('sheld');
+            if (!sheld) return;
+            const rerun = function () { queueDom(function () { applyStripAppearance(getSettings()); }); };
+            stripResizeObserver = new ResizeObserver(rerun);
+            stripResizeObserver.observe(sheld);
+            window.addEventListener('resize', rerun);
         } catch (e) { /* ignore */ }
     }
 
@@ -1777,6 +1814,7 @@
                 }
             }
             hideBioCard();
+            applyStripAppearance(settings, strip); // chip count -> column fit
         });
     }
 
@@ -1877,13 +1915,68 @@
         sdTimeout(strip, 1200);
     }
 
+    // 0.5.1: when the expressions extension's classifier API is set to None
+    // (the natural companion of the mood tag), it resolves every message to
+    // '' and, without a fallback expression, CLEARS the sprite — on chat
+    // load, inside the /costume handler, and on its 2s worker tick after
+    // each new message, racing our /emote. Every /emote is therefore
+    // asserted and then verified: an empty sprite src within ~6s gets it
+    // re-issued. With a real classifier configured this never fires.
+    let lastMoodLabel = null;
+    let assertSeq = 0;
+    function spriteIsBlank() {
+        const img = currentSpriteImg();
+        return !img || !img.getAttribute('src');
+    }
+    async function assertExpression(ctx, label) {
+        if (!label) return;
+        const my = ++assertSeq;
+        lastMoodLabel = label;
+        try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* retried below */ }
+        let tries = 0;
+        const check = async function () {
+            if (my !== assertSeq) return;
+            if (spriteIsBlank() && tries < 4) {
+                tries++;
+                try { await runCommand(ctx, `/emote ${label}`); } catch (e) { /* ignore */ }
+                console.log(`${LOG} sprite was blank -> re-asserted /emote ${label} (${tries})`);
+            }
+            if (tries < 4) sdTimeout(check, 1500);
+        };
+        sdTimeout(check, 1200);
+    }
+
+    /** Last [MOOD:] tag in the loaded chat (scans back a few AI messages). */
+    function lastMoodLabelFromChat(ctx) {
+        try {
+            const chat = ctx.chat || [];
+            let seen = 0;
+            for (let i = chat.length - 1; i >= 0 && seen < 5; i--) {
+                const m = chat[i];
+                if (!m || m.is_user || m.is_system || !m.mes) continue;
+                seen++;
+                const label = detectMoodTag(m.mes);
+                if (label) return label;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    /** Redraw the current mood after chat load / costume switch. */
+    function replayExpression(ctx, settings, delayMs) {
+        if (!settings.enableMoodTag) return;
+        const label = lastMoodLabel || lastMoodLabelFromChat(ctx);
+        if (!label) return; // no tag in this chat -> leave the classifier alone
+        sdTimeout(function () { assertExpression(ctx, label); }, delayMs || 0);
+    }
+
     async function applyMoodTag(ctx, rawText, settings) {
         try {
             if (!settings.enableMoodTag) return;
             const label = detectMoodTag(rawText);
             if (!label) return;
             stripMoodTagFromDom();
-            await runCommand(ctx, `/emote ${label}`);
+            await assertExpression(ctx, label);
             console.log(`${LOG} mood tag -> /emote ${label}`);
         } catch (e) {
             console.error(`${LOG} mood tag failed`, e);
@@ -1987,6 +2080,9 @@
                     const desired = pickCostume(location, scene.hour, settings);
                     if (desired !== null && desired !== lastCostume) {
                         await runCommand(ctx, desired ? `/costume ${costumeArg(ctx, desired)}` : '/costume');
+                        // 0.5.1: the /costume handler re-classifies; redraw
+                        // the tagged mood so a None classifier can't blank it.
+                        replayExpression(ctx, settings, 0);
                         console.log(`${LOG} costume: ${lastCostume || 'default'} -> ${desired || 'default'} (loc="${location}", hour=${scene.hour})`);
                         lastCostume = desired;
                         try {
@@ -2033,6 +2129,8 @@
             restoreTrail(settings);
             seedPresenceFromChat(settings);
             applyStripAppearance(settings);
+            lastMoodLabel = null;
+            replayExpression(SillyTavern.getContext(), settings, 1500);
         } catch (e) { /* ignore */ }
         onMessage();
     }
@@ -2812,13 +2910,13 @@
                             <option value="plain">Plain (raw cutout)</option>
                         </select>
                     </div>
-                    <label class="checkbox_label" title="Chip height follows the main sprite's rendered height (fallback 40% of the window)">
+                    <label class="checkbox_label" title="28% of the window height, capped to the free gutter beside the chat panel; a tall column shrinks to fit">
                         <input type="checkbox" id="sd_chipSizeAuto" />
-                        <span>Auto chip size (match sprite)</span>
+                        <span>Auto chip size (28vh)</span>
                     </label>
                     <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
                         <span style="font-size:12px;">Chip size</span>
-                        <input type="range" id="sd_chipSize" min="48" max="160" step="4" style="flex:1;" title="Chip portrait size (px, when auto size is off)" />
+                        <input type="range" id="sd_chipSize" min="10" max="40" step="1" style="flex:1;" title="Chip height as % of the window height (when auto size is off)" />
                         <span id="sd_chipSizeVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
                     <label class="checkbox_label" title="Freeze Auto Costumes — the outfit stays whatever /costume last set (window.sceneDirectorHoldCostume works too)">
@@ -3194,10 +3292,10 @@
         const sizeIn = document.getElementById('sd_chipSize');
         const sizeVal = document.getElementById('sd_chipSizeVal');
         if (sizeIn) {
-            sizeIn.value = String(getSettings().chipSize || 72);
-            if (sizeVal) sizeVal.textContent = sizeIn.value + 'px';
+            sizeIn.value = String(getSettings().chipSize || 28);
+            if (sizeVal) sizeVal.textContent = sizeIn.value + 'vh';
             sizeIn.addEventListener('input', function () {
-                if (sizeVal) sizeVal.textContent = sizeIn.value + 'px';
+                if (sizeVal) sizeVal.textContent = sizeIn.value + 'vh';
                 const st = getSettings();
                 st.chipSize = Number(sizeIn.value);
                 st.chipSizeAuto = false;
@@ -3298,7 +3396,9 @@
             } catch (e) { /* ignore */ }
             try { restoreTrail(settings); } catch (e) { /* ignore */ }
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
-            console.log(`${LOG} loaded (v0.5.0)`);
+            try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
+            try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
+            console.log(`${LOG} loaded (v0.5.1)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

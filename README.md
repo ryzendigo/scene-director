@@ -69,7 +69,7 @@ guard has kicked in.
 | **Asset Preloading** *(0.3.0)* | Idle-callback prefetch of card backgrounds and neutral sprite variants (skipped on data-saver / 2G connections) |
 | **Card system + Scan wizard** *(0.4.0)* | Cast & Place cards replace the raw JSON maps; the Scan-my-chat wizard builds them from your existing chat |
 | **Inline Mood Tag** *(0.4.1, zero-setup + default ON in 0.5.0)* | The model appends `[MOOD: <label>]` to each reply and the expression sprite follows it directly (`/emote`) — no classifier API call; the tag is hidden from the rendered chat. The instruction auto-injects into the context — nothing to paste |
-| **Stage layout** *(0.5.0)* | HUD corner picker; cast strip corner (top corners stack a column under the HUD), chip style (cutout bottom-fade / cloud glow / circle / plain) and chip size (auto = match the main sprite, or a 48–160px slider) |
+| **Stage layout** *(0.5.0)* | HUD corner picker; cast strip corner (top corners stack a column under the HUD), chip style (cutout bottom-fade / cloud glow / circle / plain) and chip size relative to the window (auto = 28vh, or a 10–40vh slider; capped to the free gutter beside the chat panel, and a tall column shrinks to fit) *(0.5.1)* |
 | **Chat panel glass** *(0.5.0)* | Optional see-through chat panel: opacity slider + blur toggle, honouring the theme's own tint when it is already more transparent (off by default) |
 | **Costume path fix** *(0.5.0)* | Bare costume names are issued as `<ActiveCharacter>/<name>` — SillyTavern resolves a bare `/costume` argument as a *top-level* sprite folder, so `/costume pajamas` silently 404'd every sprite |
 | **Chat-portable state** *(0.5.0)* | Day trail, last costume and cast presence live in ST **chat metadata**, so they travel with the chat file across devices and branches; on chat open the state rebuilds deterministically from the last ~20 messages when missing — pure text parsing, no AI calls |
@@ -278,7 +278,13 @@ Details:
 - With the tag reliably driving the sprite you can turn the expression
   classifier off yourself (Extensions → Character Expressions → set the
   classifier API to **None**) and skip its per-message call entirely. Scene
-  Director never changes another extension's settings for you.
+  Director never changes another extension's settings for you. *(0.5.1)*
+  With the classifier set to None, ST itself clears the sprite on chat load,
+  inside `/costume`, and on its worker tick after each message — Scene
+  Director now asserts every `/emote`, verifies the sprite is drawn, and
+  replays the last tagged mood after chat loads and costume switches, so
+  the sprite never goes blank. (Setting a fallback expression in the
+  expressions extension helps too.)
 - **Test last message** shows the detected tag in its dry-run output.
 
 ### Life counters (Advanced JSON)

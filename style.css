@@ -35,7 +35,7 @@
     display: flex;
     gap: 8px;
     pointer-events: none; /* never block clicks on the chat underneath */
-    --scene-director-chip-size: 72px;
+    --scene-director-chip-size: 120px;
 }
 
 .scene-director-chip {
