@@ -14,6 +14,21 @@ structured **scene header** out of each AI message and directs the scene for you
 | **Cast Mood Bubbles** *(0.2.0)* | Keyword heuristic per NPC chip: a comic thought bubble (😊/😠/😢) and an optional per-mood portrait variant |
 | **Sprite Crossfade** *(0.2.0)* | Fades the previous expression sprite out over the new one on sprite changes |
 | **Weather & Lighting Overlay** *(0.2.0)* | Pure-CSS night/dusk/rain tint (plus animated rain streaks) behind the chat, for backgrounds without pre-graded variant files |
+| **Sprite Shadow** *(0.3.0)* | Grounding drop-shadow under the expression sprite |
+| **Sprite Lighting Tint** *(0.3.0)* | Darkens/warms the sprite to match the scene state (night/dusk/rain) |
+| **Background Crossfade** *(0.3.0)* | Dips to black around each `/bg` switch instead of a hard cut |
+| **Typing Presence** *(0.3.0)* | Subtle sprite sway + a `…` thought bubble while the model is generating |
+| **Ken Burns Drift** *(0.3.0)* | Slow zoom/pan on the background, duration configurable |
+| **Fire Flicker** *(0.3.0)* | Warm flicker overlay when the applied background filename matches a pattern |
+| **Bio Cards** *(0.3.0)* | Hover a cast chip for a one-line bio from `npc/bios.json` |
+| **Photo Mode** *(0.3.0)* | 📷 button composites background + tint + sprite + HUD into a downloadable PNG |
+| **Tab Title** *(0.3.0)* | Browser tab title becomes `<prefix> — <location>, <time>` per message |
+| **Emotion Accents** *(0.3.0)* | Transient lighting pulse when the sprite shows anger, fear or love |
+| **Idle Presence** *(0.3.0)* | After a quiet period, drifts between the sprite's `neutral-*` variants |
+| **Day Trail** *(0.3.0)* | Today's distinct locations accumulate into the HUD hover tooltip |
+| **Life Counters** *(0.3.0)* | User-defined date counters (days / weeks+days) from the *story* date |
+| **Speaking Order** *(0.3.0)* | Cast chips ordered latest-speaker-first |
+| **Asset Preloading** *(0.3.0)* | Idle prefetch of mapped backgrounds and neutral sprite variants |
 
 Every feature is independently toggleable and fully configurable. With no scene
 header in a message, everything no-ops quietly. The extension only issues the same
@@ -228,6 +243,134 @@ If your background map *did* pick a graded variant file (any background whose
 filename ends in `-night`, `-rain` or `-dusk`), the tint is suppressed so the
 scene isn't double-darkened — the rain streaks may still show for rain. Tints
 transition over 1 s, so lighting changes feel like a slow grade, not a cut.
+
+## v0.3.0 — the presence pack
+
+Fifteen new features, all **off by default except Sprite Shadow**. Each is an
+independent toggle; flip any misbehaving one off without touching the rest.
+
+### Sprite Shadow & Sprite Lighting Tint
+
+Both act on the expression sprite through a single composed CSS `filter`
+(they share the property, so they are built together and delivered via a CSS
+variable that survives ST replacing the sprite node):
+
+- **Shadow** (on by default): `drop-shadow(0 12px 18px rgba(0,0,0,.45))` —
+  grounds the sprite against any background.
+- **Tint**: reuses the same scene state as the Weather & Lighting Overlay —
+  night `brightness(.75) saturate(.85)`, dusk `sepia(.25) brightness(.9)`,
+  rain `brightness(.8) saturate(.7)`. Neutral scenes: shadow only.
+
+### Background Crossfade
+
+Around each `/bg` change, a full-viewport black overlay (kept between ST's
+background layers and the UI) fades to ~0.6 over 200 ms, the `/bg` is issued,
+then it fades back over 300 ms — a filmic dip instead of a hard cut.
+
+### Typing Presence
+
+Hooks ST's `GENERATION_STARTED` / `GENERATION_ENDED` / `GENERATION_STOPPED`
+events (checked defensively — missing names are skipped). While the model is
+generating, the sprite plays a very subtle sway (±0.4° rotate / 1% translateY,
+4 s loop) and a `…` thought bubble appears near its head; both clear on end.
+
+### Ken Burns Drift
+
+Adds `animation: … <kenBurnsSeconds>s ease-in-out infinite alternate` to ST's
+background element `#bg1` (the element `backgrounds.js` paints
+`background-image` onto), scaling 1.0 → 1.06 with a slight translate. Sweep
+duration is the **Ken Burns sweep (seconds)** setting (default 75).
+
+### Fire Flicker
+
+When the *applied* background's filename matches the **Fire regex** (default
+`fireplace|christmas`), a soft warm radial-gradient overlay (bottom-left
+biased) plays a subtle 2.2 s three-step opacity flicker (0.10–0.22).
+
+### Bio Cards
+
+Convention: put a `bios.json` next to your cast portraits —
+`/characters/<Cast sprite folder>/npc/bios.json` — a flat object mapping cast
+keys to one-line bios:
+
+```json
+{
+  "granty": "Rachel's grandmother; keeper of the kitchen and of opinions.",
+  "wagner": "The town GP. Has seen everything twice."
+}
+```
+
+It is fetched **once per session**; hovering a cast chip shows a dark tooltip
+card with that member's line. A missing file (or key) quietly shows nothing.
+Chips accept pointer events for this; the strip container remains
+click-through.
+
+### Photo Mode
+
+A small, unobtrusive 📷 button bottom-right. Clicking it composites the
+current ST background (cover-fit) + the weather overlay tint + the expression
+sprite (at its on-screen position) + the HUD text onto a viewport-sized canvas
+and downloads a PNG named `<prefix> — <YYYY-MM-DD> — <location>.png` (story
+date and location from the parsed header; timestamp fallback). Everything
+drawn is same-origin, so the canvas stays untainted; failures raise a toastr
+warning instead of breaking anything.
+
+### Tab Title
+
+Per message, `document.title` becomes `<prefix> — <location>, <time>`; with no
+parseable header the original title is restored. The prefix is the **Tab
+title / photo prefix** setting (blank = the cast folder name, else "Scene").
+
+### Emotion Accents
+
+~1.5 s after each AI message (by which time the expressions extension has
+classified), the current sprite's *filename* is checked: `anger|angry|rage`
+fires a red-tinged vignette pulse (1 s), `fear|afraid|terror|scared` a cold
+desaturating pulse (1 s), `love|desire|lust` a soft warm bloom (1.2 s). All
+transient overlay divs, max opacity ~0.18.
+
+### Idle Presence
+
+If no message arrives for **Idle presence after** seconds (default 90), then
+every **Idle swap every** seconds (default 45) the sprite crossfades between
+its available neutral variants — `neutral`, `neutral-1` … `neutral-3` with the
+current sprite's extension, each verified via `Image()` onload before use. It
+only ever runs while the sprite already shows a `neutral*` (so it never fights
+the expressions extension) and stops instantly on any message or generation
+start.
+
+### Day Trail & Life Counters
+
+Both render into the Scene HUD's hover tooltip (the HUD gains pointer events
+when you enable them):
+
+- **Day Trail**: today's distinct parsed locations, in order —
+  `Kitchen → Medical Centre → …` — reset whenever the story date changes.
+- **Life Counters**: a user-editable JSON array; each entry is computed from
+  the parsed **story** date (never real time) and hidden until its anchor date
+  is reached:
+
+  ```json
+  [
+    { "label": "married",  "emoji": "💍", "date": "2026-07-11", "mode": "days" },
+    { "label": "pregnant", "emoji": "🤰", "date": "2026-06-28", "mode": "weeks" }
+  ]
+  ```
+
+  `mode: "days"` renders `💍 31 days`; `mode: "weeks"` renders `🤰 6w2d`.
+
+### Speaking Order
+
+Orders the cast strip by the last position each member's dialogue colour hex
+appears in the message — latest speaker first. Members detected only by name
+regex keep their cast-table order after the speakers.
+
+### Asset Preloading
+
+5 s after each message: once per session, `new Image()` prefetch of every file
+your background map, seasonal map and era rules could apply; every time, the
+current costume's neutral variants are verified-and-cached (which is also the
+prefetch for Idle Presence).
 
 ## FAQ
 

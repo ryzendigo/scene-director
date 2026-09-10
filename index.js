@@ -24,6 +24,30 @@
  *   - Weather & Lighting Overlay : a CSS tint/rain overlay behind the chat
  *                        for backgrounds without pre-graded variant files
  *
+ * v0.3.0 — the "presence pack":
+ *
+ *   - Sprite Shadow    : grounding drop-shadow under the expression sprite
+ *   - Sprite Tint      : lighting-matched sprite filter for night/dusk/rain
+ *   - Background Crossfade : black-dip fade around each /bg switch
+ *   - Typing Presence  : subtle sway + '…' thought bubble while generating
+ *   - Ken Burns Drift  : slow zoom/pan on ST's background element (#bg1)
+ *   - Fire Flicker     : warm flicker overlay when the background filename
+ *                        matches a configurable pattern (fireplace/christmas)
+ *   - Bio Cards        : hover a cast chip -> one-line bio tooltip, read once
+ *                        from /characters/<castFolder>/npc/bios.json
+ *   - Photo Mode       : 📷 button composites background + tint + sprite +
+ *                        HUD onto a canvas and downloads a PNG
+ *   - Tab Title        : document.title = <prefix> — <location>, <time>
+ *   - Emotion Accents  : transient lighting pulse (anger/fear/love) keyed off
+ *                        the expression sprite's filename
+ *   - Idle Presence    : after a quiet period, crossfade between the sprite's
+ *                        neutral variants (never fights the expressions ext)
+ *   - Day Trail        : today's distinct locations in the HUD hover tooltip
+ *   - Life Counters    : user-defined date counters (days / weeks+days) from
+ *                        the parsed STORY date, in the HUD tooltip
+ *   - Speaking Order   : cast chips ordered latest-speaker-first
+ *   - Asset Preloading : idle prefetch of mapped backgrounds + neutral sprites
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -64,6 +88,39 @@
         enableMoods: false,
         enableCrossfade: false,
         enableWeatherFx: false,
+
+        // v0.3.0 presence pack — all off by default except the shadow.
+        enableSpriteShadow: true,
+        enableSpriteTint: false,
+        enableBgCrossfade: false,
+        enableTypingPresence: false,
+        enableKenBurns: false,
+        enableFireFlicker: false,
+        enableBioCards: false,
+        enablePhotoMode: false,
+        enableTabTitle: false,
+        enableEmotionAccents: false,
+        enableIdlePresence: false,
+        enableDayTrail: false,
+        enableCounters: false,
+        enableSpeakingOrder: false,
+        enablePreload: false,
+
+        // v0.3.0 numeric tuning.
+        kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
+        idleAfterSeconds: 90,    // quiet time before idle presence starts
+        idleEverySeconds: 45,    // interval between idle sprite swaps
+
+        // v0.3.0 misc config.
+        // Tab title / photo filename prefix ('' => castFolder, else 'Scene').
+        titlePrefix: '',
+        // Fire flicker: regex tested against the APPLIED background filename.
+        fireRegex: 'fireplace|christmas',
+        // Life counters, computed from the parsed STORY date (not real time).
+        // mode 'days'  => "💍 31 days"
+        // mode 'weeks' => "🤰 6w2d"
+        // [{ "label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days" }]
+        counters: [],
 
         // Header parsing (regex sources, compiled with the 'i' flag).
         locationRegex: '📍([^|\\]]+)',
@@ -119,6 +176,20 @@
     // Reset when the user switches chats so the new chat gets a fresh apply.
     let lastBg = null;
     let lastCostume = null; // '' = default costume, null = never applied
+
+    // v0.3.0 shared state.
+    const ORIGINAL_TITLE = document.title;
+    let lastParsedDate = null;   // {year, month, day} from the latest header
+    let lastParsedLoc = null;    // location text from the latest header
+    let lastActivityTs = Date.now();
+    let lastIdleSwapTs = 0;
+    let generating = false;
+    let idleTimer = null;
+    let mapPreloaded = false;
+    let biosPromise = null;              // one bios.json fetch per session
+    const neutralVariantCache = {};      // sprite folder+ext -> Promise<url[]>
+    let trailDateKey = null;
+    let trailLocs = [];
 
     // ------------------------------------------------------------------
     // Settings plumbing
@@ -445,6 +516,65 @@
     }
 
     // ------------------------------------------------------------------
+    // Day trail & life counters (v0.3.0) — shown as the HUD hover tooltip
+    // ------------------------------------------------------------------
+
+    function updateDayTrail(date, location, settings) {
+        try {
+            if (!settings.enableDayTrail || !location) return;
+            const key = date ? `${date.year}-${date.month}-${date.day}` : trailDateKey;
+            if (key !== trailDateKey) { // story date changed => new day, reset
+                trailDateKey = key;
+                trailLocs = [];
+            }
+            if (!trailLocs.includes(location)) trailLocs.push(location);
+        } catch (e) { /* ignore */ }
+    }
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    /**
+     * User-defined counters computed from the parsed STORY date.
+     * mode 'days'  => "<emoji> <n> days"; mode 'weeks' => "<emoji> <w>w<d>d".
+     * Counters whose anchor date is after the story date are hidden.
+     */
+    function buildCounters(date, settings) {
+        try {
+            if (!settings.enableCounters || !date || !date.day) return '';
+            const DAY = 86400000;
+            const story = Date.UTC(date.year, date.month - 1, date.day);
+            const parts = [];
+            for (const c of settings.counters) {
+                const anchor = Date.parse(c.date + 'T00:00:00Z');
+                if (Number.isNaN(anchor)) continue;
+                const days = Math.floor((story - anchor) / DAY);
+                if (days < 0) continue;
+                const emoji = c.emoji ? c.emoji + ' ' : '';
+                if (c.mode === 'weeks') {
+                    parts.push(`${emoji}${Math.floor(days / 7)}w${days % 7}d`);
+                } else {
+                    parts.push(`${emoji}${days} day${days === 1 ? '' : 's'}`);
+                }
+            }
+            return parts.join(' · ');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function updateHudTooltip(date, settings) {
+        try {
+            const hud = document.getElementById('scene-director-hud');
+            if (!hud) return;
+            const lines = [];
+            if (settings.enableDayTrail && trailLocs.length) lines.push(trailLocs.join(' → '));
+            const counters = buildCounters(date, settings);
+            if (counters) lines.push(counters);
+            hud.title = lines.join('\n');
+        } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
     // Sprite crossfade
     // ------------------------------------------------------------------
 
@@ -525,6 +655,14 @@
     // 17:00–18:59 (rain is weather-text driven).
     const GRADED_VARIANT_RE = /-(night|rain|dusk)\.[a-z0-9]+$/i;
 
+    /** Scene lighting state shared by the overlay and the sprite tint. */
+    function computeSceneState(hour, weather, settings) {
+        const raining = isRaining(weather, settings);
+        const night = hour !== null && hour !== undefined && (hour >= 19 || hour < 6);
+        const dusk = hour !== null && hour !== undefined && hour >= 17 && hour < 19;
+        return night ? 'night' : (raining ? 'rain' : (dusk ? 'dusk' : 'neutral'));
+    }
+
     function updateWeatherOverlay(hour, weather, settings) {
         try {
             let ov = document.getElementById('scene-director-wx-overlay');
@@ -563,6 +701,495 @@
     }
 
     // ------------------------------------------------------------------
+    // Sprite shadow & lighting tint (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // ONE composed filter string (the two features share the CSS `filter`
+    // property, so they must be built together), applied through a CSS
+    // variable so it survives ST cloning/replacing the sprite img node.
+    function updateSpriteFilter(state, settings) {
+        try {
+            const parts = [];
+            if (settings.enableSpriteShadow) {
+                parts.push('drop-shadow(0 12px 18px rgba(0,0,0,.45))');
+            }
+            if (settings.enableSpriteTint) {
+                if (state === 'night') parts.push('brightness(.75) saturate(.85)');
+                else if (state === 'dusk') parts.push('sepia(.25) brightness(.9)');
+                else if (state === 'rain') parts.push('brightness(.8) saturate(.7)');
+            }
+            document.documentElement.style.setProperty(
+                '--scene-director-sprite-filter', parts.length ? parts.join(' ') : 'none');
+        } catch (e) {
+            console.error(`${LOG} sprite filter failed`, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Background crossfade (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // Dip a black overlay (between ST's background layers and the UI) to
+    // ~0.6 over 200ms, issue the /bg, then fade back over 300ms.
+    async function applyBackground(ctx, bg, settings) {
+        let issued = false;
+        try {
+            if (!settings.enableBgCrossfade) {
+                await runCommand(ctx, `/bg ${bg}`);
+                return;
+            }
+            let fade = document.getElementById('scene-director-bg-fade');
+            if (!fade) {
+                fade = document.createElement('div');
+                fade.id = 'scene-director-bg-fade';
+                document.body.appendChild(fade);
+            }
+            fade.style.transition = 'opacity 0.2s ease';
+            fade.style.opacity = '0.6';
+            await new Promise(function (r) { setTimeout(r, 200); });
+            await runCommand(ctx, `/bg ${bg}`);
+            issued = true;
+            fade.style.transition = 'opacity 0.3s ease';
+            fade.style.opacity = '0';
+        } catch (e) {
+            console.error(`${LOG} bg crossfade failed`, e);
+            try {
+                if (!issued) await runCommand(ctx, `/bg ${bg}`);
+            } catch (e2) { /* ignore */ }
+            try {
+                const fade = document.getElementById('scene-director-bg-fade');
+                if (fade) fade.style.opacity = '0';
+            } catch (e3) { /* ignore */ }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Typing presence (v0.3.0)
+    // ------------------------------------------------------------------
+
+    function onGenerationStart() {
+        try {
+            generating = true;
+            lastActivityTs = Date.now();
+            const settings = getSettings();
+            if (!settings.enableTypingPresence) return;
+            document.body.classList.add('scene-director-typing');
+            const img = currentSpriteImg();
+            if (!img) return;
+            const rect = img.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            let bubble = document.getElementById('scene-director-typing-bubble');
+            if (!bubble) {
+                bubble = document.createElement('div');
+                bubble.id = 'scene-director-typing-bubble';
+                bubble.className = 'scene-director-mood-bubble'; // reuse bubble look
+                bubble.textContent = '…';
+                document.body.appendChild(bubble);
+            }
+            bubble.style.position = 'fixed';
+            bubble.style.transform = 'none';
+            bubble.style.left = (rect.left + rect.width * 0.6) + 'px';
+            bubble.style.top = Math.max(4, rect.top + rect.height * 0.08) + 'px';
+            bubble.style.display = '';
+        } catch (e) {
+            console.error(`${LOG} typing presence failed`, e);
+        }
+    }
+
+    function onGenerationEnd() {
+        try {
+            generating = false;
+            lastActivityTs = Date.now();
+            document.body.classList.remove('scene-director-typing');
+            const bubble = document.getElementById('scene-director-typing-bubble');
+            if (bubble) bubble.style.display = 'none';
+        } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Ken Burns drift (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // ST paints the current background as a background-image on #bg1
+    // (public/scripts/backgrounds.js: $('#bg1').css('background-image', ...)),
+    // so a transform animation composes cleanly with its image swaps.
+    function updateKenBurns(settings) {
+        try {
+            const bgEl = document.getElementById('bg1');
+            if (!bgEl) return;
+            bgEl.classList.toggle('scene-director-kenburns', Boolean(settings.enableKenBurns));
+            const secs = Number(settings.kenBurnsSeconds) || 75;
+            bgEl.style.animationDuration = settings.enableKenBurns ? secs + 's' : '';
+        } catch (e) {
+            console.error(`${LOG} ken burns failed`, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Fire flicker (v0.3.0)
+    // ------------------------------------------------------------------
+
+    function updateFireOverlay(settings) {
+        try {
+            const re = compileRegex(settings.fireRegex);
+            const on = Boolean(settings.enableFireFlicker && lastBg && re && re.test(lastBg));
+            let ov = document.getElementById('scene-director-fire-overlay');
+            if (!ov) {
+                if (!on) return;
+                ov = document.createElement('div');
+                ov.id = 'scene-director-fire-overlay';
+                document.body.appendChild(ov);
+            }
+            ov.style.display = on ? 'block' : 'none';
+        } catch (e) {
+            console.error(`${LOG} fire flicker failed`, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Bio cards (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // Convention: /characters/<castFolder>/npc/bios.json is a flat object
+    // mapping cast keys to one-line bios: { "granty": "Rachel's grandmother
+    // and the keeper of the kitchen." }. Fetched once per session; a missing
+    // file means the feature quietly does nothing.
+    function fetchBios(settings) {
+        if (!biosPromise) {
+            const url = `/characters/${encodeURIComponent(settings.castFolder)}/npc/bios.json`;
+            biosPromise = fetch(url)
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; });
+        }
+        return biosPromise;
+    }
+
+    function showBioCard(chipEl, label, line) {
+        try {
+            let card = document.getElementById('scene-director-bio-card');
+            if (!card) {
+                card = document.createElement('div');
+                card.id = 'scene-director-bio-card';
+                document.body.appendChild(card);
+            }
+            card.innerHTML = '';
+            const name = document.createElement('b');
+            name.textContent = label;
+            card.appendChild(name);
+            card.appendChild(document.createTextNode(line));
+            card.style.display = 'block';
+            const rect = chipEl.getBoundingClientRect();
+            card.style.left = Math.max(6, rect.left) + 'px';
+            // Above the chip; measure after display for the real height.
+            card.style.top = Math.max(6, rect.top - card.offsetHeight - 10) + 'px';
+        } catch (e) { /* ignore */ }
+    }
+
+    function hideBioCard() {
+        try {
+            const card = document.getElementById('scene-director-bio-card');
+            if (card) card.style.display = 'none';
+        } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Photo mode (v0.3.0)
+    // ------------------------------------------------------------------
+
+    function titlePrefix(settings) {
+        return settings.titlePrefix || settings.castFolder || 'Scene';
+    }
+
+    function loadImageAsync(url) {
+        return new Promise(function (resolve, reject) {
+            const im = new Image();
+            im.onload = function () { resolve(im); };
+            im.onerror = function () { reject(new Error('image load failed: ' + url)); };
+            im.src = url;
+        });
+    }
+
+    function roundRectPath(g, x, y, w, h, r) {
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.arcTo(x + w, y, x + w, y + h, r);
+        g.arcTo(x + w, y + h, x, y + h, r);
+        g.arcTo(x, y + h, x, y, r);
+        g.arcTo(x, y, x + w, y, r);
+        g.closePath();
+    }
+
+    // Composites the current ST background + weather tint + expression
+    // sprite + HUD text onto a viewport-sized canvas and downloads a PNG.
+    // Everything drawn is same-origin, so the canvas stays untainted.
+    async function takePhoto() {
+        try {
+            const settings = getSettings();
+            const W = window.innerWidth;
+            const H = window.innerHeight;
+            const canvas = document.createElement('canvas');
+            canvas.width = W;
+            canvas.height = H;
+            const g = canvas.getContext('2d');
+            g.fillStyle = '#000';
+            g.fillRect(0, 0, W, H);
+            // 1. current ST background, cover-fit.
+            const bgEl = document.getElementById('bg1');
+            if (bgEl) {
+                const m = /url\(["']?([^"')]+)["']?\)/.exec(getComputedStyle(bgEl).backgroundImage || '');
+                if (m) {
+                    try {
+                        const im = await loadImageAsync(m[1]);
+                        const s = Math.max(W / im.width, H / im.height);
+                        g.drawImage(im, (W - im.width * s) / 2, (H - im.height * s) / 2,
+                            im.width * s, im.height * s);
+                    } catch (e) { /* keep black ground */ }
+                }
+            }
+            // 2. weather overlay tint.
+            const ov = document.getElementById('scene-director-wx-overlay');
+            if (ov) {
+                const c = getComputedStyle(ov).backgroundColor;
+                if (c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)') {
+                    g.fillStyle = c;
+                    g.fillRect(0, 0, W, H);
+                }
+            }
+            // 3. the sprite, at its on-screen rect.
+            const sprite = currentSpriteImg();
+            if (sprite && sprite.src) {
+                const rect = sprite.getBoundingClientRect();
+                if (rect.width && rect.height) {
+                    try {
+                        const im = await loadImageAsync(sprite.src);
+                        g.drawImage(im, rect.left, rect.top, rect.width, rect.height);
+                    } catch (e) { /* sprite optional */ }
+                }
+            }
+            // 4. HUD text, redrawn top-right.
+            const hud = document.getElementById('scene-director-hud');
+            if (hud && hud.textContent && hud.style.display !== 'none') {
+                const text = hud.textContent;
+                g.font = '14px sans-serif';
+                const tw = g.measureText(text).width;
+                g.fillStyle = 'rgba(15,15,22,0.72)';
+                roundRectPath(g, W - tw - 36, 10, tw + 24, 27, 13);
+                g.fill();
+                g.fillStyle = '#fff';
+                g.fillText(text, W - tw - 24, 28);
+            }
+            const dateStr = (lastParsedDate && lastParsedDate.day)
+                ? `${lastParsedDate.year}-${pad2(lastParsedDate.month)}-${pad2(lastParsedDate.day)}`
+                : new Date().toISOString().slice(0, 10);
+            const locStr = (lastParsedLoc || 'scene').replace(/[\\/:*?"<>|]/g, '');
+            const name = `${titlePrefix(settings)} — ${dateStr} — ${locStr}.png`;
+            canvas.toBlob(function (blob) {
+                try {
+                    if (!blob) throw new Error('toBlob returned null (tainted canvas?)');
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = name;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+                } catch (e) {
+                    console.error(`${LOG} photo save failed`, e);
+                    if (typeof toastr !== 'undefined') toastr.warning('Photo save failed: ' + e.message);
+                }
+            }, 'image/png');
+        } catch (e) {
+            console.error(`${LOG} photo mode failed`, e);
+            if (typeof toastr !== 'undefined') toastr.warning('Photo failed: ' + (e && e.message || e));
+        }
+    }
+
+    function updatePhotoButton(settings) {
+        try {
+            let btn = document.getElementById('scene-director-photo-btn');
+            if (!settings.enablePhotoMode) {
+                if (btn) btn.style.display = 'none';
+                return;
+            }
+            if (!btn) {
+                btn = document.createElement('div');
+                btn.id = 'scene-director-photo-btn';
+                btn.textContent = '📷';
+                btn.title = 'Save a scene photo';
+                btn.addEventListener('click', function () { takePhoto(); });
+                document.body.appendChild(btn);
+            }
+            btn.style.display = '';
+        } catch (e) {
+            console.error(`${LOG} photo button failed`, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Tab title (v0.3.0)
+    // ------------------------------------------------------------------
+
+    function updateTabTitle(location, text, settings) {
+        try {
+            if (!settings.enableTabTitle) return;
+            if (!location) { // no header => restore the original title
+                document.title = ORIGINAL_TITLE;
+                return;
+            }
+            const timeRe = compileRegex(settings.timeRegex);
+            const t = timeRe ? timeRe.exec(text || '') : null;
+            document.title = titlePrefix(settings) + ' — ' + location
+                + (t ? ', ' + t[0].replace(/\s+/g, ' ').trim() : '');
+        } catch (e) { /* ignore */ }
+    }
+
+    function restoreTabTitle() {
+        try { document.title = ORIGINAL_TITLE; } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Emotion lighting accents (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // Reads the CURRENT expression sprite's filename ~1.5s after the message
+    // (by then the expressions extension has classified). Intense emotions
+    // fire a transient full-viewport pulse (max opacity ~0.18).
+    const ACCENT_PATTERNS = [
+        [/anger|angry|rage/, 'anger'],
+        [/fear|afraid|terror|scared/, 'fear'],
+        [/love|desire|lust/, 'love'],
+    ];
+
+    function fireEmotionAccent(settings) {
+        try {
+            if (!settings.enableEmotionAccents) return;
+            const img = currentSpriteImg();
+            if (!img || !img.src) return;
+            const file = (img.src.split('/').pop() || '').toLowerCase();
+            let cls = null;
+            for (const [re, name] of ACCENT_PATTERNS) {
+                if (re.test(file)) { cls = name; break; }
+            }
+            if (!cls) return;
+            const div = document.createElement('div');
+            div.className = 'scene-director-accent ' + cls;
+            document.body.appendChild(div);
+            setTimeout(function () { try { div.remove(); } catch (e) { /* ignore */ } }, 1600);
+        } catch (e) {
+            console.error(`${LOG} emotion accent failed`, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Idle presence (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // After idleAfterSeconds without a message, every idleEverySeconds swap
+    // the sprite between its available neutral variants (neutral, neutral-1
+    // ..neutral-3, same extension as the current sprite; verified via
+    // Image() onload before use). Only ever runs while the sprite already
+    // shows a neutral*, so it never fights the expressions extension; any
+    // message or generation start resets the clock.
+    function verifyImageUrl(url) {
+        return new Promise(function (resolve) {
+            const im = new Image();
+            im.onload = function () { resolve(url); };
+            im.onerror = function () { resolve(null); };
+            im.src = url;
+        });
+    }
+
+    function spriteFolderAndExt(src) {
+        const cut = src.lastIndexOf('/');
+        const file = src.slice(cut + 1);
+        const dot = file.lastIndexOf('.');
+        return {
+            folder: src.slice(0, cut + 1),
+            ext: dot >= 0 ? file.slice(dot).split('?')[0] : '.png',
+        };
+    }
+
+    function getNeutralVariants(folder, ext) {
+        const cacheKey = folder + '|' + ext;
+        if (!neutralVariantCache[cacheKey]) {
+            const names = ['neutral', 'neutral-1', 'neutral-2', 'neutral-3'];
+            neutralVariantCache[cacheKey] = Promise.all(
+                names.map(function (n) { return verifyImageUrl(folder + n + ext); })
+            ).then(function (urls) { return urls.filter(Boolean); });
+        }
+        return neutralVariantCache[cacheKey];
+    }
+
+    async function idleTick() {
+        try {
+            const settings = getSettings();
+            if (!settings.enableIdlePresence || generating) return;
+            const now = Date.now();
+            if (now - lastActivityTs < (Number(settings.idleAfterSeconds) || 90) * 1000) return;
+            if (now - lastIdleSwapTs < (Number(settings.idleEverySeconds) || 45) * 1000) return;
+            const img = currentSpriteImg();
+            if (!img || !img.src) return;
+            const file = (img.src.split('/').pop() || '').toLowerCase();
+            if (!/^neutral/.test(file)) return; // never fight the expressions ext
+            const { folder, ext } = spriteFolderAndExt(img.src);
+            const variants = await getNeutralVariants(folder, ext);
+            if (!variants || variants.length < 2) return;
+            const others = variants.filter(function (u) { return u !== img.src; });
+            if (!others.length) return;
+            // Re-check after the async verification gap.
+            if (generating || Date.now() - lastActivityTs < (Number(settings.idleAfterSeconds) || 90) * 1000) return;
+            const cur = currentSpriteImg();
+            if (!cur || !/^neutral/.test((cur.src.split('/').pop() || '').toLowerCase())) return;
+            lastIdleSwapTs = Date.now();
+            cur.src = others[Math.floor(Math.random() * others.length)];
+            // The Sprite Crossfade observer handles the fade (if enabled).
+        } catch (e) { /* ignore */ }
+    }
+
+    function startIdleLoop() {
+        try {
+            if (idleTimer) return;
+            idleTimer = setInterval(idleTick, 5000); // fine-grained ticker;
+            // the real cadence comes from idleAfterSeconds/idleEverySeconds.
+        } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
+    // Asset preloading (v0.3.0)
+    // ------------------------------------------------------------------
+
+    // 5s after each message (browser has settled): once per session, prefetch
+    // every file the background map / seasonal swaps / era rules could apply;
+    // every time, verify-and-cache the current sprite's neutral variants.
+    function schedulePreload(settings) {
+        try {
+            if (!settings.enablePreload) return;
+            setTimeout(function () {
+                try {
+                    if (!mapPreloaded) {
+                        mapPreloaded = true;
+                        const files = new Set();
+                        for (const e of settings.backgroundMap) files.add(e.background);
+                        for (const s of settings.seasonalMap) files.add(s.to);
+                        for (const r of settings.eraRules) files.add(r.to);
+                        files.forEach(function (f) {
+                            if (!f) return;
+                            const im = new Image();
+                            im.src = 'backgrounds/' + encodeURIComponent(f);
+                        });
+                        console.log(`${LOG} prefetched ${files.size} backgrounds`);
+                    }
+                    const img = currentSpriteImg();
+                    if (img && img.src) {
+                        const { folder, ext } = spriteFolderAndExt(img.src);
+                        getNeutralVariants(folder, ext); // verifying IS prefetching
+                    }
+                } catch (e) { /* ignore */ }
+            }, 5000);
+        } catch (e) { /* ignore */ }
+    }
+
+    // ------------------------------------------------------------------
     // Cast strip rendering
     // ------------------------------------------------------------------
 
@@ -579,12 +1206,30 @@
     function updateCastStrip(text, settings) {
         const el = getCastStripEl();
         el.innerHTML = '';
+        hideBioCard();
         if (!settings.enableCast || !settings.castFolder || !text) return;
         const base = `/characters/${encodeURIComponent(settings.castFolder)}/npc/`;
+        const lower = text.toLowerCase();
         // The member whose colour hex appears latest in the message gets the
         // 'speaking' highlight (brighter ring + slight scale).
         const speakerKey = detectSpeaker(text, settings);
-        for (const member of detectCast(text, settings)) {
+        let present = detectCast(text, settings);
+        // v0.3.0 Speaking Order: latest speaker first; members without a
+        // colour hit keep their cast-table order after them (stable sort).
+        if (settings.enableSpeakingOrder) {
+            try {
+                present = present
+                    .map(function (m) {
+                        return {
+                            member: m,
+                            pos: m.colorHex ? lower.lastIndexOf(m.colorHex.toLowerCase()) : -1,
+                        };
+                    })
+                    .sort(function (a, b) { return b.pos - a.pos; })
+                    .map(function (x) { return x.member; });
+            } catch (e) { /* keep cast-table order */ }
+        }
+        for (const member of present) {
             const wrap = document.createElement('div');
             wrap.className = 'scene-director-chip'
                 + (member.key === speakerKey ? ' speaking' : '');
@@ -618,6 +1263,21 @@
             label.textContent = member.label;
             wrap.appendChild(img);
             wrap.appendChild(label);
+            // v0.3.0 Bio Cards: hover tooltip from npc/bios.json. Chips have
+            // pointer-events:auto (the strip container stays non-blocking).
+            if (settings.enableBioCards) {
+                try {
+                    const key = member.key;
+                    const memberLabel = member.label;
+                    wrap.addEventListener('mouseenter', function () {
+                        fetchBios(settings).then(function (bios) {
+                            const line = bios && bios[key];
+                            if (line) showBioCard(wrap, memberLabel, String(line));
+                        }).catch(function () { /* ignore */ });
+                    });
+                    wrap.addEventListener('mouseleave', hideBioCard);
+                } catch (e) { /* ignore */ }
+            }
             el.appendChild(wrap);
         }
     }
@@ -651,6 +1311,9 @@
             if (!last) return;
             const text = last.mes;
 
+            // Any new message resets the idle-presence clock immediately.
+            lastActivityTs = Date.now();
+
             // Cast strip: runs on every AI message, before the header gate,
             // and is isolated so it can never break the other features.
             try {
@@ -665,13 +1328,23 @@
             // (Re)attach the sprite crossfade observer once the sprite exists.
             if (settings.enableCrossfade) setupSpriteCrossfade();
 
+            // v0.3.0 static upkeep + accents/preload (all independent).
+            try { updateKenBurns(settings); } catch (e) { /* ignore */ }
+            try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
+            try { setTimeout(function () { fireEmotionAccent(settings); }, 1500); } catch (e) { /* ignore */ }
+            try { schedulePreload(settings); } catch (e) { /* ignore */ }
+
             // Everything below needs a location from the scene header.
             const location = extractLocation(text, settings);
             if (!location) {
-                // No scene header => clear any weather/lighting tint.
+                // No scene header => clear any weather/lighting tint, keep the
+                // sprite filter neutral, and restore the original tab title.
                 updateWeatherOverlay(null, null, settings);
+                try { updateSpriteFilter('neutral', settings); } catch (e) { /* ignore */ }
+                try { updateTabTitle(null, text, settings); } catch (e) { /* ignore */ }
                 return;
             }
+            lastParsedLoc = location;
 
             // Parse failures just mean we skip time/date-driven features.
             let date = null;
@@ -682,6 +1355,8 @@
             } catch (e) {
                 console.error(`${LOG} date/time parse failed`, e);
             }
+            if (date && date.day) lastParsedDate = date;
+            const weather = extractWeather(text, settings);
 
             // --- Auto Backgrounds (+ era/seasonal variants) ---
             if (settings.enableBackgrounds) {
@@ -691,7 +1366,8 @@
                         bg = applyVariants(bg, location, date, settings);
                         if (bg !== lastBg) {
                             lastBg = bg;
-                            await runCommand(ctx, `/bg ${bg}`);
+                            // v0.3.0: optional black-dip crossfade around /bg.
+                            await applyBackground(ctx, bg, settings);
                             console.log(`${LOG} "${location}" -> ${bg}`);
                         }
                     } else {
@@ -707,10 +1383,19 @@
             // variant file (if your background map picked one) suppresses
             // the tint instead of double-darkening.
             try {
-                updateWeatherOverlay(hour, extractWeather(text, settings), settings);
+                updateWeatherOverlay(hour, weather, settings);
             } catch (e) {
                 console.error(`${LOG} weather overlay update failed`, e);
             }
+
+            // --- v0.3.0 per-message features (each isolated) ---
+            try { updateSpriteFilter(computeSceneState(hour, weather, settings), settings); } catch (e) { /* ignore */ }
+            try { updateFireOverlay(settings); } catch (e) { /* ignore */ }
+            try { updateTabTitle(location, text, settings); } catch (e) { /* ignore */ }
+            try {
+                updateDayTrail(date, location, settings);
+                updateHudTooltip((date && date.day) ? date : lastParsedDate, settings);
+            } catch (e) { /* ignore */ }
 
             // --- Auto Costumes ---
             if (settings.enableCostumes) {
@@ -732,14 +1417,21 @@
 
     function onChatChanged() {
         // New chat: forget dedupe state so the first message re-applies
-        // background and costume, and clear the previous chat's cast strip.
+        // background and costume, and clear the previous chat's cast strip,
+        // day trail and tab title.
         lastBg = null;
         lastCostume = null;
+        trailDateKey = null;
+        trailLocs = [];
+        lastParsedDate = null;
+        lastParsedLoc = null;
         try {
             getCastStripEl().innerHTML = '';
+            hideBioCard();
             const hud = document.getElementById('scene-director-hud');
-            if (hud) hud.style.display = 'none';
+            if (hud) { hud.style.display = 'none'; hud.title = ''; }
             updateWeatherOverlay(null, null, getSettings());
+            restoreTabTitle();
         } catch (e) { /* ignore */ }
         // Apply immediately for the chat we just opened.
         onMessage();
@@ -815,6 +1507,17 @@
             }
             return null;
         },
+        counters(value) {
+            if (!Array.isArray(value)) return 'must be a JSON array';
+            for (const [i, e] of value.entries()) {
+                if (typeof e?.label !== 'string' || !e.label) return `entry ${i}: "label" must be a non-empty string`;
+                if (e.emoji != null && typeof e.emoji !== 'string') return `entry ${i}: "emoji" must be a string`;
+                if (typeof e?.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) return `entry ${i}: "date" must be "YYYY-MM-DD"`;
+                if (Number.isNaN(Date.parse(e.date + 'T00:00:00Z'))) return `entry ${i}: "date" is not a real date`;
+                if (e.mode !== 'days' && e.mode !== 'weeks') return `entry ${i}: "mode" must be "days" or "weeks"`;
+            }
+            return null;
+        },
     };
 
     const TOGGLE_FIELDS = [
@@ -827,6 +1530,22 @@
         ['enableMoods', 'Cast Mood Bubbles', 'Heuristic mood per NPC chip: thought bubble emoji + optional <key>-happy/-angry/-sad.png portrait variant'],
         ['enableCrossfade', 'Sprite Crossfade', 'Fade the previous expression sprite out over the new one when it changes'],
         ['enableWeatherFx', 'Weather & Lighting Overlay', 'CSS tint (night/dusk/rain) + rain streaks behind the chat for backgrounds without graded variant files'],
+        // v0.3.0 presence pack.
+        ['enableSpriteShadow', 'Sprite Shadow', 'Grounding drop-shadow under the expression sprite'],
+        ['enableSpriteTint', 'Sprite Lighting Tint', 'Darken/warm the sprite to match the scene state (night/dusk/rain)'],
+        ['enableBgCrossfade', 'Background Crossfade', 'Dip to black around each /bg switch (200ms in, 300ms out)'],
+        ['enableTypingPresence', 'Typing Presence', 'Subtle sprite sway + "…" thought bubble while the model is generating'],
+        ['enableKenBurns', 'Ken Burns Drift', 'Slow zoom/pan on the background (duration configurable below)'],
+        ['enableFireFlicker', 'Fire Flicker', 'Warm flicker overlay when the applied background filename matches the fire regex'],
+        ['enableBioCards', 'Bio Cards', 'Hover a cast chip for a one-line bio from /characters/<folder>/npc/bios.json'],
+        ['enablePhotoMode', 'Photo Mode', '📷 button: composite background + tint + sprite + HUD to a downloadable PNG'],
+        ['enableTabTitle', 'Tab Title', 'Set the browser tab title to <prefix> — <location>, <time> per message'],
+        ['enableEmotionAccents', 'Emotion Accents', 'Transient lighting pulse when the sprite shows anger, fear or love/desire'],
+        ['enableIdlePresence', 'Idle Presence', 'After a quiet period, drift between the sprite\'s neutral-* variants'],
+        ['enableDayTrail', 'Day Trail', 'Accumulate today\'s distinct locations into the HUD hover tooltip'],
+        ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
+        ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
+        ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants'],
     ];
 
     const REGEX_FIELDS = [
@@ -835,6 +1554,13 @@
         ['dateRegex', 'Date regex', 'Group 1 = month name or number, group 2 = day, group 3 = year'],
         ['weatherRegex', 'Weather regex', 'Group 1 = weather text, matched against the header line (default: last |-separated segment)'],
         ['rainRegex', 'Rain regex', 'Matched against the lowercased weather text — triggers the rain tint and streaks'],
+        ['fireRegex', 'Fire regex', 'Matched against the APPLIED background filename — triggers the fire flicker overlay'],
+    ];
+
+    const NUMBER_FIELDS = [
+        ['kenBurnsSeconds', 'Ken Burns sweep (seconds)', 5, 600],
+        ['idleAfterSeconds', 'Idle presence after (seconds)', 10, 3600],
+        ['idleEverySeconds', 'Idle swap every (seconds)', 5, 3600],
     ];
 
     const JSON_FIELDS = [
@@ -844,6 +1570,7 @@
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
         ['cast', 'Cast table', '[{"key": "granty", "label": "Granty", "colorHex": "#B0BEC5", "nameRegex": "granty"}]'],
         ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
+        ['counters', 'Life counters', '[{"label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days"}] — computed from the parsed STORY date; "weeks" renders as 6w2d'],
     ];
 
     function escapeHtml(s) {
@@ -862,6 +1589,13 @@
                 <label for="sd_${key}">${escapeHtml(label)}</label>
                 <small>${escapeHtml(hint)}</small>
                 <input type="text" id="sd_${key}" class="text_pole" spellcheck="false" />
+                <div class="scene-director-error" id="sd_${key}_error"></div>
+            </div>`).join('');
+
+        const numbers = NUMBER_FIELDS.map(([key, label, min, max]) => `
+            <div class="scene-director-field">
+                <label for="sd_${key}">${escapeHtml(label)}</label>
+                <input type="number" id="sd_${key}" class="text_pole" min="${min}" max="${max}" step="1" />
                 <div class="scene-director-error" id="sd_${key}_error"></div>
             </div>`).join('');
 
@@ -885,12 +1619,19 @@
                     ${toggles}
                     <div class="scene-director-section">Scene header parsing</div>
                     ${regexes}
+                    <div class="scene-director-section">Timings</div>
+                    ${numbers}
                     <div class="scene-director-section">Maps &amp; rules (JSON)</div>
                     ${jsons}
                     <div class="scene-director-field">
                         <label for="sd_castFolder">Cast sprite folder</label>
-                        <small>Character folder name: portraits load from /characters/&lt;folder&gt;/npc/&lt;key&gt;.png</small>
+                        <small>Character folder name: portraits load from /characters/&lt;folder&gt;/npc/&lt;key&gt;.png, bios from /characters/&lt;folder&gt;/npc/bios.json</small>
                         <input type="text" id="sd_castFolder" class="text_pole" spellcheck="false" />
+                    </div>
+                    <div class="scene-director-field">
+                        <label for="sd_titlePrefix">Tab title / photo prefix</label>
+                        <small>Used in the browser tab title and photo filenames (blank = cast folder, else "Scene")</small>
+                        <input type="text" id="sd_titlePrefix" class="text_pole" spellcheck="false" />
                     </div>
                     <div class="scene-director-buttons">
                         <div id="sd_apply" class="menu_button">Apply &amp; validate</div>
@@ -913,17 +1654,35 @@
             const el = document.getElementById(`sd_${key}`);
             if (el) el.value = s[key];
         }
+        for (const [key] of NUMBER_FIELDS) {
+            const el = document.getElementById(`sd_${key}`);
+            if (el) el.value = s[key];
+        }
         for (const [key] of JSON_FIELDS) {
             const el = document.getElementById(`sd_${key}`);
             if (el) el.value = JSON.stringify(s[key], null, 2);
         }
         const folder = document.getElementById('sd_castFolder');
         if (folder) folder.value = s.castFolder;
+        const prefix = document.getElementById('sd_titlePrefix');
+        if (prefix) prefix.value = s.titlePrefix;
     }
 
     function setFieldError(key, message) {
         const el = document.getElementById(`sd_${key}_error`);
         if (el) el.textContent = message || '';
+    }
+
+    /** Re-apply the always-on visuals after a settings change. */
+    function refreshStatics(settings) {
+        try { updateSpriteFilter('neutral', settings); } catch (e) { /* ignore */ }
+        try { updateKenBurns(settings); } catch (e) { /* ignore */ }
+        try { updatePhotoButton(settings); } catch (e) { /* ignore */ }
+        try { updateFireOverlay(settings); } catch (e) { /* ignore */ }
+        if (!settings.enableTabTitle) restoreTabTitle();
+        if (settings.enableIdlePresence) startIdleLoop();
+        biosPromise = null;     // castFolder may have changed
+        mapPreloaded = false;   // background map may have changed
     }
 
     /** Validate the whole form; save only if everything passes. */
@@ -938,6 +1697,19 @@
             const value = document.getElementById(`sd_${key}`).value.trim();
             if (value && !compileRegex(value)) {
                 setFieldError(key, 'Not a valid regular expression.');
+                ok = false;
+            } else {
+                setFieldError(key, '');
+                pending[key] = value;
+            }
+        }
+
+        // Numbers: integers within their allowed range.
+        for (const [key, , min, max] of NUMBER_FIELDS) {
+            const raw = document.getElementById(`sd_${key}`).value.trim();
+            const value = parseInt(raw, 10);
+            if (Number.isNaN(value) || value < min || value > max) {
+                setFieldError(key, `Must be an integer between ${min} and ${max}.`);
                 ok = false;
             } else {
                 setFieldError(key, '');
@@ -971,17 +1743,19 @@
             return;
         }
 
-        // Everything validated: commit toggles, regexes, maps, folder.
+        // Everything validated: commit toggles, regexes, numbers, maps, folder.
         for (const [key] of TOGGLE_FIELDS) {
             s[key] = document.getElementById(`sd_${key}`).checked;
         }
         Object.assign(s, pending);
         s.castFolder = document.getElementById('sd_castFolder').value.trim();
+        s.titlePrefix = document.getElementById('sd_titlePrefix').value.trim();
         saveSettings();
 
         // Force a re-apply with the new config on the current chat.
         lastBg = null;
         lastCostume = null;
+        refreshStatics(s);
         onMessage();
 
         status.textContent = 'Saved.';
@@ -1020,8 +1794,11 @@
             }
             const weather = extractWeather(text, settings);
             lines.push(`weather    : ${weather ?? '(not found)'}${weather && isRaining(weather, settings) ? ' [rain]' : ''}`);
+            lines.push(`scene state: ${computeSceneState(hour, weather, settings)}`);
             const hudParts = buildHudParts(text, settings);
             lines.push(`hud        : ${hudParts ? hudParts.join(' · ') : '(nothing parsed)'}`);
+            const counters = buildCounters(date, settings);
+            lines.push(`counters   : ${counters || '(none)'}`);
             const present = detectCast(text, settings);
             const speakerKey = detectSpeaker(text, settings);
             lines.push(`cast       : ${present.length ? present.map(m => {
@@ -1060,13 +1837,25 @@
     function init() {
         try {
             const ctx = SillyTavern.getContext();
-            getSettings(); // ensure defaults exist
+            const settings = getSettings(); // ensure defaults exist
             addSettingsUi();
             const et = ctx.eventTypes || ctx.event_types;
             ctx.eventSource.on(et.MESSAGE_RECEIVED, onMessage);
             ctx.eventSource.on(et.MESSAGE_SWIPED, onMessage);
             if (et.CHAT_CHANGED) ctx.eventSource.on(et.CHAT_CHANGED, onChatChanged);
-            if (getSettings().enableCrossfade) setupSpriteCrossfade();
+            // v0.3.0: generation events for Typing Presence and the idle
+            // clock. Names checked defensively — different ST versions may
+            // not expose all of them.
+            try {
+                if (et.GENERATION_STARTED) ctx.eventSource.on(et.GENERATION_STARTED, onGenerationStart);
+                if (et.GENERATION_ENDED) ctx.eventSource.on(et.GENERATION_ENDED, onGenerationEnd);
+                if (et.GENERATION_STOPPED) ctx.eventSource.on(et.GENERATION_STOPPED, onGenerationEnd);
+            } catch (e) {
+                console.error(`${LOG} generation hooks failed`, e);
+            }
+            if (settings.enableCrossfade) setupSpriteCrossfade();
+            refreshStatics(settings);
+            startIdleLoop();
             console.log(`${LOG} loaded`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);

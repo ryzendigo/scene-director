@@ -210,3 +210,162 @@
     white-space: pre-wrap;
     margin-top: 6px;
 }
+
+/* ==== v0.3.0 — presence pack ============================================ */
+
+/* ---- Sprite shadow & lighting tint ----
+   One composed filter (shadow + tint share the property), delivered via a
+   CSS variable so it survives ST cloning/replacing the sprite img node. */
+
+#expression-image,
+#expression-holder img:not(.scene-director-sprite-ghost) {
+    filter: var(--scene-director-sprite-filter, none);
+}
+
+/* ---- Background crossfade (black dip around /bg) ---- */
+
+#scene-director-bg-fade {
+    position: fixed;
+    inset: 0;
+    z-index: -1; /* above ST's background layers, below the UI */
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* ---- Typing presence (sway + '…' bubble while generating) ---- */
+
+@keyframes scene-director-sway {
+    0%, 100% { transform: rotate(-0.4deg) translateY(0); }
+    50%      { transform: rotate(0.4deg) translateY(1%); }
+}
+
+body.scene-director-typing #expression-image,
+body.scene-director-typing #expression-holder img:not(.scene-director-sprite-ghost) {
+    animation: scene-director-sway 4s ease-in-out infinite;
+    transform-origin: 50% 90%;
+}
+
+#scene-director-typing-bubble {
+    z-index: 40;
+}
+
+/* ---- Ken Burns drift on ST's background element (#bg1) ----
+   Duration is set inline from the kenBurnsSeconds setting. */
+
+@keyframes scene-director-kenburns {
+    from { transform: scale(1.0) translate(0, 0); }
+    to   { transform: scale(1.06) translate(-1.2%, -0.8%); }
+}
+
+#bg1.scene-director-kenburns {
+    animation: scene-director-kenburns 75s ease-in-out infinite alternate;
+    will-change: transform;
+}
+
+/* ---- Fire flicker (warm radial glow, bottom-left biased) ---- */
+
+@keyframes scene-director-flicker {
+    0%, 100% { opacity: 0.10; }
+    40%      { opacity: 0.22; }
+    70%      { opacity: 0.14; }
+}
+
+#scene-director-fire-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    display: none;
+    background: radial-gradient(ellipse 55% 45% at 18% 88%,
+        rgba(255, 147, 41, 0.85), rgba(255, 120, 30, 0.25) 45%, transparent 70%);
+    animation: scene-director-flicker 2.2s ease-in-out infinite;
+}
+
+/* ---- Bio cards (chip hover tooltip) ----
+   Chips accept hover; the strip container stays non-blocking. */
+
+#scene-director-cast-strip .scene-director-chip {
+    pointer-events: auto;
+}
+
+#scene-director-bio-card {
+    position: fixed;
+    z-index: 1001;
+    display: none;
+    max-width: 260px;
+    background: rgba(15, 15, 22, 0.94);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 8px 10px;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+#scene-director-bio-card b {
+    display: block;
+    margin-bottom: 3px;
+}
+
+/* ---- Photo mode button ---- */
+
+#scene-director-photo-btn {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 999;
+    pointer-events: auto;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(15, 15, 22, 0.5);
+    opacity: 0.45;
+    transition: opacity 0.2s ease;
+    user-select: none;
+}
+
+#scene-director-photo-btn:hover {
+    opacity: 1;
+}
+
+/* ---- Emotion lighting accents (transient, max ~0.18 opacity) ---- */
+
+@keyframes scene-director-accent-pulse {
+    0%   { opacity: 0; }
+    30%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+.scene-director-accent {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    animation: scene-director-accent-pulse 1s ease-out forwards;
+}
+
+.scene-director-accent.anger {
+    background: radial-gradient(ellipse at center,
+        transparent 45%, rgba(180, 20, 20, 0.18) 100%);
+}
+
+.scene-director-accent.fear {
+    background: rgba(110, 140, 185, 0.16);
+}
+
+.scene-director-accent.love {
+    background: radial-gradient(ellipse at 50% 60%,
+        rgba(255, 170, 120, 0.18), transparent 70%);
+    animation-duration: 1.2s;
+}
+
+/* ---- Day trail & counters live in the HUD's title tooltip ---- */
+
+#scene-director-hud {
+    pointer-events: auto; /* needed for the hover tooltip */
+}
