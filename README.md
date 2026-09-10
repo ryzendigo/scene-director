@@ -10,6 +10,10 @@ structured **scene header** out of each AI message and directs the scene for you
 | **Era Swaps** | Once the *story* year passes a threshold, swaps one background for another (the half-built house is finished from 2027…) |
 | **Auto Costumes** | Switches sprite costumes with `/costume` based on location + time of day (pajamas in the bedroom after 8 pm…) |
 | **Cast Strip** | Shows small circular portrait chips for NPCs who *speak* in the latest AI message |
+| **Scene HUD** *(0.2.0)* | A small fixed chip top-right showing the parsed header: `🕰 2:14 PM · Tue Aug 11 2026 · 🌥 Overcast, 14°C` |
+| **Cast Mood Bubbles** *(0.2.0)* | Keyword heuristic per NPC chip: a comic thought bubble (😊/😠/😢) and an optional per-mood portrait variant |
+| **Sprite Crossfade** *(0.2.0)* | Fades the previous expression sprite out over the new one on sprite changes |
+| **Weather & Lighting Overlay** *(0.2.0)* | Pure-CSS night/dusk/rain tint (plus animated rain streaks) behind the chat, for backgrounds without pre-graded variant files |
 
 Every feature is independently toggleable and fully configurable. With no scene
 header in a message, everything no-ops quietly. The extension only issues the same
@@ -68,6 +72,8 @@ while building your maps.
 | Location regex | capture group 1 = the location text |
 | Time regex | group 1 = hour, group 2 = minutes, optional group 3 = `AM`/`PM`. If your header uses a 24-hour clock, write a regex with no group 3. |
 | Date regex | group 1 = month (English name **or** number 1–12), group 2 = day, group 3 = 4-digit year |
+| Weather regex | group 1 = the weather text. Matched against the **header line** (the line the location regex hit); the default grabs the last `\|`-separated segment before the closing `]` |
+| Rain regex | matched against the lowercased weather text; a hit means "it's raining" for the Weather & Lighting Overlay (default `rain\|storm\|shower\|drizzl`) |
 
 ### Background map
 
@@ -153,6 +159,75 @@ an `npc/` subfolder inside one character's sprite folder
 (`data/<user>/characters/<CharName>/npc/`) and drop in one square PNG per cast
 member, named after its `key`. A missing portrait silently removes that chip
 (no broken-image icons).
+
+With **Cast Strip** on, chips fade+rise in as they appear, and the member whose
+dialogue colour hex appears **latest** in the message is highlighted as
+*speaking* (brighter ring, slight scale); the others sit at 85% opacity.
+
+### Scene HUD
+
+A single fixed, click-through chip in the top-right corner showing whatever the
+header parsing found: the time, the story date (reformatted as `Tue Aug 11 2026`),
+and the weather text. Parts that don't parse are simply omitted; with no header
+at all the HUD hides. No configuration beyond the header regexes above.
+
+### Cast Mood Bubbles
+
+Requires the Cast Strip. For each present NPC, Scene Director collects the text
+of their `<font color="#hex">` dialogue spans **plus** a ±120-character narration
+window around each (name-regex matches for members without a colour), then scores
+three keyword sets over it. The highest-scoring mood wins; zero hits = neutral.
+
+- **Thought bubble**: a small comic-style white bubble (with two trailing dots as
+  the tail) pops in above the chip with 😊 (happy), 😠 (angry) or 😢 (sad).
+  Neutral shows no bubble.
+- **Mood portraits (optional)**: if a file named `<key>-happy.png`,
+  `<key>-angry.png` or `<key>-sad.png` exists next to the base `<key>.png` in
+  your `npc/` folder, the chip swaps to it for that mood. Missing variants fall
+  back gracefully to the base portrait — you can provide them for none, some, or
+  all cast members.
+
+The keyword sets are editable in the **Mood keywords** JSON field — regex
+sources, matched case-insensitively, highest total match count wins:
+
+```json
+{
+  "happy": "laugh|chuckl|smil|grin|warm|bright|beam",
+  "angry": "snap|sharp|cold|flat|hard|stern|glare|slam|hiss",
+  "sad": "tear|wept|weep|cries|crying|sob|quiet(?:ly)?\\s+sad|trembl|waver"
+}
+```
+
+It's a heuristic — tune the word lists to your story's prose. It will sometimes
+be wrong; that's what makes the bubbles charming rather than authoritative.
+
+### Sprite Crossfade
+
+Watches SillyTavern's expression sprite (`#expression-image` inside
+`#expression-holder`). When the sprite changes, the previous image is cloned,
+absolutely positioned over the new one, and faded out over 300 ms. If ST's own
+expression animation is active for a change (its `expression-animating` path),
+Scene Director stands down for that swap so the fade isn't doubled. If the
+sprite element doesn't exist (no expressions extension / no sprite pack), the
+feature quietly does nothing.
+
+### Weather & Lighting Overlay
+
+A programmatic, pure-CSS fallback for backgrounds **without** pre-graded
+`-night` / `-rain` / `-dusk` variant files: a full-viewport, click-through
+overlay is kept behind the chat (above ST's background layers) and tinted from
+the parsed header —
+
+| Condition | Effect |
+|---|---|
+| Night (19:00–05:59) | blue-black tint `rgba(10,15,40,.45)` |
+| Dusk (17:00–18:59) | amber tint `rgba(255,180,80,.18)` |
+| Rain (weather text matches the rain regex) | grey-blue tint `rgba(40,60,90,.35)` + animated CSS rain streaks |
+
+If your background map *did* pick a graded variant file (any background whose
+filename ends in `-night`, `-rain` or `-dusk`), the tint is suppressed so the
+scene isn't double-darkened — the rain streaks may still show for rain. Tints
+transition over 1 s, so lighting changes feel like a slow grade, not a cut.
 
 ## FAQ
 
