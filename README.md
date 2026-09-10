@@ -45,7 +45,7 @@ guard has kicked in.
 
 | Feature | What it does |
 |---|---|
-| **Auto Backgrounds** | Matches the header's 📍 location against your Place cards and runs `/bg <file>` — the card's day/night/dusk/rain/seasonal slot is picked from the parsed time and weather |
+| **Auto Backgrounds** *(engine 0.7.0)* | A layered verdict: a matching Place card (+10, decisive) > a generic scene keyword in the 📍 header (+4) > scene nouns in the narration (+1 each, cap +3 — can refine a known place into a sub-scene file, never outranks the header). Hour/weather choose the `-night`/`-rain`/`-dusk` variant when installed; missing files are skipped; below threshold the previous background stays; a change needs a new 📍 or a decisive score. Ships a **starter pack** of 30 generic scenes + night variants (`generic-<key>.jpg`, CC0, generated for this project) with a one-click installer |
 | **Seasonal Swaps** | In a given month, swaps a picked background for a variant (Christmas lights in December…) |
 | **Era Swaps** | Once the *story* year passes a threshold, swaps one background for another (the half-built house is finished from 2027…) |
 | **Auto Costumes** | Switches sprite costumes with `/costume` based on location + time of day (pajamas in the bedroom after 8 pm…) |
@@ -330,6 +330,25 @@ decided it; with *Debug Logging* on, each verdict is logged in full.
 
 `tools/mood-harness.mjs` runs the pure engine over a saved chat `.jsonl` so you
 can check verdicts against what you read.
+
+### Starter backgrounds (0.7.0)
+
+`backgrounds/` in this repo holds 30 generic scenes plus a `-night` variant of
+each — restaurant, cafe, pub, kitchen, dining, living, bedroom, bathroom,
+office, hallway, porch, backyard, street, city-street, park, beach, forest,
+country-road, farm, church, hospital, clinic, school, shop, hotel, car,
+transit, library, gym, rooftop — as `generic-<key>.jpg` / `generic-<key>-night.jpg`
+(~1600 px, ~250 KB each, CC0 / free to use, generated for this project).
+
+**Install:** Extensions → Scene Director → *Install starter backgrounds*. It
+uploads each file through SillyTavern's own Backgrounds endpoint and skips
+ones you already have. **Manual copy:** drop the files into your user's
+`backgrounds/` folder (`data/<user>/backgrounds/`) and reload.
+
+With **Generic Fallback** on (default), a 📍 header that matches no Place card
+is classified by keyword into one of these scenes; the narration's scene nouns
+(booth, pew, steering wheel…) can decide when the header offers nothing. Both
+keyword tables are editable under Advanced JSON.
 
 ### Life counters (Advanced JSON)
 

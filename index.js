@@ -148,6 +148,12 @@
  * sentences, departures, location change) — a name inside someone else's
  * speech never summons a chip. Unknown-speaker names come from narration.
  *
+ * v0.7.0 — BackgroundEngine + starter pack: the background is a layered
+ * evidence/veto verdict (Place card +10 > header generic keyword +4 >
+ * narration nouns +1..3, variants by hour/weather, missing files skipped,
+ * hysteresis), with a packed set of 30 generic scenes (+ night) and a
+ * one-click installer. Ken Burns drift on by default (subtle).
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -201,7 +207,7 @@
         enableSpriteTint: false,
         enableBgCrossfade: false,
         enableTypingPresence: false,
-        enableKenBurns: false,
+        enableKenBurns: true,       // 0.7.0: on by default (subtle)
         enableFireFlicker: false,
         enableBioCards: false,
         enablePhotoMode: false,
@@ -254,6 +260,10 @@
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
         enableDebug: false,         // v0.5.5: console diagnostics off by default
+        // v0.7.0 background engine.
+        enableGenericFallback: true,   // generic-<key>.jpg pack when no Place card matches
+        bgGenericLexicon: null,        // [[key, regex], ...] or null = built-in
+        bgNounLexicon: null,           // [[key, regex], ...] or null = built-in
         // v0.6.2 character sprite size.
         spriteAuto: true,           // match ST's size for the static sprites
         spriteVh: null,             // height in vh when auto is off (30-100)
@@ -267,7 +277,7 @@
         interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
 
         // v0.3.0 numeric tuning.
-        kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
+        kenBurnsSeconds: 40,     // one Ken Burns sweep (alternates back)
         idleAfterSeconds: 90,    // quiet time before idle presence starts
         idleEverySeconds: 120,   // interval between idle sprite swaps (0.5.5: ~2 min)
 
@@ -793,7 +803,7 @@
     // the node harness can extract this block and run saved messages.
     //
     // The one structural rule everything hangs on: text INSIDE any coloured
-    // dialogue span or plain quotation marks belongs to a SPEAKER, and a
+    // dialogue span or plain quote characters belongs to a SPEAKER, and a
     // name inside someone else's speech is a mention, never presence —
     // characters talk about people constantly. Only NARRATION (outside all
     // quotes/spans) can carry presence cues. A speaker's own span is the
@@ -927,7 +937,7 @@
             }
             // A name that appears ONLY inside others' speech is a mention.
             if (anyQuotedName && !anyNarrationName && !strong) { /* veto already recorded */ }
-            // 3. Named in the 📍 header ("with Martha").
+            // 3. Named in the 📍 header ("with June").
             if (masked.header) {
                 for (const re of [member.nameRe, member.aliasRe]) if (re && re.test(masked.header)) { score += 3; evidence.push('header'); break; }
             }
@@ -1023,6 +1033,210 @@
             compileTables, mask, ownerAt, sentenceAround, evaluate, evaluateProp, liveMatch, nameGuess };
     })();
     // === PRESENCE ENGINE (pure) END ===
+    // === BACKGROUND ENGINE (pure) BEGIN ===
+    // Layered evidence/veto verdict for the background — the same pattern as
+    // moods and presence. Pure: no DOM, no ST. The caller supplies the
+    // specific matcher (MAP / place cards), the list of installed files, the
+    // masked message (PresenceEngine.mask) and the header's hour/weather.
+    //
+    //   evidence   (1) 📍 header → specific place file          +10 (decisive)
+    //              (2) 📍 header keyword → generic scene key     +4 (best key)
+    //              (3) narration nouns (outside quotes) per key  +1 each, cap +3
+    //                  — may refine a known place into a sub-scene file
+    //                    ("<prefix>-<key>.jpg" when installed), never outranks
+    //                    the header
+    //              (4) hour/weather pick the -night/-rain/-dusk variant of
+    //                  the winner when that file is installed
+    //   vetoes     a key suggested only by dialogue/reported/remembered text;
+    //              a narration key that contradicts the header's scene;
+    //              a file that is not installed (next-best is used)
+    //   verdict    highest score >= 4 (>= 3 when the header offers nothing);
+    //              ties: header over narration, specific over generic;
+    //              below that → keep the previous background
+    //   hysteresis (caller) change only when the winner differs AND the 📍
+    //              changed OR the winner scores >= 8
+    const BackgroundEngine = (function () {
+        // Header keyword → generic key. Order matters only for ties.
+        const DEFAULT_GENERIC = [
+            ['restaurant', "restaurant|steakhouse|bistro|grill|eatery|hog'?s breath|diner"],
+            ['cafe', 'caf[eé]|coffee|bakery|tea ?room'],
+            ['pub', 'pub|\\bbar\\b|tavern|hotel bar|saloon'],
+            ['kitchen', 'kitchen'],
+            ['dining', 'dining room'],
+            ['living', 'living room|lounge ?room|sitting room|family room|lounge'],
+            ['bedroom', 'bedroom|bed room'],
+            ['bathroom', 'bathroom|shower|\\bbath\\b|ensuite'],
+            ['office', 'office|\\bstudy\\b'],
+            ['hallway', 'hallway|corridor|landing'],
+            ['porch', 'porch|verandah?|\\bdeck\\b'],
+            ['backyard', 'backyard|back yard|garden|\\byard\\b'],
+            ['street', 'street|footpath|sidewalk|avenue|\\broad\\b(?!.*country)'],
+            ['city-street', 'city|downtown|\\bcbd\\b|main street'],
+            ['park', '\\bpark\\b|playground|\\boval\\b'],
+            ['beach', 'beach|shore|jetty|pier|coast'],
+            ['forest', 'forest|\\bbush\\b|woods|trail|\\btrack\\b'],
+            ['country-road', 'country road|highway|freeway|back road|dirt road'],
+            ['farm', 'farm|paddock|\\bfield\\b|barn|shed'],
+            ['church', 'church|chapel|cathedral|\\bmass\\b'],
+            ['hospital', 'hospital|\\bward\\b|emergency'],
+            ['clinic', 'clinic|surgery|doctor|medical centre|waiting room'],
+            ['school', 'school|classroom|university|lecture'],
+            ['shop', 'shop|store|supermarket|mall|market|grocer'],
+            ['hotel', 'hotel room|motel|\\binn\\b|suite'],
+            ['car', '\\bcar\\b|truck|\\bute\\b|landcruiser|\\bcab\\b|driving|vehicle|car park'],
+            ['transit', 'train|\\bbus\\b|tram|station|airport|plane|terminal'],
+            ['library', 'library|bookshop'],
+            ['gym', '\\bgym\\b|\\bpool\\b|court'],
+            ['rooftop', 'rooftop|balcony'],
+        ];
+        // Narration scene nouns → key (+1 each, cap +3).
+        const DEFAULT_NOUNS = [
+            ['restaurant', 'booth|menu|waitress|waiter|bill|entr[ée]e|main course|tablecloth|cutlery'],
+            ['cafe', 'barista|latte|flat white|scone|counter'],
+            ['pub', 'bar stool|pint|beer|schooner|jukebox|pool table'],
+            ['kitchen', 'stove|kettle|bench|sink|fridge|oven|toaster|pan\\b|pot\\b'],
+            ['dining', 'dining table|place mats?|serving dish'],
+            ['living', 'couch|sofa|armchair|telly|television|fireplace|coffee table'],
+            ['bedroom', '\\bbed\\b|quilt|pillow|doona|bedside|sheets|mattress'],
+            ['bathroom', 'shower|tiles|basin|mirror|towel|tap\\b|bathtub'],
+            ['office', 'desk|keyboard|filing cabinet|monitor'],
+            ['porch', 'verandah|porch|screen door|steps'],
+            ['backyard', 'clothesline|lawn|hose|fence|washing'],
+            ['street', 'footpath|kerb|traffic|shopfront|crossing'],
+            ['park', 'swing|slide|bench|grass|picnic'],
+            ['beach', 'sand|waves|surf|tide|seaweed'],
+            ['forest', 'trees|undergrowth|leaf litter|gum trees|scrub'],
+            ['country-road', 'highway|bitumen|gravel|road train|paddocks?'],
+            ['farm', 'paddock|tractor|hay|fence line|cattle|sheep'],
+            ['church', 'pew|altar|hymn|pulpit|stained glass|candle'],
+            ['hospital', 'ward|drip|gurney|nurse|monitor'],
+            ['clinic', 'consulting|examination|surgery|waiting room|receptionist|stethoscope'],
+            ['car', 'steering wheel|windscreen|dashboard|seatbelt|glovebox|handbrake|footwell|headrest|indicator'],
+            ['transit', 'platform|carriage|ticket|departure'],
+            ['shop', 'trolley|checkout|aisle|shelf|register'],
+        ];
+        const VARIANT_RE = /-(night|rain|dusk)\.[a-z0-9]+$/i;
+
+        function compileTables(o) {
+            o = o || {};
+            const mk = function (rows) {
+                const out = [];
+                for (const r of (rows || [])) {
+                    try { out.push({ key: r[0], re: new RegExp('\\b(?:' + r[1] + ')\\b', 'gi') }); } catch (e) { /* skip */ }
+                }
+                return out;
+            };
+            return { generic: mk(o.generic || DEFAULT_GENERIC), nouns: mk(o.nouns || DEFAULT_NOUNS) };
+        }
+        function count(re, text) {
+            re.lastIndex = 0;
+            let n = 0; let m;
+            while ((m = re.exec(text)) !== null) { n++; if (m.index === re.lastIndex) re.lastIndex++; if (n >= 9) break; }
+            return n;
+        }
+        function baseOf(file) { return file ? file.replace(VARIANT_RE, function (m, v, off, str) { return str.slice(str.lastIndexOf('.')); }) : file; }
+        function withVariant(file, hour, weatherLower, available) {
+            if (!file) return file;
+            const dot = file.lastIndexOf('.');
+            const stem = dot >= 0 ? file.slice(0, dot) : file;
+            const ext = dot >= 0 ? file.slice(dot) : '.jpg';
+            const has = function (f) { return !available || !available.size || available.has(f); };
+            const night = hour !== null && hour !== undefined && (hour >= 19 || hour < 6);
+            const dusk = hour !== null && hour !== undefined && hour >= 17 && hour < 19;
+            const rain = /rain|storm|shower|drizzl/.test(weatherLower || '');
+            if (night && has(stem + '-night' + ext)) return stem + '-night' + ext;
+            if (rain && has(stem + '-rain' + ext)) return stem + '-rain' + ext;
+            if (dusk && has(stem + '-dusk' + ext)) return stem + '-dusk' + ext;
+            return file;
+        }
+
+        /**
+         * @param {object} input {
+         *   header: string (📍 text), narr: string (masked narration),
+         *   hour, weather, specific: (header)=>file|null,
+         *   available: Set<string>|null, current: string|null,
+         *   tables, genericPrefix: 'generic-' }
+         * @returns {{file, layer, score, detail, candidates}}
+         */
+        function evaluate(input) {
+            const T = input.tables || compileTables();
+            const prefix = input.genericPrefix || 'generic-';
+            const available = input.available && input.available.size ? input.available : null;
+            const has = function (f) { return !available || available.has(f); };
+            const header = input.header || '';
+            const narr = input.narr || '';
+            const cands = new Map(); // file -> { score, layer, reasons }
+            const add = function (file, score, layer, reason) {
+                if (!file) return;
+                const c = cands.get(file) || { score: 0, layer, reasons: [] };
+                c.score += score; c.reasons.push(reason);
+                if (layer === 'place' || (layer === 'place+narration' && c.layer !== 'place')) c.layer = layer;
+                cands.set(file, c);
+            };
+            const vetoes = [];
+            // (1) specific place from the header.
+            let placeFile = null;
+            if (header && typeof input.specific === 'function') {
+                placeFile = input.specific(header) || null;
+                if (placeFile) add(placeFile, 10.02, 'place', 'place "' + header.slice(0, 40) + '" +10');
+            }
+            // (2) header keyword → generic key.
+            let headerKey = null; let headerKeyHits = 0;
+            if (header) {
+                for (const g of T.generic) {
+                    const n = count(g.re, header);
+                    if (n > headerKeyHits) { headerKeyHits = n; headerKey = g.key; }
+                }
+                if (headerKey) add(prefix + headerKey + '.jpg', 4.01, 'generic', 'generic(' + headerKey + ' +4)');
+            }
+            // (3) narration nouns.
+            const narrScores = {};
+            for (const nrow of T.nouns) {
+                const n = count(nrow.re, narr);
+                if (n) narrScores[nrow.key] = Math.min(3, n);
+            }
+            const headerScene = placeFile ? (headerKey || 'place') : headerKey;
+            for (const key of Object.keys(narrScores)) {
+                const sc = narrScores[key];
+                if (headerScene && key !== headerKey) {
+                    // Sub-scene refinement inside a known place: "<prefix>-<key>.jpg".
+                    if (placeFile) {
+                        const stem = baseOf(placeFile).replace(/\.[a-z0-9]+$/i, '');
+                        const house = stem.split('-')[0];
+                        const sub = house + '-' + key + '.jpg';
+                        if (sub !== baseOf(placeFile) && has(sub)) { add(sub, 10.02 + sc, 'place+narration', 'narration(+' + sc + ' ' + key + ' → sub-scene)'); continue; }
+                    }
+                    vetoes.push(key + ' (narration) contradicted by header');
+                    continue;
+                }
+                add(prefix + key + '.jpg', sc, 'narration', 'narration(+' + sc + ' "' + key + '")');
+                if (placeFile && key === headerKey) add(placeFile, sc, 'place', 'narration(+' + sc + ')');
+            }
+            // Rank: installed files only.
+            const ranked = Array.from(cands.entries())
+                .filter(function (e) { return has(baseOf(e[0])); })
+                .sort(function (a, b) { return b[1].score - a[1].score; });
+            for (const [f] of cands) if (!has(baseOf(f))) vetoes.push(f + ' not installed');
+            const top = ranked[0];
+            let file = null; let layer = 'keep'; let score = 0;
+            // Threshold 4; when the header offers NOTHING (no place, no
+            // generic key), three distinct narration nouns may decide (>= 3).
+            const headerEvidence = Boolean(placeFile || headerKey);
+            const need = headerEvidence ? 4 : 3;
+            if (top && top[1].score >= need) {
+                file = withVariant(top[0], input.hour, (input.weather || '').toLowerCase(), available);
+                layer = top[1].layer; score = top[1].score;
+            }
+            const desc = ranked.slice(0, 3).map(function (e) { return e[0] + '=' + e[1].score.toFixed(1) + ' [' + e[1].reasons.join(', ') + ']'; }).join(' | ');
+            const detail = 'bg verdict: ' + (desc || 'no candidates') + (vetoes.length ? ' vetoes[' + vetoes.join('; ') + ']' : '')
+                + ' → ' + (file || 'keep previous') + ' (layer: ' + layer + ')';
+            return { file, layer, score, detail, candidates: ranked };
+        }
+
+        return { DEFAULT_GENERIC, DEFAULT_NOUNS, compileTables, evaluate, withVariant, baseOf };
+    })();
+    // === BACKGROUND ENGINE (pure) END ===
+
 
 
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
@@ -1045,6 +1259,13 @@
     // Dedupe state: never re-issue /bg or /costume for an unchanged value.
     let lastBg = null;
     let lastBgGraded = false;   // last applied bg is a graded (-night/-rain/-dusk) pick
+    let lastBgLoc = null;       // 0.7.0: 📍 text the current background was chosen for
+    const bgTablesCache = { key: null, tables: null };
+    function bgTables(settings) {
+        const key = JSON.stringify([settings.bgGenericLexicon, settings.bgNounLexicon]);
+        if (bgTablesCache.key !== key) bgTablesCache = Object.assign(bgTablesCache, { key, tables: BackgroundEngine.compileTables({ generic: settings.bgGenericLexicon || null, nouns: settings.bgNounLexicon || null }) });
+        return bgTablesCache.tables;
+    }
     let lastCostume = null;     // '' = default costume, null = never applied
 
     const ORIGINAL_TITLE = document.title;
@@ -2021,6 +2242,7 @@
         try {
             if (!settings.enableBgCrossfade) {
                 await runCommand(ctx, `/bg ${bg}`);
+                try { updateKenBurns(settings); } catch (e2) { /* ignore */ }
                 return;
             }
             let fade = document.getElementById('scene-director-bg-fade');
@@ -2036,6 +2258,7 @@
             issued = true;
             fade.style.transition = 'opacity 0.3s ease';
             fade.style.opacity = '0';
+            try { updateKenBurns(settings); } catch (e2) { /* ignore */ } // /bg may reset #bg1
         } catch (e) {
             console.error(`${LOG} bg crossfade failed`, e);
             try {
@@ -2164,6 +2387,7 @@
             queueDom(function () {
                 bgEl.classList.toggle('scene-director-kenburns', on);
                 bgEl.style.animationDuration = on ? secs : '';
+                dbg('ken burns ' + (on ? 'attached to #bg1 (' + secs + ', alternating)' : 'detached'));
             });
         } catch (e) {
             console.error(`${LOG} ken burns failed`, e);
@@ -3567,21 +3791,39 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             lastParsedLoc = location;
             if (scene.date && scene.date.day) lastParsedDate = scene.date;
 
-            // --- Auto Backgrounds (place cards + era/seasonal variants) ---
+            // --- Auto Backgrounds (0.7.0: BackgroundEngine verdict) ---
+            // Place card (+10) > header generic keyword (+4) > narration nouns
+            // (+1..3, never over the header); variants by hour/weather when
+            // installed; missing files skipped; below threshold = keep.
             if (settings.enableBackgrounds) {
                 try {
-                    const pick = pickBackground(location, scene, settings);
-                    if (pick) {
-                        const bg = applyVariants(pick.file, location, scene.date, settings);
-                        if (bg !== lastBg) {
-                            lastBg = bg;
-                            lastBgGraded = pick.graded && bg === pick.file;
-                            await applyBackground(ctx, bg, settings);
-                            dbg(`"${location}" -> ${bg}`);
+                    const bgList = await fetchBackgroundsList();
+                    const available = bgList.length ? new Set(bgList) : null;
+                    const maskedBg = PresenceEngine.mask(last.mes || '');
+                    const v = BackgroundEngine.evaluate({
+                        header: location, narr: maskedBg.narr, hour: scene.hour, weather: scene.weather || '',
+                        specific: function (h) {
+                            const pick = pickBackground(h, scene, settings);
+                            return pick ? applyVariants(pick.file, h, scene.date, settings) : null;
+                        },
+                        available, current: lastBg, tables: settings.enableGenericFallback ? bgTables(settings)
+                            : BackgroundEngine.compileTables({ generic: [], nouns: [] }),
+                    });
+                    dbg(v.detail);
+                    if (v.file) {
+                        const locChangedBg = location !== lastBgLoc;
+                        if (v.file !== lastBg && (locChangedBg || v.score >= 8 || !lastBg)) {
+                            lastBg = v.file;
+                            lastBgGraded = GRADED_VARIANT_RE.test(v.file);
+                            await applyBackground(ctx, v.file, settings);
+                            dbg(`"${location}" -> ${v.file} (layer: ${v.layer})`);
+                        } else if (v.file !== lastBg) {
+                            dbg(`bg hold: ${v.file} scored ${v.score.toFixed(1)} < 8 with the same 📍 — keeping ${lastBg}`);
                         }
                     } else {
-                        dbg(`no background mapping for location: ${location}`);
+                        dbg(`no background verdict for "${location}" — keeping ${lastBg || 'current'}`);
                     }
+                    lastBgLoc = location;
                 } catch (e) {
                     console.error(`${LOG} background switch failed`, e);
                 }
@@ -3638,6 +3880,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         // sprite observer fresh, and clear the previous chat's UI (item 5).
         lastBg = null;
         lastBgGraded = false;
+        lastBgLoc = null;
         lastCostume = null;
         try { onGenerationEnd(); } catch (e) { /* ignore */ }
         trailDateKey = null;
@@ -3702,10 +3945,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             }
             // st-weather-cycle (nullara/st-weather-cycle): localStorage key
             // 'st-weather-cycle-settings' + overlay/panel DOM ids.
-            let wc = false;
-            try { wc = Boolean(localStorage.getItem('st-weather-cycle-settings')); } catch (e) { /* ignore */ }
-            if (wc
-                || document.getElementById('st-weather-cycle-overlay')
+            // 0.7.0: only a LIVE st-weather-cycle (its DOM) stands us down.
+            if (document.getElementById('st-weather-cycle-overlay')
                 || document.getElementById('st-weather-cycle-panel')) {
                 result.weatherCycle = true;
             }
@@ -3727,7 +3968,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     let backgroundsListPromise = null;
 
     /** Installed backgrounds, via ST's own endpoint (POST /api/backgrounds/all). */
-    function fetchBackgroundsList() {
+    function fetchBackgroundsList(force) {
+        if (force) backgroundsListPromise = null;
         if (!backgroundsListPromise) {
             backgroundsListPromise = (async function () {
                 try {
@@ -4308,6 +4550,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             }
             return null;
         },
+        bgGenericLexicon(value) { return value === null ? null : (Array.isArray(value) && value.every(function (r) { return Array.isArray(r) && typeof r[0] === 'string' && typeof r[1] === 'string' && compileRegex(r[1]); }) ? null : 'must be null or [[key, regex], ...]'); },
+        bgNounLexicon(value) { return value === null ? null : (Array.isArray(value) && value.every(function (r) { return Array.isArray(r) && typeof r[0] === 'string' && typeof r[1] === 'string' && compileRegex(r[1]); }) ? null : 'must be null or [[key, regex], ...]'); },
         moodLexicon(value) {
             if (value === null) return null;
             if (!Array.isArray(value)) return 'must be null or a JSON array of [regex, label, weight, [vetoes]]';
@@ -4339,6 +4583,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
 
     const TOGGLE_FIELDS = [
         ['enableBackgrounds', 'Auto Backgrounds', 'Switch the background with /bg when the scene header location matches a Place card'],
+        ['enableGenericFallback', 'Generic Fallback', 'When no Place card matches the 📍 header, classify it (and the narration) into a generic scene and use generic-<key>.jpg from the starter pack'],
         ['enableSeasonal', 'Seasonal Swaps', 'Swap a picked background for a seasonal variant in a given month (Advanced JSON)'],
         ['enableEra', 'Era Swaps', 'Swap a picked background once the story year passes a threshold (Advanced JSON)'],
         ['enableCostumes', 'Auto Costumes', 'Switch sprite costumes with /costume based on location and time of day'],
@@ -4397,6 +4642,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['eraRules', 'Era rules', '[{"minYear": 2027, "pattern": "build site", "from": "frame.jpg", "to": "finished.jpg"}]'],
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
         ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
+        ['bgGenericLexicon', 'Background: header keywords', '[["restaurant", "restaurant|bistro"], ...] — null = built-in; the 📍 header keyword that picks a generic scene (+4)'],
+        ['bgNounLexicon', 'Background: narration nouns', '[["restaurant", "booth|menu|waitress"], ...] — null = built-in; scene nouns in narration (+1 each, cap +3, never over the header)'],
         ['moodLexicon', 'Mood lexicon', '[[regex, label, weight, [vetoes]], ...] — leave null for the built-in ~110-cue table; Export shows the current one'],
         ['moodEmoji', 'Mood bubble emoji', '{"joy": "✨", "anger": "💢", "happy": "✨", "angry": "💢", "sad": "💧"} — label -> emoji shown in the thought bubble after a reply (NPC chips use happy/angry/sad)'],
         ['counters', 'Life counters', '[{"label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days"}] — computed from the parsed STORY date; "weeks" renders as 6w2d'],
@@ -4578,6 +4825,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         <input type="text" id="sd_castFolder" class="text_pole" spellcheck="false" />
                     </div>
 
+                    <div class="scene-director-section">Starter backgrounds</div>
+                    <small class="scene-director-help">30 generic scenes + night variants (restaurant, cafe, pub, kitchen, bedroom, car, church, beach…) used automatically when no Place card matches the 📍 header. One click uploads them through SillyTavern's own Backgrounds endpoint; files already installed are skipped.</small>
+                    <div class="scene-director-buttons">
+                        <div id="sd_install_pack" class="menu_button">⬇ Install starter backgrounds</div>
+                    </div>
+                    <div id="sd_install_status" class="scene-director-help"></div>
+
                     <div class="scene-director-section">Place cards</div>
                     <small class="scene-director-help">One card per location: matcher regex + background slots (day / night / dusk / rain / seasonal), each picked from your installed backgrounds.</small>
                     <div id="sd_place_cards"></div>
@@ -4729,7 +4983,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
 
         for (const [key] of JSON_FIELDS) {
-            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : (key === 'moodLexicon' ? 'null' : '[]'));
+            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : ((key === 'moodLexicon' || key === 'bgGenericLexicon' || key === 'bgNounLexicon') ? 'null' : '[]'));
             let parsed;
             try {
                 parsed = JSON.parse(raw);
@@ -4852,6 +5106,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
         }
 
+        const installBtn = document.getElementById('sd_install_pack');
+        if (installBtn) installBtn.addEventListener('click', function () { installStarterPack(document.getElementById('sd_install_status')); });
         const placeAdd = document.getElementById('sd_place_add');
         if (placeAdd) placeAdd.addEventListener('click', function () { addPlace({}); });
 
@@ -5012,6 +5268,56 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         });
     }
 
+    // ------------------------------------------------------------------
+    // 0.7.0 starter pack installer — uploads the packed generic backgrounds
+    // through ST's own endpoint (POST /api/backgrounds/upload, multipart
+    // field "avatar", the same call the Backgrounds panel makes), skipping
+    // files already installed.
+    // ------------------------------------------------------------------
+    const STARTER_KEYS = ['restaurant', 'cafe', 'pub', 'kitchen', 'dining', 'living', 'bedroom', 'bathroom', 'office', 'hallway', 'porch', 'backyard', 'street', 'city-street', 'park', 'beach', 'forest', 'country-road', 'farm', 'church', 'hospital', 'clinic', 'school', 'shop', 'hotel', 'car', 'transit', 'library', 'gym', 'rooftop'];
+    function extensionBaseUrl() {
+        // The stylesheet ST loaded for us tells us where this extension lives.
+        const link = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+            .find(function (l) { return /scene-director\/style\.css/i.test(l.href); });
+        if (link) return link.href.replace(/style\.css.*$/i, '');
+        return '/scripts/extensions/third-party/scene-director/';
+    }
+    async function installStarterPack(statusEl) {
+        const say = function (t) { if (statusEl) statusEl.textContent = t; };
+        try {
+            const ctx = SillyTavern.getContext();
+            const existing = new Set(await fetchBackgroundsList(true));
+            const files = [];
+            for (const k of STARTER_KEYS) files.push('generic-' + k + '.jpg', 'generic-' + k + '-night.jpg');
+            const todo = files.filter(function (f) { return !existing.has(f); });
+            if (!todo.length) { say('Starter pack: all ' + files.length + ' files already installed.'); return; }
+            const base = extensionBaseUrl();
+            let done = 0; let failed = 0;
+            for (const f of todo) {
+                say(`Installing starter backgrounds… ${done + failed + 1}/${todo.length} (${f})`);
+                try {
+                    const r = await fetch(base + 'backgrounds/' + f);
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    const blob = await r.blob();
+                    const fd = new FormData();
+                    fd.append('avatar', new File([blob], f, { type: 'image/jpeg' }));
+                    const headers = ctx.getRequestHeaders ? ctx.getRequestHeaders() : {};
+                    delete headers['Content-Type'];
+                    const up = await fetch('/api/backgrounds/upload', { method: 'POST', headers, body: fd, cache: 'no-cache' });
+                    if (!up.ok) throw new Error('upload HTTP ' + up.status);
+                    done++;
+                } catch (e) { failed++; dbg('starter pack: ' + f + ' failed: ' + (e && e.message)); }
+                await new Promise(function (res) { sdTimeout(res, 120); });
+            }
+            await fetchBackgroundsList(true);
+            say(`Starter pack: ${done} installed, ${files.length - todo.length} already present${failed ? ', ' + failed + ' failed' : ''}.`);
+            if (typeof toastr !== 'undefined') toastr.info(`Scene Director: ${done} starter backgrounds installed${failed ? ', ' + failed + ' failed' : ''}`);
+        } catch (e) {
+            say('Starter pack install failed: ' + (e && e.message));
+            console.error(`${LOG} starter pack install failed`, e);
+        }
+    }
+
     function addSettingsUi() {
         const panel = document.getElementById('extensions_settings2')
             || document.getElementById('extensions_settings');
@@ -5063,7 +5369,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.6.4)');
+            dbg('loaded (v0.7.0)');
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);

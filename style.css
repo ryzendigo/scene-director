@@ -363,7 +363,7 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 
 @keyframes scene-director-kenburns {
     from { transform: scale(1.0) translate(0, 0); }
-    to   { transform: scale(1.06) translate(-1.2%, -0.8%); }
+    to   { transform: scale(1.03) translate(-0.8%, -0.5%); }
 }
 
 #bg1.scene-director-kenburns {
@@ -762,3 +762,6 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     max-height: none !important;
     transform: translate(var(--scene-director-sprite-dx, 0vw), var(--scene-director-sprite-dy, 0vh));
 }
+
+/* ---- 0.7.0: hold the Ken Burns drift while a reply streams ---- */
+body.scene-director-typing #bg1.scene-director-kenburns { animation-play-state: paused; }
