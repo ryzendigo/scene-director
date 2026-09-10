@@ -372,6 +372,16 @@ trail, speaking order, preloading — all independent toggles, all off by defaul
 except Sprite Shadow. See the tooltips on each toggle; behaviour is unchanged
 from 0.3.0 apart from the performance work below.
 
+## Privacy (0.7.1)
+
+**Tab Title is off by default** — the browser tab keeps SillyTavern's own
+title. If a Panic Curtain extension is installed (`#panic-curtain`, up when it
+lacks the class `pc-hidden`), Scene Director hides every overlay it owns (HUD,
+cast column, bubbles, tooltips, effects, photo button) the instant the curtain
+is up, restores the original tab title and pauses its loops; everything comes
+back when the curtain drops. The same happens while the tab is hidden, and a
+**Privacy hotkey** (e.g. `F9`) toggles the hide by hand.
+
 ## Performance notes (0.4.0)
 
 - The message text is extracted and header-parsed **once per event**, capped at

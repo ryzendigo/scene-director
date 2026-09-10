@@ -366,10 +366,7 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     to   { transform: scale(1.03) translate(-0.8%, -0.5%); }
 }
 
-#bg1.scene-director-kenburns {
-    animation: scene-director-kenburns 75s ease-in-out infinite alternate;
-    will-change: transform;
-}
+/* 0.7.1: drift is driven by requestAnimationFrame (index.js driftFrame). */
 
 /* ---- Fire flicker (warm radial glow, bottom-left biased) ---- */
 
@@ -764,4 +761,12 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
 }
 
 /* ---- 0.7.0: hold the Ken Burns drift while a reply streams ---- */
-body.scene-director-typing #bg1.scene-director-kenburns { animation-play-state: paused; }
+body.scene-director-typing /* 0.7.1: drift is driven by requestAnimationFrame (index.js driftFrame). */
+
+/* ---- 0.7.1: privacy — everything we own disappears while hidden ---- */
+body.scene-director-hidden #scene-director-hud, body.scene-director-hidden #scene-director-cast-strip,
+body.scene-director-hidden .scene-director-mood-bubble, body.scene-director-hidden #scene-director-typing-bubble,
+body.scene-director-hidden #scene-director-thought-tip, body.scene-director-hidden .scene-director-accent,
+body.scene-director-hidden #scene-director-fire-overlay, body.scene-director-hidden #scene-director-wx-overlay,
+body.scene-director-hidden #scene-director-photo-btn, body.scene-director-hidden .scene-director-drift,
+body.scene-director-hidden .scene-director-sprite-ghost, body.scene-director-hidden #scene-director-bio-card { display: none !important; }

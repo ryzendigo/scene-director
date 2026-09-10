@@ -154,6 +154,12 @@
  * hysteresis), with a packed set of 30 generic scenes (+ night) and a
  * one-click installer. Ken Burns drift on by default (subtle).
  *
+ * v0.7.1 — privacy (Panic Curtain / hidden-tab / hotkey hide; Tab Title
+ * off by default), a settings audit (mood injection toggle, mood dwell,
+ * presence grace, drift intensity, version in the header, engines
+ * self-test), and a requestAnimationFrame drift that actually moves #bg1
+ * (its background-attachment: fixed defeated CSS animations).
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -260,6 +266,14 @@
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
         enableDebug: false,         // v0.5.5: console diagnostics off by default
+        // v0.7.1 privacy + audit
+        hideOnCurtain: true,        // hide every overlay while a Panic Curtain (#panic-curtain) is up
+        hideWhenTabHidden: true,    // hide while the tab is not visible
+        privacyHotkey: '',          // e.g. "F9": toggles our own hide (fallback); blank = none
+        enableMoodInject: true,     // inject the [MOOD] instruction (depth 0)
+        moodDwell: 8,               // seconds a new mood is held
+        graceMessages: 2,           // silent messages a decisively-present member lingers
+        driftIntensity: 3,          // Ken Burns zoom depth, %
         // v0.7.0 background engine.
         enableGenericFallback: true,   // generic-<key>.jpg pack when no Place card matches
         bgGenericLexicon: null,        // [[key, regex], ...] or null = built-in
@@ -394,7 +408,7 @@
         while (b2 < text.length && !SENTENCE_SPLIT_RE.test(text[b2])) b2++;
         return text.slice(a2, b2);
     }
-    const PRESENCE_MISS_LIMIT = 3;
+    function PRESENCE_MISS_LIMIT_() { try { return Math.max(1, Math.min(6, (Number(getSettings().graceMessages) || 2) + 1)); } catch (e) { return 3; } }
 
     // === MOOD ENGINE (pure) BEGIN ===
     // Layered mood verdict. Pure functions only (no DOM, no ST) so a node
@@ -1726,7 +1740,7 @@
                     const raw = meta.presence[k];
                     const miss = Number(typeof raw === 'object' && raw ? raw.miss : raw);
                     const strong = Boolean(typeof raw === 'object' && raw ? raw.strong : true);
-                    if (Number.isFinite(miss) && miss >= 0 && miss < PRESENCE_MISS_LIMIT) castPresence.set(k, { miss, strong });
+                    if (Number.isFinite(miss) && miss >= 0 && miss < PRESENCE_MISS_LIMIT_()) castPresence.set(k, { miss, strong });
                 }
                 presenceLoc = meta.presenceLoc || null;
                 return;
@@ -1736,7 +1750,7 @@
             const ctx = SillyTavern.getContext();
             const chat = ctx.chat || [];
             const msgs = [];
-            for (let i = chat.length - 1; i >= 0 && msgs.length < PRESENCE_MISS_LIMIT; i--) {
+            for (let i = chat.length - 1; i >= 0 && msgs.length < PRESENCE_MISS_LIMIT_(); i--) {
                 const m = chat[i];
                 if (m && !m.is_user && !m.is_system && m.mes) msgs.push(m.mes);
             }
@@ -2303,7 +2317,7 @@
     }
     function showMainMoodEmoji(label, settings) {
         try {
-            if (!settings.enableTypingPresence) return;
+            if (!settings.enableTypingPresence || privacyHidden) return;
             const emoji = settings.moodEmoji && settings.moodEmoji[label];
             const bubble = mainBubbleEl();
             const my = ++mainBubbleSeq;
@@ -2320,6 +2334,72 @@
     }
 
     let genSafetyTimer = null;
+    // ------------------------------------------------------------------
+    // v0.7.1 privacy layer. Panic Curtain (a common "boss key" extension) is
+    // a single #panic-curtain element that is UP whenever it lacks the class
+    // "pc-hidden"; we watch that class, plus document.visibilityState and an
+    // optional hotkey. Hidden = body.scene-director-hidden (CSS hides every
+    // element we own), original tab title, loops paused.
+    // ------------------------------------------------------------------
+    let privacyHidden = false;
+    let privacyManual = false;
+    function curtainUp() {
+        const el = document.getElementById('panic-curtain');
+        return Boolean(el && !el.classList.contains('pc-hidden'));
+    }
+    function applyPrivacy(reason) {
+        try {
+            const st = getSettings();
+            const want = privacyManual
+                || (st.hideOnCurtain !== false && curtainUp())
+                || (st.hideWhenTabHidden !== false && document.visibilityState === 'hidden');
+            if (want === privacyHidden) return;
+            privacyHidden = want;
+            document.body.classList.toggle('scene-director-hidden', want);
+            if (want) {
+                restoreTabTitle();
+                stopIdleLoop();
+                clearAllTimeouts();
+                hideThoughtTip();
+                driftStop('privacy');
+                dbg('privacy: hidden (' + (reason || 'curtain') + ')');
+            } else {
+                if (st.enableIdlePresence || st.enableTypingPresence) startIdleLoop();
+                updateKenBurns(st);
+                dbg('privacy: restored (' + (reason || 'curtain') + ')');
+                try { onMessage(); } catch (e) { /* ignore */ }
+            }
+            updatePrivacyStatus();
+        } catch (e) { /* ignore */ }
+    }
+    function setupPrivacy() {
+        try {
+            const attach = function () {
+                const el = document.getElementById('panic-curtain');
+                if (!el || el.dataset.sdWatched === '1') return;
+                el.dataset.sdWatched = '1';
+                new MutationObserver(function () { applyPrivacy('curtain'); }).observe(el, { attributes: true, attributeFilter: ['class'] });
+                dbg('privacy: watching #panic-curtain (class pc-hidden)');
+                applyPrivacy('curtain');
+            };
+            attach();
+            new MutationObserver(attach).observe(document.body, { childList: true });
+            document.addEventListener('visibilitychange', function () { applyPrivacy('visibility'); });
+            document.addEventListener('keydown', function (e) {
+                const hk = String(getSettings().privacyHotkey || '').trim();
+                if (!hk || e.key !== hk) return;
+                privacyManual = !privacyManual;
+                applyPrivacy('hotkey ' + hk);
+            }, true);
+        } catch (e) { /* ignore */ }
+    }
+    function updatePrivacyStatus() {
+        try {
+            const el = document.getElementById('sd_privacy_status');
+            if (el) el.textContent = 'Privacy: ' + (privacyHidden ? 'HIDDEN' : 'visible') + ' · curtain ' + (document.getElementById('panic-curtain') ? (curtainUp() ? 'up' : 'down') : 'not installed') + ' · tab title ' + (getSettings().enableTabTitle ? 'on' : 'off');
+        } catch (e) { /* ignore */ }
+    }
+
     function onGenerationStart(type, params, dryRun) {
         try {
             // ST emits GENERATION_STARTED for dry runs (prompt assembly while
@@ -2373,25 +2453,80 @@
     // ------------------------------------------------------------------
 
     function kenBurnsActive(settings) {
-        return settings.enableKenBurns && !conflicts.weatherCycle;
+        return settings.enableKenBurns && !conflicts.weatherCycle && !privacyHidden && !document.hidden;
     }
-
-    function updateKenBurns(settings) {
+    // v0.7.1: drift by requestAnimationFrame. /bg paints #bg1's
+    // background-image (public/scripts/backgrounds.js), and #bg1 has
+    // background-attachment: fixed (css/backgrounds.css) — a fixed background
+    // is painted relative to the viewport, so a CSS transform animation can
+    // never move it. The loop writes transform every ~33ms (transform-only,
+    // will-change) and sets background-attachment: scroll while running.
+    const drift = { raf: null, el: null, last: 0, t0: 0, scale: 1, running: false, observer: null, statusTs: 0 };
+    function driftFrame(now) {
+        drift.raf = null;
         try {
-            const bgEl = document.getElementById('bg1');
-            if (!bgEl) return;
-            const on = kenBurnsActive(settings);
-            const secs = (Number(settings.kenBurnsSeconds) || 75) + 's';
-            if (bgEl.classList.contains('scene-director-kenburns') === on
-                && (!on || bgEl.style.animationDuration === secs)) return;
-            queueDom(function () {
-                bgEl.classList.toggle('scene-director-kenburns', on);
-                bgEl.style.animationDuration = on ? secs : '';
-                dbg('ken burns ' + (on ? 'attached to #bg1 (' + secs + ', alternating)' : 'detached'));
-            });
-        } catch (e) {
-            console.error(`${LOG} ken burns failed`, e);
-        }
+            const st = getSettings();
+            if (!kenBurnsActive(st)) { driftStop('inactive'); return; }
+            const el = drift.el && drift.el.isConnected ? drift.el : document.getElementById('bg1');
+            if (!el) { driftStop('no #bg1'); return; }
+            if (el !== drift.el) driftAttach(el, st);
+            if (now - drift.last >= 33 && !generating) {
+                drift.last = now;
+                const amp = Math.max(0.5, Math.min(8, Number(st.driftIntensity) || 3)) / 100;
+                const period = (Number(st.kenBurnsSeconds) || 40) * 2000;
+                const ph = ((now - drift.t0) % period) / period * Math.PI * 2;
+                const k = (1 - Math.cos(ph)) / 2;
+                drift.scale = 1 + amp * k;
+                el.style.transform = 'scale(' + drift.scale.toFixed(4) + ') translate(' + (-(amp * 25) * k).toFixed(3) + '%, ' + (-(amp * 16) * k).toFixed(3) + '%)';
+                if (now - drift.statusTs > 500) { drift.statusTs = now; updateDriftStatus(); }
+            }
+        } catch (e) { /* keep looping */ }
+        drift.raf = requestAnimationFrame(driftFrame);
+    }
+    function driftAttach(el, st) {
+        drift.el = el;
+        el.style.willChange = 'transform';
+        el.style.transformOrigin = '50% 50%';
+        el.style.backgroundAttachment = 'scroll';
+        try { const html = document.documentElement; if (getComputedStyle(html).overflow === 'visible') html.style.overflow = 'hidden'; } catch (e) { /* ignore */ }
+        if (drift.observer) drift.observer.disconnect();
+        drift.observer = new MutationObserver(function () {
+            if (drift.running && drift.el && drift.el.style.backgroundAttachment !== 'scroll') drift.el.style.backgroundAttachment = 'scroll';
+        });
+        drift.observer.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+        dbg('drift attached to #bg1 (rAF, ' + (Number(st.driftIntensity) || 3) + '% over ' + (Number(st.kenBurnsSeconds) || 40) + 's, attachment scroll)');
+    }
+    function driftStart(st) {
+        if (drift.running) return;
+        if (!kenBurnsActive(st)) { updateDriftStatus(); return; }
+        const el = document.getElementById('bg1');
+        if (!el) { updateDriftStatus(); return; }
+        drift.running = true;
+        drift.t0 = performance.now();
+        driftAttach(el, st);
+        drift.raf = requestAnimationFrame(driftFrame);
+    }
+    function driftStop(why) {
+        if (drift.raf) cancelAnimationFrame(drift.raf);
+        drift.raf = null;
+        if (drift.el) { drift.el.style.transform = ''; drift.el.style.willChange = ''; drift.el.style.backgroundAttachment = ''; }
+        if (drift.observer) { drift.observer.disconnect(); drift.observer = null; }
+        if (drift.running) dbg('drift stopped (' + (why || '') + ')');
+        drift.running = false; drift.scale = 1;
+        updateDriftStatus();
+    }
+    function updateKenBurns(settings) {
+        try { if (kenBurnsActive(settings)) driftStart(settings); else driftStop('setting'); }
+        catch (e) { console.error(`${LOG} ken burns failed`, e); }
+    }
+    function updateDriftStatus() {
+        try {
+            const el = document.getElementById('sd_drift_status');
+            if (!el) return;
+            el.textContent = drift.running
+                ? 'Drift: running on #bg1 · scale ' + drift.scale.toFixed(3) + (generating ? ' (paused while streaming)' : '')
+                : 'Drift: ' + (getSettings().enableKenBurns ? (privacyHidden ? 'paused (privacy)' : 'not attached') : 'off');
+        } catch (e) { /* ignore */ }
     }
 
     // ------------------------------------------------------------------
@@ -2602,7 +2737,7 @@
 
     function updateTabTitle(scene, settings) {
         try {
-            if (!settings.enableTabTitle) return;
+            if (!settings.enableTabTitle || privacyHidden) { if (document.title !== ORIGINAL_TITLE) restoreTabTitle(); return; }
             if (!scene || !scene.location) {
                 document.title = ORIGINAL_TITLE;
                 return;
@@ -2694,7 +2829,7 @@
     }
     function idleDriftTick(settings) {
         try {
-            if (!settings.enableTypingPresence || generating || document.hidden) return;
+            if (!settings.enableTypingPresence || generating || document.hidden || privacyHidden) return;
             const now = Date.now();
             if (now - lastActivityTs < 120000 || now - lastDriftTs < 90000) return;
             lastDriftTs = now;
@@ -2913,7 +3048,7 @@
     function showThoughtTip(anchorEl, opts) {
         try {
             const settings = getSettings();
-            if (!settings.enableThoughtTips) return;
+            if (!settings.enableThoughtTips || privacyHidden) return;
             const tip = tooltipEl();
             tip.innerHTML = '';
             const head = el('div', 'sd-tip-head', opts.label + (opts.emoji ? ' ' + opts.emoji : ''));
@@ -3295,7 +3430,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (nowKeys.has(k)) continue;
             const cur = (typeof st === 'object' && st) ? st : { miss: st, strong: true };
             const next = cur.miss + 1;
-            if (!cur.strong || next >= PRESENCE_MISS_LIMIT) {
+            if (!cur.strong || next >= PRESENCE_MISS_LIMIT_()) {
                 dbg(`cast -${k} (${cur.strong ? 'absent ' + next + ' messages' : 'no grace: last evidence was not decisive'})`);
                 castPresence.delete(k);
                 continue;
@@ -3436,7 +3571,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             // user's message) for chat completion; text completion places
             // it the same way via getExtensionPrompt(IN_CHAT, 0).
             ctx.setExtensionPrompt(MOOD_INJECT_KEY,
-                settings.enableMoodTag ? MOOD_PROMPT_SNIPPET : '',
+                (settings.enableMoodTag && settings.enableMoodInject !== false) ? MOOD_PROMPT_SNIPPET : '',
                 1 /* IN_CHAT */, 0 /* depth: absolutely last */, false /* scan */, 0 /* SYSTEM */);
         } catch (e) {
             console.error(`${LOG} mood-tag injection failed`, e);
@@ -3733,7 +3868,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             await assertExpression(ctx, label);
             sdTimeout(function () { showMainMoodEmoji(verdictLabel, settings); }, 300);
         };
-        const wait = moodState.lastEmitTs ? Math.max(0, 8000 - (Date.now() - moodState.lastEmitTs)) : 0;
+        const dwellMs = Math.max(0, Number(settings.moodDwell) || 8) * 1000;
+        const wait = moodState.lastEmitTs ? Math.max(0, dwellMs - (Date.now() - moodState.lastEmitTs)) : 0;
         if (wait > 0) moodState.pending = setTimeout(go, wait); else go();
     }
 
@@ -3923,6 +4059,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             } else {
                 lastActivityTs = Date.now();
                 if (getSettings().enableIdlePresence || getSettings().enableTypingPresence) startIdleLoop();
+                try { updateKenBurns(getSettings()); } catch (e) { /* ignore */ }
             }
         } catch (e) { /* ignore */ }
     }
@@ -4582,6 +4719,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     };
 
     const TOGGLE_FIELDS = [
+        ['hideOnCurtain', 'Hide with Panic Curtain', 'Privacy: hide every overlay (HUD, cast, bubbles, tooltips, effects) the moment a Panic Curtain (#panic-curtain) is up; restore when it drops'],
+        ['hideWhenTabHidden', 'Hide when tab hidden', 'Privacy: also hide while the browser tab is not visible'],
+        ['enableMoodInject', 'Inject [MOOD] instruction', 'Mood engine layer 1: inject the tag instruction as a system message at depth 0 (off = rely on the classifier + lexicon only)'],
         ['enableBackgrounds', 'Auto Backgrounds', 'Switch the background with /bg when the scene header location matches a Place card'],
         ['enableGenericFallback', 'Generic Fallback', 'When no Place card matches the 📍 header, classify it (and the narration) into a generic scene and use generic-<key>.jpg from the starter pack'],
         ['enableSeasonal', 'Seasonal Swaps', 'Swap a picked background for a seasonal variant in a given month (Advanced JSON)'],
@@ -4635,6 +4775,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['kenBurnsSeconds', 'Ken Burns sweep (seconds)', 5, 600],
         ['idleAfterSeconds', 'Idle presence after (seconds)', 10, 3600],
         ['idleEverySeconds', 'Idle swap every (seconds)', 5, 3600],
+        ['driftIntensity', 'Drift intensity (% zoom)', 1, 8],
+        ['moodDwell', 'Mood dwell (seconds)', 0, 30],
+        ['graceMessages', 'Presence grace (messages)', 0, 5],
     ];
 
     const JSON_FIELDS = [
@@ -4697,7 +4840,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         <div id="scene_director_settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Scene Director</b>
+                    <b>Scene Director v0.7.1</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -4708,6 +4851,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         build the cards for you — a 60-second setup.
                     </div>
                     <div id="sd_compat_note" style="display:none" class="scene-director-compat"></div>
+
+                    <div class="scene-director-section">Privacy</div>
+                    <div id="sd_privacy_status" class="scene-director-help">Privacy: …</div>
+                    <small class="scene-director-help">Tab Title is off by default: the browser tab keeps SillyTavern's own title. The two "Hide" toggles live in Features; set a hotkey here as a fallback.</small>
+                    <div class="scene-director-field">
+                        <label for="sd_privacyHotkey">Privacy hotkey</label>
+                        <small>Key name (e.g. F9) that toggles our own hide — blank = none</small>
+                        <input type="text" id="sd_privacyHotkey" class="text_pole" spellcheck="false" />
+                    </div>
 
                     <div id="sd_mood_status" class="scene-director-help">Mood engine: no verdict yet</div>
                     <div id="sd_classifier_status" class="scene-director-help">Local classifier: not used yet</div>
@@ -4802,6 +4954,12 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         <span id="sd_chatOpacityVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
                     <small class="scene-director-help">Tip: for translucent chat use ST's User Settings → UI Theme → Blur Tint colour alpha — the glass above is only for when you want it independent of the theme.</small>
+
+                    <div id="sd_drift_status" class="scene-director-help">Drift: …</div>
+                    <div class="scene-director-buttons">
+                        <div id="sd_selftest" class="menu_button">Run engines on the last 5 messages</div>
+                    </div>
+                    <pre id="sd_selftest_out" class="scene-director-test-output" style="display:none"></pre>
 
                     <div class="scene-director-section">Scan my chat</div>
                     <small class="scene-director-help">Reads the current chat and suggests cast &amp; place cards from what your story already contains.</small>
@@ -4906,6 +5064,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (folder) folder.value = s.castFolder;
         const prefix = document.getElementById('sd_titlePrefix');
         if (prefix) prefix.value = s.titlePrefix;
+        const hk = document.getElementById('sd_privacyHotkey');
+        if (hk) hk.value = s.privacyHotkey || '';
+        updatePrivacyStatus();
+        updateDriftStatus();
 
         // First-run banner: shown while both card decks are empty.
         const banner = document.getElementById('sd_firstrun');
@@ -5013,6 +5175,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         Object.assign(s, pending);
         s.castFolder = document.getElementById('sd_castFolder').value.trim();
         s.titlePrefix = document.getElementById('sd_titlePrefix').value.trim();
+        const hkIn = document.getElementById('sd_privacyHotkey');
+        if (hkIn) s.privacyHotkey = hkIn.value.trim();
+        applyPrivacy('setting');
+        updateMoodTagInjection(s);
         saveSettings();
 
         lastBg = null;
@@ -5106,6 +5272,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
         }
 
+        const selfTest = document.getElementById('sd_selftest');
+        if (selfTest) selfTest.addEventListener('click', runSelfTest);
         const installBtn = document.getElementById('sd_install_pack');
         if (installBtn) installBtn.addEventListener('click', function () { installStarterPack(document.getElementById('sd_install_status')); });
         const placeAdd = document.getElementById('sd_place_add');
@@ -5318,6 +5486,36 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
     }
 
+    /** Engines over the last 5 assistant messages, printed in the drawer. */
+    function runSelfTest() {
+        try {
+            const out = document.getElementById('sd_selftest_out');
+            const ctx = SillyTavern.getContext();
+            const settings = getSettings();
+            const chat = ctx.chat || [];
+            const ai = [];
+            for (let i = chat.length - 1; i >= 0 && ai.length < 5; i--) { const m = chat[i]; if (m && !m.is_user && !m.is_system && m.mes) ai.push(m); }
+            ai.reverse();
+            const lines = [];
+            let prev = null;
+            for (const m of ai) {
+                const scene = parseScene(m.mes, settings);
+                const tag = MoodEngine.detectTag(m.mes, m.extra && m.extra.reasoning);
+                const ext = MoodEngine.extractOwn(m.mes, { hex: ownColorHex(ctx, settings), nameRe: ownNameRegex(), aliasRe: null, otherNameRes: [], soloFemale: true });
+                const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
+                const mv = MoodEngine.verdict({ tag, local: null, lex, prev });
+                if (mv.final) prev = mv.final;
+                const an = analyzeCast(scene, settings, false);
+                const masked = an.masked || PresenceEngine.mask(m.mes);
+                const bv = BackgroundEngine.evaluate({ header: scene.location || '', narr: masked.narr, hour: scene.hour, weather: scene.weather || '',
+                    specific: function (h) { const pick = pickBackground(h, scene, settings); return pick ? applyVariants(pick.file, h, scene.date, settings) : null; },
+                    available: null, current: null, tables: bgTables(settings) });
+                lines.push('📍 ' + ((scene.location || '(no header)').slice(0, 48)) + '\n   mood: ' + (mv.final || 'hold') + ' [' + mv.rule + '] (no classifier in self-test)\n   present: ' + (an.present.map(function (p) { return p.member.key; }).join(', ') || 'nobody') + '\n   bg: ' + (bv.file || 'keep') + ' [' + bv.layer + ']');
+            }
+            if (out) { out.textContent = lines.join('\n') || 'No assistant messages.'; out.style.display = 'block'; }
+        } catch (e) { console.error(`${LOG} self-test failed`, e); }
+    }
+
     function addSettingsUi() {
         const panel = document.getElementById('extensions_settings2')
             || document.getElementById('extensions_settings');
@@ -5369,7 +5567,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.7.0)');
+            dbg('loaded (v0.7.1)');
+            try { setupPrivacy(); } catch (e) { /* ignore */ }
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
