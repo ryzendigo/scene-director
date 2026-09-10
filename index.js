@@ -137,6 +137,11 @@
  *     crossfade keeps the old image until the new one has painted and
  *     blends over 1.2s; idle variants are preloaded and cycle every ~2 min.
  *
+ * v0.6.0 — the layered mood engine (see MoodEngine and README "How
+ * moods are decided"): L0 own-material extraction, L1 tag, L2 ST's local
+ * go_emotions classifier, L3 weighted lexicon with vetoes; deterministic
+ * verdict rules; 8 s hysteresis; NPC variants from the same pipeline.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -236,6 +241,10 @@
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
         enableDebug: false,         // v0.5.5: console diagnostics off by default
+        // v0.6.0 mood engine.
+        enableLocalClassifier: true,   // L2: ST's server-side go_emotions classifier
+        femaleNamesRegex: '',          // other female characters (she/her is the main character's only when none of these appear)
+        moodLexicon: null,             // null = built-in table (MoodEngine.DEFAULT_LEXICON); else [[regex, label, weight, [vetoes]], ...]
         ownColorHex: '',            // the main character's dialogue colour (never an "unknown")
         interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)|breath(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)',
 
@@ -358,6 +367,407 @@
         return text.slice(a2, b2);
     }
     const PRESENCE_MISS_LIMIT = 3;
+
+    // === MOOD ENGINE (pure) BEGIN ===
+    // Layered mood verdict. Pure functions only (no DOM, no ST) so a node
+    // harness can extract this block and run it against saved chats.
+    //   L0 extractOwn()   — the character's OWN material from a finished
+    //                       message: her dialogue spans + narration about her
+    //   L1 (tag)           — [MOOD: x] / "Mood: x" inside <details> / reasoning
+    //   L2 (local)         — ST's go_emotions classifier on the L0 text
+    //   L3 lexicon()       — weighted cue table with vetoes + negation
+    //   verdict()          — the deterministic rules (documented inline)
+    const MoodEngine = (function () {
+        const LABELS = ['admiration', 'amusement', 'anger', 'annoyance', 'approval',
+            'caring', 'confusion', 'curiosity', 'desire', 'disappointment',
+            'disapproval', 'disgust', 'embarrassment', 'excitement', 'fear',
+            'gratitude', 'grief', 'joy', 'love', 'nervousness', 'optimism', 'pride',
+            'realization', 'relief', 'remorse', 'sadness', 'surprise', 'neutral'];
+        const LABEL_SET = new Set(LABELS);
+        const DETAILS_RE = /<details[\s\S]*?<\/details>/gi;
+        const THINK_RE = /<think>[\s\S]*?<\/think>/gi;
+        const TAG_RE = /[\[〔]\s*MOOD\s*[:：]\s*([a-z]+)\s*[\]〕]/gi;
+        const DETAILS_MOOD_RE = /<details[\s\S]*?\bmood\b\s*[:：]?\s*\**\s*([a-z]+)[\s\S]*?<\/details>/i;
+        const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/gm;
+        const FONT_ANY_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>([\s\S]*?)<\/font>/gi;
+        const TAG_STRIP_RE = /<[^>]+>/g;
+        const SENT_RE = /[^.!?\n]+[.!?…]*["”']?/g;
+        const PRONOUN_SHE = /\b(?:she|her|hers|herself)\b/i;
+        const NEG_RE = /\b(?:not|never|no|isn't|wasn't|doesn't|didn't|hardly|without|nor)\s+(?:\w+\s+){0,2}$/i;
+        const LAST_FRACTION = 0.6; // sentences beyond this point weigh double
+
+        // The lexicon: [regexSource, label, weight, vetoes]. Weight is per
+        // hit (times 2 in the message's last 40%). Vetoes are labels a hit
+        // rules OUT. Kept as plain data so the public build can expose it.
+        const DEFAULT_LEXICON = [
+            // amusement / joy
+            ['laugh(?:s|ed|ing|ter)?', 'amusement', 3, ['sadness', 'grief', 'anger', 'fear']],
+            ['giggl(?:es|ed|ing)?', 'amusement', 3, ['sadness', 'grief', 'anger', 'fear']],
+            ['chuckl(?:es|ed|ing)?', 'amusement', 2, ['sadness', 'grief']],
+            ['grin(?:s|ned|ning)?', 'amusement', 2, ['sadness', 'grief']],
+            ['smirk(?:s|ed|ing)?', 'amusement', 1.5, []],
+            ['teas(?:es|ed|ing)', 'amusement', 1.5, []],
+            ['wry(?:ly)?', 'amusement', 1, []],
+            ['snort(?:s|ed)?', 'amusement', 1.5, []],
+            ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
+            ['beam(?:s|ed|ing)', 'joy', 2, ['sadness']],
+            ['(?:face|eyes) lights? up|lights up', 'joy', 2, ['sadness']],
+            ['delight(?:ed|s)?', 'joy', 2, []],
+            ['\\bhappy\\b|happi(?:ly|ness)', 'joy', 1.5, []],
+            ['humm(?:ing|ed)|hums', 'joy', 1, []],
+            ['bright(?:ens|ened)\\b', 'joy', 1.5, []],
+            // embarrassment
+            ['(?:cheeks?|face|neck|ears)\\s+(?:(?:go|goes|going|went|turn|turns|turning|turned|burn|burning)\\s+)?(?:pink|red|hot|scarlet|crimson|warm)', 'embarrassment', 3, []],
+            ['(?:goes|went|gone|turning|turns|turned)\\s+pink', 'embarrassment', 3, []],
+            ['pink\\s+(?:across|in|on|over)\\s+(?:her|the)\\s+(?:cheeks|face)', 'embarrassment', 3, []],
+            ['blush(?:es|ed|ing)?', 'embarrassment', 3, []],
+            ['flush(?:es|ed|ing)?', 'embarrassment', 2, []],
+            ['ducks?\\s+her\\s+head', 'embarrassment', 2, []],
+            ['hides?\\s+her\\s+face', 'embarrassment', 2, []],
+            ['mortif(?:ied|ying)', 'embarrassment', 3, []],
+            ['sheepish(?:ly)?', 'embarrassment', 2, []],
+            // sadness / grief
+            ['\\btears?\\b|tearful', 'sadness', 3, ['joy', 'amusement', 'pride']],
+            ['\\bcr(?:y|ies|ied|ying)\\b|\\bwe(?:ep|pt|eping)\\b', 'sadness', 3, ['joy', 'amusement', 'pride']],
+            ['\\bsob(?:s|bed|bing)?\\b', 'sadness', 3, ['joy', 'amusement', 'pride']],
+            ['throat\\s+(?:goes|is|was|gone|feels)?\\s*(?:tight|thick|closing)', 'sadness', 2, []],
+            ['voice\\s+(?:cracks|wavers|breaks|catches)', 'sadness', 2, []],
+            ['eyes\\s+(?:fill|sting|burn|well|prick)', 'sadness', 2.5, []],
+            ['lip\\s+trembl(?:es|ing)', 'sadness', 2, []],
+            ['\\bgriev(?:es|ed|ing)|\\bgrief\\b|mourn(?:s|ed|ing)?', 'grief', 3, ['joy', 'amusement']],
+            ['\\baches?\\b|aching', 'grief', 1, []],
+            // anger / annoyance
+            ['(?<!\\bit\\s)(?<!\\blet\\s)\\bsnap(?:s|ped)\\b(?!\\s+(?:back|shut|closed|open|the|it|a\\b))', 'anger', 2.5, []],
+            ['\\bdr(?:y|ier|yly)\\b', 'amusement', 1, []],
+            ['flat\\s+voice|voice\\s+(?:goes\\s+)?flat|flatly', 'anger', 2, []],
+            ['jaw\\s+(?:sets?|tight(?:ens)?|clench(?:es|ed)?|works)', 'anger', 2.5, []],
+            ['glar(?:es|ed|ing)', 'anger', 3, []],
+            ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'anger', 2, []],
+            ['furious|fury|rage', 'anger', 3, []],
+            ['\\btemper\\b', 'anger', 2, []],
+            ['hiss(?:es|ed)?\\b', 'anger', 2, []],
+            ['slam(?:s|med)?', 'anger', 2, []],
+            ['\\bsharp(?:ly)?\\b', 'annoyance', 1, []],
+            ['\\bcold(?:ly)?\\b', 'annoyance', 1, []],
+            ['rolls?\\s+her\\s+eyes', 'annoyance', 2, []],
+            ['(?:sighs?|breathes?)\\s+through\\s+her\\s+nose', 'annoyance', 1.5, []],
+            ['\\bhuff(?:s|ed)?\\b', 'annoyance', 2, []],
+            ['\\btsk', 'annoyance', 1, []],
+            ['exasperat(?:ed|ion)', 'annoyance', 2.5, []],
+            ['irritat(?:ed|ion)|irked', 'annoyance', 2, []],
+            // fear / nervousness
+            ['stiffen(?:s|ed|ing)?', 'fear', 2, []],
+            ['(?:goes|went|gone|holds?)\\s+(?:very\\s+)?still', 'fear', 2, []],
+            ['\\bpale(?:s|d)?\\b|colou?r\\s+drains', 'fear', 2.5, []],
+            ['heart\\s+(?:hammers|pounds|races|lurches)', 'fear', 2, []],
+            ['breath\\s+catches|catches\\s+her\\s+breath', 'surprise', 1.5, []],
+            ['afraid|scared|terrified|\\bdread', 'fear', 3, []],
+            ['trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b', 'fear', 1.5, []],
+            ['flinch(?:es|ed)?', 'fear', 2, []],
+            ['fidget(?:s|ed|ing)?', 'nervousness', 2, []],
+            ['twists?\\s+her\\s+(?:fingers|ring|hands)', 'nervousness', 2, []],
+            ['chews?\\s+(?:on\\s+)?her\\s+lip', 'nervousness', 2, []],
+            ['swallows?\\s+hard', 'nervousness', 1.5, []],
+            ['wring(?:s|ing)?\\s+her\\s+hands', 'nervousness', 2, []],
+            ['anxious|nervous(?:ly)?', 'nervousness', 3, []],
+            // desire / love / caring
+            ['settl(?:es|ed|ing)\\s+(?:in\\s+)?(?:closer|against|into)|curls?\\s+into|leans?\\s+into\\s+(?:him|you)', 'love', 2, []],
+            ['\\bheat\\b', 'desire', 1, []],
+            ['breath(?:y|less)', 'desire', 1, []],
+            ['kiss(?:es|ed|ing)?', 'love', 2, []],
+            ['nuzzl(?:es|ed|ing)', 'love', 2, []],
+            ["darlin'?|sweetheart|\\bmy\\s+love\\b", 'love', 1, []],
+            ['hand\\s+finds\\s+(?:his|yours?)', 'love', 1.5, []],
+            ['flirt(?:s|ed|ing|y)?', 'desire', 2, []],
+            ['bites?\\s+her\\s+lip', 'desire', 1, []],
+            ['slow\\s+smile', 'desire', 1, []],
+            ['lips\\s+part', 'desire', 1, []],
+            ['tucks?\\s+(?:the\\s+)?blanket|smooths?\\s+(?:his|your)\\s+hair|strokes?\\s+(?:his|your)', 'caring', 1.5, []],
+            ['makes?\\s+sure\\s+(?:he|you)|checks?\\s+on\\s+(?:him|you)|fuss(?:es|ing)\\s+over', 'caring', 1, []],
+            // surprise / realization / curiosity / confusion
+            ['eyes\\s+(?:widen|go\\s+wide|fly\\s+open)', 'surprise', 3, []],
+            ['\\bblinks?\\b', 'surprise', 1, []],
+            ['startl(?:es|ed)', 'surprise', 3, []],
+            ['\\bgasps?\\b', 'surprise', 2, []],
+            ['realis(?:es|ed|ing)|realiz(?:es|ed|ing)|dawns\\s+on', 'realization', 2, []],
+            ['tilts?\\s+her\\s+head|head\\s+tilts', 'curiosity', 2, []],
+            ['curious(?:ly)?', 'curiosity', 2.5, []],
+            ['eyebrows?\\s+(?:lifts?|rais(?:es|ed)|arch(?:es|ed)?)', 'curiosity', 1.5, []],
+            ['frown(?:s|ed|ing)?', 'confusion', 1, []],
+            ['puzzled|confused|bewildered', 'confusion', 3, []],
+            // relief / disappointment / disapproval / disgust
+            ['shoulders\\s+(?:drop|come\\s+down|loosen|ease)', 'relief', 2.5, []],
+            ['relie(?:f|ved)', 'relief', 3, []],
+            ['breathes?\\s+out|lets?\\s+out\\s+a\\s+breath|exhal(?:es|ed)', 'relief', 1.5, []],
+            ['\\bsighs?\\b', 'relief', 1, []],
+            ['unclench(?:es|ed)?', 'relief', 1.5, []],
+            ['disappoint(?:ed|ment)', 'disappointment', 3, []],
+            ['face\\s+falls|shoulders\\s+sag', 'disappointment', 2.5, []],
+            ['purses?\\s+her\\s+lips|lips\\s+thin', 'disapproval', 2, []],
+            ['disapprov(?:es|ed|ing|al)', 'disapproval', 3, []],
+            ['shakes?\\s+her\\s+head', 'disapproval', 1, []],
+            ['wrinkles?\\s+her\\s+nose|nose\\s+wrinkles', 'disgust', 2.5, []],
+            ['grimac(?:es|ed|ing)', 'disgust', 2, []],
+            ['disgust(?:ed|ing)?|revolted', 'disgust', 3, []],
+            // pride / gratitude / approval / optimism / remorse / excitement / admiration
+            ['lifts?\\s+her\\s+chin|chin\\s+(?:lifts|up)', 'pride', 2, []],
+            ['\\bproud(?:ly)?\\b', 'pride', 3, []],
+            ['\\bsmug(?:ly)?\\b', 'pride', 1.5, []],
+            ['thank(?:s|ful|\\s+you)|grateful', 'gratitude', 1.5, []],
+            ['approv(?:es|ed|ing|al)|nods?\\s+(?:firmly|approvingly)', 'approval', 2, []],
+            ['hopeful(?:ly)?|looking\\s+forward', 'optimism', 1.5, []],
+            ['\\bsorry\\b', 'remorse', 1.5, []],
+            ['guilt(?:y)?|ashamed|regret(?:s|ted)?', 'remorse', 3, []],
+            ['excited(?:ly)?|can\'t\\s+wait|bounc(?:es|ing)', 'excitement', 2.5, []],
+            ['admir(?:es|ed|ing|ation)|impressed|\\bawe\\b', 'admiration', 2.5, []],
+            // neutral — positive indication only
+            ['matter-of-fact(?:ly)?|even(?:ly)?\\s+(?:voice|tone)|calm(?:ly)?', 'neutral', 1, []],
+        ];
+
+        function compileLexicon(table) {
+            const out = [];
+            for (const row of (table || DEFAULT_LEXICON)) {
+                try {
+                    if (!row || !row[0] || !LABEL_SET.has(row[1])) continue;
+                    out.push({ re: new RegExp(row[0], 'gi'), label: row[1], w: Number(row[2]) || 1, vetoes: row[3] || [] });
+                } catch (e) { /* skip bad row */ }
+            }
+            return out;
+        }
+
+        /**
+         * L0 — the character's own material from a finished message.
+         * @param {string} raw            message text (raw mes)
+         * @param {object} o              { hex, nameRe, aliasRe, otherNameRes }
+         * @returns {{parts:{text:string,w:number}[], dialogue:number, narration:number}}
+         */
+        function extractOwn(raw, o) {
+            const parts = [];
+            if (!raw) return { parts, dialogue: 0, narration: 0 };
+            let text = String(raw).replace(DETAILS_RE, ' ').replace(THINK_RE, ' ')
+                .replace(TAG_RE, ' ').replace(HEADER_LINE_RE, ' ');
+            const total = text.length || 1;
+            const hex = o && o.hex ? String(o.hex).toLowerCase() : null;
+            let dialogue = 0;
+            // (a) own dialogue spans.
+            FONT_ANY_RE.lastIndex = 0;
+            let m;
+            while ((m = FONT_ANY_RE.exec(text)) !== null) {
+                if (hex && m[1].toLowerCase() === hex) {
+                    const inner = m[2].replace(TAG_STRIP_RE, ' ').replace(/\s+/g, ' ').trim();
+                    if (inner) { parts.push({ text: inner, w: (m.index / total) >= LAST_FRACTION ? 2 : 1, kind: 'dialogue' }); dialogue++; }
+                }
+            }
+            // (b) narration about her, processed IN DOCUMENT ORDER so a
+            // she/her sentence right after her own dialogue is hers, and one
+            // right after another speaker's line is not. When no other
+            // female cast member is named anywhere in the message
+            // (o.soloFemale), she/her is hers by default.
+            let prevHers = false;
+            let count = 0;
+            let cursor = 0;
+            const chunks = [];
+            FONT_ANY_RE.lastIndex = 0;
+            while ((m = FONT_ANY_RE.exec(text)) !== null) {
+                chunks.push({ kind: 'narr', text: text.slice(cursor, m.index), at: cursor });
+                chunks.push({ kind: (hex && m[1].toLowerCase() === hex) ? 'own' : 'other', at: m.index });
+                cursor = m.index + m[0].length;
+            }
+            chunks.push({ kind: 'narr', text: text.slice(cursor), at: cursor });
+            for (const ch of chunks) {
+                if (ch.kind === 'own') { prevHers = true; continue; }
+                if (ch.kind === 'other') { prevHers = false; continue; }
+                const narr = ch.text.replace(TAG_STRIP_RE, ' ');
+                SENT_RE.lastIndex = 0;
+                let sm;
+                while ((sm = SENT_RE.exec(narr)) !== null) {
+                    const sent = sm[0].replace(/\s+/g, ' ').trim();
+                    if (!sent || sent.length < 4) continue;
+                    const named = Boolean((o && o.nameRe && o.nameRe.test(sent)) || (o && o.aliasRe && o.aliasRe.test(sent)));
+                    let other = false;
+                    if (o && Array.isArray(o.otherNameRes)) {
+                        for (const r of o.otherNameRes) { if (r && r.test(sent)) { other = true; break; } }
+                    }
+                    const pron = PRONOUN_SHE.test(sent);
+                    let hers = named || (pron && !other && (prevHers || Boolean(o && o.soloFemale)));
+                    prevHers = hers ? !other || named : (other ? false : prevHers);
+                    if (!hers) continue;
+                    parts.push({ text: sent, w: ((ch.at + sm.index) / total) >= LAST_FRACTION ? 2 : 1, kind: 'narration' });
+                    count++;
+                }
+            }
+            return { parts, dialogue, narration: count };
+        }
+
+        /** Text for the classifier: last-weighted parts first, capped. */
+        function classifierText(ext, cap) {
+            const limit = cap || 1500;
+            const heavy = ext.parts.filter(function (p) { return p.w >= 2; }).map(function (p) { return p.text; }).join(' ');
+            const light = ext.parts.filter(function (p) { return p.w < 2; }).map(function (p) { return p.text; }).join(' ');
+            let out = heavy;
+            if (out.length < limit && light) out = (out ? out + ' ' : '') + light;
+            return out.length > limit ? out.slice(0, limit) : out;
+        }
+
+        /** L1 — tag from raw text, then "Mood: x" inside <details>, then reasoning. */
+        function detectTag(raw, reasoning) {
+            const tryRe = function (t) {
+                if (!t) return null;
+                let last = null; let m;
+                TAG_RE.lastIndex = 0;
+                while ((m = TAG_RE.exec(t)) !== null) last = m[1].toLowerCase();
+                return last && LABEL_SET.has(last) ? last : null;
+            };
+            let label = tryRe(raw);
+            if (!label && raw) {
+                const dm = DETAILS_MOOD_RE.exec(raw);
+                if (dm && LABEL_SET.has(dm[1].toLowerCase())) label = dm[1].toLowerCase();
+            }
+            if (!label) label = tryRe(reasoning);
+            return label;
+        }
+
+        /** L3 — lexicon over the L0 parts. */
+        function lexicon(ext, compiled) {
+            const table = compiled || compileLexicon();
+            const scores = {};
+            const cues = [];
+            const vetoes = new Set();
+            let hitWeight = 0; let hitCount = 0;
+            let laughter = false; let tears = false;
+            for (const p of ext.parts) {
+                for (const cue of table) {
+                    cue.re.lastIndex = 0;
+                    let m;
+                    while ((m = cue.re.exec(p.text)) !== null) {
+                        if (m.index === cue.re.lastIndex) cue.re.lastIndex++;
+                        const before = p.text.slice(Math.max(0, m.index - 24), m.index);
+                        if (NEG_RE.test(before)) { vetoes.add(cue.label); cues.push('¬' + m[0]); continue; }
+                        const w = cue.w * p.w;
+                        scores[cue.label] = (scores[cue.label] || 0) + w;
+                        hitWeight += w; hitCount++;
+                        cues.push(m[0] + '→' + cue.label);
+                        for (const v of cue.vetoes) vetoes.add(v);
+                        if (cue.label === 'amusement' && /laugh|giggl|chuckl/i.test(m[0])) laughter = true;
+                        if (cue.label === 'sadness' && /tear|cr(?:y|ies|ied|ying)|we(?:ep|pt)|sob/i.test(m[0])) tears = true;
+                    }
+                }
+            }
+            // Hard vetoes.
+            if (laughter) for (const l of ['sadness', 'grief', 'anger', 'fear']) vetoes.add(l);
+            if (tears) for (const l of ['joy', 'amusement', 'pride']) vetoes.add(l);
+            // A label cannot veto itself out of the running when it has strong
+            // direct evidence AND the veto came only from a weaker cue.
+            let top = null; let topScore = 0;
+            for (const l of Object.keys(scores)) {
+                if (vetoes.has(l)) continue;
+                if (scores[l] > topScore) { topScore = scores[l]; top = l; }
+            }
+            return { scores, top, topScore, cues, vetoes, hitWeight, hitCount };
+        }
+
+        /** Normalise classifier output to shares of the returned top-k. */
+        function normaliseLocal(local) {
+            if (!Array.isArray(local) || !local.length) return [];
+            const sum = local.reduce(function (a, x) { return a + (Number(x.score) || 0); }, 0) || 1;
+            return local.map(function (x) { return { label: String(x.label).toLowerCase(), score: Number(x.score) || 0, share: (Number(x.score) || 0) / sum }; })
+                .sort(function (a, b) { return b.share - a.share; });
+        }
+
+        /**
+         * The verdict rules (deterministic):
+         *  1. Start with the L1 tag if present.
+         *  2. If the tag is vetoed by L3 with strong evidence (>= 2 cue hits),
+         *     replace it with L3's top non-vetoed label.
+         *  3. No tag — in this order:
+         *     a. strong lexicon evidence (top cue weight >= 4) wins over a
+         *        merely-adequate classifier (share < 0.45);
+         *     b. L2 top if share >= 0.35 (0.45 for neutral/confusion, the
+         *        model's catch-alls) and not vetoed;
+         *     c. L3 top if its weighted hits >= 2;
+         *     d. best non-vetoed, non-catch-all of L2's top-3 if share >= 0.25;
+         *     e. HOLD the previous mood.
+         *  4. neutral is never chosen for lack of evidence: only via the tag,
+         *     or L2 neutral share >= 0.5 with zero L3 hits.
+         *  (Shares, not raw scores: go_emotions is multi-label sigmoid and a
+         *   clear sentence tops out ~0.15–0.2 raw.)
+         * @returns {{final:string|null, rule:string, hold:boolean}}
+         */
+        function verdict(input) {
+            const tag = input.tag || null;
+            const lex = input.lex || { top: null, topScore: 0, vetoes: new Set(), hitWeight: 0, hitCount: 0, cues: [] };
+            const local = normaliseLocal(input.local);
+            const prev = input.prev || null;
+            const vetoed = function (l) { return lex.vetoes.has(l); };
+            const okNeutral = function (share) { return share >= 0.5 && lex.hitCount === 0; };
+            // go_emotions' catch-all labels need a clearer margin.
+            const need = function (l) { return (l === 'confusion' || l === 'neutral') ? 0.45 : 0.35; };
+            if (tag) {
+                if (vetoed(tag) && lex.hitCount >= 2 && lex.top) return { final: lex.top, rule: '2 tag vetoed by lexicon', hold: false };
+                return { final: tag, rule: '1 tag', hold: false };
+            }
+            const strongLex = Boolean(lex.top && lex.top !== 'neutral' && lex.topScore >= 4);
+            if (local.length) {
+                const t = local[0];
+                const strongLocal = !vetoed(t.label) && t.share >= need(t.label) && (t.label !== 'neutral' || okNeutral(t.share));
+                // 3a: strong lexicon evidence beats a merely-adequate classifier.
+                if (strongLex && !(strongLocal && t.share >= 0.45 && t.label === lex.top)) {
+                    if (!strongLocal || t.share < 0.45) return { final: lex.top, rule: '3a lexicon (strong)', hold: false };
+                }
+                if (strongLocal) return { final: t.label, rule: '3b local top', hold: false };
+            } else if (strongLex) {
+                return { final: lex.top, rule: '3a lexicon (strong)', hold: false };
+            }
+            // 3c: any lexicon evidence (>= 2 weighted hits) before a weak classifier.
+            if (lex.top && lex.top !== 'neutral' && lex.hitWeight >= 2) return { final: lex.top, rule: '3c lexicon', hold: false };
+            // 3d: best non-vetoed of the classifier's top-3 (never neutral/confusion here).
+            for (const c of local.slice(0, 3)) {
+                if (c.label === 'neutral' || c.label === 'confusion' || vetoed(c.label)) continue;
+                if (c.share >= 0.25) return { final: c.label, rule: '3d local top-3', hold: false };
+            }
+            if (lex.top === 'neutral' && lex.hitWeight >= 2 && lex.hitCount >= 2) return { final: 'neutral', rule: '3c lexicon (positive neutral)', hold: false };
+            return { final: prev, rule: '3e hold', hold: true };
+        }
+
+        // Nearest available sprite when the folder lacks the label.
+        const NEAREST = {
+            amusement: ['joy', 'love'], annoyance: ['anger', 'disapproval'], grief: ['sadness'],
+            nervousness: ['fear', 'sadness'], admiration: ['love', 'joy', 'surprise'],
+            approval: ['joy', 'love', 'pride'], gratitude: ['caring', 'love', 'joy'],
+            caring: ['love', 'joy'], optimism: ['joy', 'curiosity'], pride: ['joy', 'love'],
+            relief: ['joy', 'caring'], realization: ['surprise', 'curiosity'],
+            excitement: ['joy', 'surprise'], disappointment: ['sadness'], disapproval: ['anger', 'annoyance'],
+            disgust: ['anger', 'disapproval'], remorse: ['sadness', 'embarrassment'],
+            confusion: ['curiosity', 'surprise'], desire: ['love'], love: ['desire', 'caring', 'joy'],
+            joy: ['amusement', 'love'], fear: ['nervousness', 'surprise'], anger: ['annoyance', 'disapproval'],
+            sadness: ['grief', 'disappointment'], surprise: ['curiosity', 'realization'],
+            embarrassment: ['nervousness', 'surprise'], curiosity: ['surprise'],
+        };
+        function mapToAvailable(label, available) {
+            if (!label) return null;
+            if (!available || !available.size || available.has(label)) return label;
+            for (const alt of (NEAREST[label] || [])) if (available.has(alt)) return alt;
+            return available.has('neutral') ? 'neutral' : label;
+        }
+
+        // NPC -happy/-angry/-sad variant for a verdict label.
+        const NPC_VARIANT = {
+            joy: 'happy', amusement: 'happy', love: 'happy', approval: 'happy', gratitude: 'happy',
+            anger: 'angry', annoyance: 'angry', disgust: 'angry', disapproval: 'angry',
+            sadness: 'sad', grief: 'sad', fear: 'sad', remorse: 'sad',
+        };
+        function npcVariant(label) { return (label && NPC_VARIANT[label]) || 'neutral'; }
+
+        function describe(tag, local, lex, out) {
+            const loc = normaliseLocal(local).slice(0, 3).map(function (x) { return x.label + ' ' + x.share.toFixed(2); }).join(', ');
+            const lx = lex && lex.top ? lex.top + ' +' + lex.topScore.toFixed(1) + ' (' + lex.cues.slice(0, 6).join(', ') + ')' : 'none';
+            return 'mood verdict: tag=' + (tag || 'none') + ' local=' + (loc || 'n/a') + ' lex=' + lx
+                + ' vetoes=[' + Array.from(lex ? lex.vetoes : []).join(',') + '] → ' + (out.final || 'hold') + ' (' + out.rule + ')';
+        }
+
+        return { LABELS, DEFAULT_LEXICON, compileLexicon, extractOwn, classifierText, detectTag, lexicon, normaliseLocal, verdict, mapToAvailable, npcVariant, describe };
+    })();
+    // === MOOD ENGINE (pure) END ===
 
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
     const spanRegexCache = new Map(); // hex -> RegExp ('gi')
@@ -879,7 +1289,58 @@
     const MOODS = ['happy', 'angry', 'sad'];
     const MOOD_EMOJI = { happy: '✨', angry: '💢', sad: '💧' };
 
+    // v0.6.0: NPC moods via the engine (L0 -> L3 sync; L2 async refine).
+    function memberExtract(text, member, settings) {
+        const others = [];
+        for (const m of settings.cast) {
+            if (m.key === member.key) continue;
+            const r = compileRegex(m.nameRegex || ''); if (r) others.push(r);
+            const a = compileRegex(m.aliasRegex || ''); if (a) others.push(a);
+        }
+        const own = ownNameRegex(); if (own && member.key !== '__main__') others.push(own);
+        return MoodEngine.extractOwn(text, {
+            hex: member.colorHex, nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
+            otherNameRes: others, soloFemale: false,
+        });
+    }
+    function moodLexiconCompiled(settings) {
+        const key = settings.moodLexicon ? JSON.stringify(settings.moodLexicon).length : 0;
+        if (lexCache.key !== key) { lexCache.key = key; lexCache.table = MoodEngine.compileLexicon(settings.moodLexicon || null); }
+        return lexCache.table;
+    }
+    const lexCache = { key: -1, table: null };
     function detectMood(text, member, settings) {
+        try {
+            const ext = memberExtract(text, member, settings);
+            if (!ext.parts.length) return 'neutral';
+            const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
+            const out = MoodEngine.verdict({ tag: null, local: null, lex, prev: null });
+            return MoodEngine.npcVariant(out.final);
+        } catch (e) { return 'neutral'; }
+    }
+    async function refineNpcMood(text, member, settings) {
+        try {
+            if (!settings.enableLocalClassifier || moodState.classifier === 'unavailable') return;
+            const ext = memberExtract(text, member, settings);
+            if (!ext.parts.length) return;
+            const local = await classifyLocal(MoodEngine.classifierText(ext, 1200));
+            if (!local) return;
+            const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
+            const out = MoodEngine.verdict({ tag: null, local, lex, prev: null });
+            const variant = MoodEngine.npcVariant(out.final);
+            const chip = castChips.get(member.key);
+            if (!chip || chip.mood === variant || !chip.el.isConnected) return;
+            if (chip.moodTs && Date.now() - chip.moodTs < 8000) return;
+            dbg(`npc ${member.key}: ` + MoodEngine.describe(null, local, lex, out) + ` -> ${variant}`);
+            queueDom(function () {
+                const fresh = buildChip(member, variant, chip.speaking, settings, chip.lingering);
+                if (chip.el.isConnected) chip.el.replaceWith(fresh.el);
+                fresh.moodTs = Date.now();
+                castChips.set(member.key, fresh);
+            });
+        } catch (e) { /* ignore */ }
+    }
+    function detectMoodLegacy(text, member, settings) {
         try {
             if (!text) return 'neutral';
             let corpus = '';
@@ -2252,6 +2713,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 if (!chip || needsRebuild) {
                     const fresh = buildChip(d.member, d.mood, d.speaking, settings, d.lingering);
                     if (chip && chip.el.isConnected) chip.el.replaceWith(fresh.el);
+                    fresh.moodTs = Date.now();
                     chip = fresh;
                     castChips.set(key, chip);
                 } else {
@@ -2282,6 +2744,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             hideBioCard();
             applyStripAppearance(settings, strip); // chip count -> column fit
         });
+        if (settings.enableMoods) {
+            for (const p of ordered) {
+                if (!p.lingering && !p.member.unknown && p.member.moodVariants) refineNpcMood(scene.text, p.member, settings);
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -2531,25 +2998,120 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         } catch (e) { return null; }
     }
 
-    async function applyMoodTag(ctx, rawText, settings, reasoningText) {
+    // ------------------------------------------------------------------
+    // v0.6.0 layered mood verdict — see MoodEngine for the pure rules.
+    // ------------------------------------------------------------------
+    const moodState = { lastEmitTs: 0, pending: null, lastVerdict: '', classifier: 'unknown', classifierRetryTs: 0 };
+
+    /** The main character's dialogue colour: setting, else the most
+     *  frequent <font color> among recent AI messages that is on no Cast card. */
+    let autoOwnHex = null;
+    function ownColorHex(ctx, settings) {
+        if (settings.ownColorHex) return String(settings.ownColorHex).toLowerCase();
+        if (autoOwnHex) return autoOwnHex;
+        try {
+            const known = new Set(settings.cast.map(function (m) { return (m.colorHex || '').toLowerCase(); }));
+            const counts = new Map();
+            const chat = ctx.chat || [];
+            let seen = 0;
+            for (let i = chat.length - 1; i >= 0 && seen < 12; i--) {
+                const m = chat[i];
+                if (!m || m.is_user || m.is_system || !m.mes) continue;
+                seen++;
+                FONT_SPAN_RE.lastIndex = 0;
+                let x;
+                while ((x = FONT_SPAN_RE.exec(m.mes)) !== null) {
+                    const h = x[1].toLowerCase();
+                    if (known.has(h)) continue;
+                    counts.set(h, (counts.get(h) || 0) + 1);
+                }
+            }
+            let best = null; let bestN = 0;
+            for (const [h, n] of counts) if (n > bestN) { best = h; bestN = n; }
+            autoOwnHex = best;
+            if (best) dbg('own dialogue colour auto-detected: ' + best);
+        } catch (e) { /* ignore */ }
+        return autoOwnHex;
+    }
+    function ownNameRegex() {
+        try {
+            const name = SillyTavern.getContext().name2 || '';
+            return name ? compileRegex('\\b' + name.split(' ')[0].replace(/[\\^$.*+?()[\]{}|]/g, '\\$&') + '\\b') : null;
+        } catch (e) { return null; }
+    }
+    async function classifyLocal(text) {
+        const settings = getSettings();
+        if (!text || !settings.enableLocalClassifier) return null;
+        if (moodState.classifier === 'unavailable' && Date.now() < moodState.classifierRetryTs) return null;
+        try {
+            const ctx = SillyTavern.getContext();
+            const headers = ctx.getRequestHeaders ? ctx.getRequestHeaders() : { 'Content-Type': 'application/json' };
+            const r = await fetch('/api/extra/classify', { method: 'POST', headers, body: JSON.stringify({ text }) });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            if (moodState.classifier !== 'ok') { moodState.classifier = 'ok'; updateMoodStatus(); }
+            return Array.isArray(data.classification) ? data.classification : null;
+        } catch (e) {
+            moodState.classifier = 'unavailable';
+            moodState.classifierRetryTs = Date.now() + 600000;
+            dbg('local classifier unavailable: ' + (e && e.message));
+            updateMoodStatus();
+            return null;
+        }
+    }
+    function updateMoodStatus() {
+        try {
+            const a2 = document.getElementById('sd_mood_status');
+            if (a2) a2.textContent = moodState.lastVerdict ? ('Mood engine: ' + moodState.lastVerdict) : 'Mood engine: no verdict yet';
+            const b2 = document.getElementById('sd_classifier_status');
+            if (b2) b2.textContent = moodState.classifier === 'unavailable'
+                ? 'Local classifier: unavailable — using tag+lexicon'
+                : (moodState.classifier === 'ok' ? 'Local classifier: ok (go_emotions, server-side)' : 'Local classifier: not used yet');
+        } catch (e) { /* ignore */ }
+    }
+    async function runMoodVerdict(ctx, last, settings) {
         try {
             if (!settings.enableMoodTag) return;
-            let label = detectMoodTag(rawText);
-            if (!label && reasoningText) label = detectMoodTag(String(reasoningText)); // last resort
-            if (!label) {
-                dbg('no [MOOD] tag; raw tail: ' + JSON.stringify(String(rawText || '').slice(-120)));
-                return;
+            const raw = last.mes || '';
+            const tag = MoodEngine.detectTag(raw, last.extra && last.extra.reasoning);
+            if (tag) stripMoodTagFromDom();
+            const femaleRe = compileRegex(settings.femaleNamesRegex || '');
+            const others = [];
+            for (const m of settings.cast) {
+                const r = compileRegex(m.nameRegex || ''); if (r) others.push(r);
+                const a3 = compileRegex(m.aliasRegex || ''); if (a3) others.push(a3);
             }
-            stripMoodTagFromDom();
-            sdTimeout(function () { showMainMoodEmoji(label, settings); }, 400);
-            // v0.5.5: never re-/emote a label already on screen (a re-emote
-            // over an idle variant forces a crossfade = a visible flash).
-            if (displayedLabel() === label) { lastMoodLabel = label; syncFallback(ctx, label); dbg(`mood tag ${label} (already displayed, no /emote)`); return; }
-            await assertExpression(ctx, label);
-            dbg(`mood tag -> /emote ${label}`);
+            const ext = MoodEngine.extractOwn(raw, {
+                hex: ownColorHex(ctx, settings), nameRe: ownNameRegex(), aliasRe: null,
+                otherNameRes: others, soloFemale: !(femaleRe && femaleRe.test(raw)),
+            });
+            const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
+            const local = tag ? null : await classifyLocal(MoodEngine.classifierText(ext, 1500));
+            const out = MoodEngine.verdict({ tag, local, lex, prev: lastMoodLabel });
+            dbg(MoodEngine.describe(tag, local, lex, out) + ` [L0 ${ext.dialogue} dlg/${ext.narration} narr]`);
+            moodState.lastVerdict = (out.final || 'hold') + ' — ' + out.rule;
+            updateMoodStatus();
+            if (!out.final || out.hold) return;
+            const list = await spriteList(activeSpriteFolder(ctx));
+            const avail = new Set(list.map(function (x) { return x.label; }));
+            const mapped = MoodEngine.mapToAvailable(out.final, avail);
+            emitMood(ctx, mapped, out.final, settings);
         } catch (e) {
-            console.error(`${LOG} mood tag failed`, e);
+            console.error(`${LOG} mood verdict failed`, e);
         }
+    }
+    /** Hysteresis: >= 8 s dwell (newer verdicts deferred), never re-emit. */
+    function emitMood(ctx, label, verdictLabel, settings) {
+        if (moodState.pending) { clearTimeout(moodState.pending); moodState.pending = null; }
+        const go = async function () {
+            moodState.pending = null;
+            if (displayedLabel() === label) { lastMoodLabel = label; syncFallback(ctx, label); return; }
+            moodState.lastEmitTs = Date.now();
+            await assertExpression(ctx, label);
+            sdTimeout(function () { showMainMoodEmoji(verdictLabel, settings); }, 300);
+        };
+        const wait = moodState.lastEmitTs ? Math.max(0, 8000 - (Date.now() - moodState.lastEmitTs)) : 0;
+        if (wait > 0) moodState.pending = setTimeout(go, wait); else go();
     }
 
     function getLastAiMessage(ctx) {
@@ -2576,7 +3138,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             // Inline Mood Tag: fire-and-forget (self-contained) so it never
             // delays the rest of the scene. Reads the RAW text — the tag
             // trails the message and must survive the MAX_SCAN cap.
-            try { applyMoodTag(ctx, last.mes, settings, last.extra && last.extra.reasoning); } catch (e) { /* ignore */ }
+            try { runMoodVerdict(ctx, last, settings); } catch (e) { /* ignore */ }
 
             try {
                 updateCastStrip(scene, settings);
@@ -3345,6 +3907,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             }
             return null;
         },
+        moodLexicon(value) {
+            if (value === null) return null;
+            if (!Array.isArray(value)) return 'must be null or a JSON array of [regex, label, weight, [vetoes]]';
+            for (const [i, row] of value.entries()) {
+                if (!Array.isArray(row) || typeof row[0] !== 'string' || !compileRegex(row[0])) return `row ${i}: invalid regex`;
+                if (!MoodEngine.LABELS.includes(row[1])) return `row ${i}: unknown label "${row[1]}"`;
+            }
+            return null;
+        },
         moodEmoji(value) {
             if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'must be a JSON object of label -> emoji';
             for (const k of Object.keys(value)) {
@@ -3391,9 +3962,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
         ['enableUnknownSpeakers', 'Unknown Speakers', 'A tinted silhouette chip (male/female/neutral by nearby pronouns, best-guess name) for any dialogue colour not on a Cast card'],
+        ['enableLocalClassifier', 'Local Classifier', 'Mood engine layer 2: SillyTavern\'s built-in server-side go_emotions classifier on the character\'s own text (no external API)'],
         ['enableDebug', 'Debug Logging', 'Print [scene-director] diagnostics (chip add/remove with evidence, sprite replays, injection) to the console; off = silent unless something fails'],
         ['enableThoughtTips', 'Thought Tooltips', 'Hover the sprite or a cast chip: bio line, mood emoji and the last sentences the model wrote about that character\'s inner state (regex over the last reply + its reasoning; no AI calls)'],
-        ['enableMoodTag', 'Inline Mood Tag', 'Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
+        ['enableMoodTag', 'Mood Engine', 'Layered verdict: [MOOD] tag → local classifier → lexicon with vetoes, on the character\'s own dialogue + narration; drives the sprite via /emote. Zero-setup: the [MOOD] instruction is auto-injected near the end of the context, and a trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call, no preset edit. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
 
     const REGEX_FIELDS = [
@@ -3405,6 +3977,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['fireRegex', 'Fire regex', 'Matched against the APPLIED background filename — triggers the fire flicker overlay'],
         ['presenceCueRegex', 'Presence cue regex', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
         ['absenceContextRegex', 'Absence context regex', 'Cast Strip: a sentence containing any of these (ring, call, remember, about…) never summons a chip'],
+        ['femaleNamesRegex', 'Other female names', 'Mood engine: she/her narration counts as the main character\'s only when none of these appear in the message (e.g. aunt|mary|nurse)'],
         ['ownColorHex', 'Own dialogue colour', 'The main character\'s dialogue colour hex (e.g. #E87BA8) — excluded from Unknown Speakers'],
         ['interiorityRegex', 'Interiority regex', 'Thought tooltips: sentences naming a character AND one of these verbs are shown on hover'],
     ];
@@ -3420,6 +3993,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['eraRules', 'Era rules', '[{"minYear": 2027, "pattern": "build site", "from": "frame.jpg", "to": "finished.jpg"}]'],
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
         ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
+        ['moodLexicon', 'Mood lexicon', '[[regex, label, weight, [vetoes]], ...] — leave null for the built-in ~110-cue table; Export shows the current one'],
         ['moodEmoji', 'Mood bubble emoji', '{"joy": "✨", "anger": "💢", "happy": "✨", "angry": "💢", "sad": "💧"} — label -> emoji shown in the thought bubble after a reply (NPC chips use happy/angry/sad)'],
         ['counters', 'Life counters', '[{"label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days"}] — computed from the parsed STORY date; "weeks" renders as 6w2d'],
     ];
@@ -3484,6 +4058,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     </div>
                     <div id="sd_compat_note" style="display:none" class="scene-director-compat"></div>
 
+                    <div id="sd_mood_status" class="scene-director-help">Mood engine: no verdict yet</div>
+                    <div id="sd_classifier_status" class="scene-director-help">Local classifier: not used yet</div>
                     <div class="scene-director-section">Features</div>
                     ${toggles}
 
@@ -3711,7 +4287,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
 
         for (const [key] of JSON_FIELDS) {
-            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : '[]');
+            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : (key === 'moodLexicon' ? 'null' : '[]'));
             let parsed;
             try {
                 parsed = JSON.parse(raw);
@@ -4004,7 +4580,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.5.5)');
+            dbg('loaded (v0.6.0)');
+            try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

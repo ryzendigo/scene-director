@@ -71,6 +71,7 @@ guard has kicked in.
 | **Inline Mood Tag** *(0.4.1, zero-setup + default ON in 0.5.0)* | The model appends `[MOOD: <label>]` to each reply and the expression sprite follows it directly (`/emote`) — no classifier API call; the tag is hidden from the rendered chat. The instruction auto-injects into the context — nothing to paste |
 | **Stage layout** *(0.5.0)* | HUD corner picker; cast strip corner (top corners stack a column under the HUD), chip style (cutout bottom-fade / cloud glow / circle / plain) and chip size relative to the window (auto = 28vh, or a 10–40vh slider). *(0.5.2)* Top-corner columns are a fixed box filling the gutter beside the chat panel, so chips can never overlap the chat; a gutter under 110px collapses them to 48px circles |
 | **Unknown Speakers** *(0.5.4)* | A dialogue colour that matches no Cast card still gets a chip: a soft silhouette (inline SVG, tinted with that colour; male/female/neutral from nearby pronouns) labelled with the best name guess from the text before its first line. Set your own dialogue colour in the drawer so the main character is never an "unknown" |
+| **Mood Engine** *(0.6.0)* | Layered verdict — tag → ST's local go_emotions classifier → weighted lexicon with vetoes — on the character's own dialogue + narration; deterministic rules, 8 s hysteresis, NPC variants from the same pipeline. See *How moods are decided* |
 | **Thought Tooltips** *(0.5.3)* | Hover the sprite or a cast chip for a dark card with the bio line, mood emoji and the last 1–2 sentences the model wrote about that character's inner state (regex over the last reply + reasoning, configurable verbs; cached per message; no AI calls) |
 | **Thought bubbles** *(0.5.2)* | Typing dots above the sprite while generating, then the mood emoji (configurable label → emoji map) for a few seconds; NPC chips get the same (happy/angry/sad) |
 | **Chat panel glass** *(0.5.0)* | Optional see-through chat panel: opacity slider + blur toggle, honouring the theme's own tint when it is already more transparent (off by default) |
@@ -292,6 +293,42 @@ Details:
   the sprite never goes blank. (Setting a fallback expression in the
   expressions extension helps too.)
 - **Test last message** shows the detected tag in its dry-run output.
+
+### How moods are decided (0.6.0)
+
+The sprite no longer depends on the model remembering a tag. Every finished
+AI message goes through a layered verdict (all local, no external calls):
+
+- **L0 — the character's own material.** Her dialogue spans (your *Own
+  dialogue colour*, auto-detected if blank) plus narration sentences about her
+  (name/alias, or she/her right after her own line — or by default when none of
+  the *Other female names* appear). `<details>` blocks, reasoning and the scene
+  header are dropped; the last 40 % of the message weighs double.
+- **L1 — tag.** `[MOOD: x]`, a `Mood: x` line inside `<details>`, or the
+  reasoning text.
+- **L2 — local classifier.** SillyTavern's built-in server-side go_emotions
+  model (`/api/extra/classify`) on the L0 text. Scores are read as *shares* of
+  the top-5 (it is a multi-label model; a clear sentence tops out ~0.15 raw).
+- **L3 — lexicon.** ~110 weighted cues (laughs → amusement, cheeks go pink →
+  embarrassment, jaw sets → anger, shoulders drop → relief…) with vetoes
+  (laughter ⇒ not sadness/grief/anger/fear; tears ⇒ not joy/amusement/pride)
+  and a negation window ("not angry"). Editable in Advanced JSON.
+
+Rules, in order: **1** tag if present; **2** a tag contradicted by ≥ 2 lexicon
+hits is replaced by the lexicon's top label; **3** no tag → (a) strong lexicon
+evidence (top cue weight ≥ 4) beats a merely adequate classifier, (b) classifier
+top if share ≥ 0.35 (0.45 for neutral/confusion) and not vetoed, (c) lexicon top
+with ≥ 2 weighted hits, (d) best non-vetoed of the classifier's top-3 if ≥ 0.25,
+(e) otherwise **hold** the previous mood; **4** neutral is never chosen for lack
+of evidence; **5** a new mood dwells ≥ 8 s and the same label is never
+re-emitted; **6** labels missing from the active costume folder map to the
+nearest available (amusement → joy, annoyance → anger, grief → sadness…).
+NPC chips run the same pipeline per cast member, mapped to their
+happy/angry/sad variants. The drawer shows the last verdict and which rule
+decided it; with *Debug Logging* on, each verdict is logged in full.
+
+`tools/mood-harness.mjs` runs the pure engine over a saved chat `.jsonl` so you
+can check verdicts against what you read.
 
 ### Life counters (Advanced JSON)
 
