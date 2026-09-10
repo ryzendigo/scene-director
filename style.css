@@ -54,6 +54,11 @@
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.35);
     object-fit: cover;
+    /* Subtle radial backing so transparent-cutout portraits don't float:
+       dark grey centre falling to a darker edge, inside the circle. Opaque
+       portraits cover it entirely, so it costs nothing there. */
+    background: radial-gradient(circle at 50% 42%,
+        rgba(72, 74, 84, 0.95) 0%, rgba(28, 29, 36, 0.95) 78%);
     transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 

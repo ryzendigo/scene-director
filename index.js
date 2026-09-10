@@ -42,6 +42,17 @@
  *     Overlay auto-disables; st-weather-cycle detected -> our Ken Burns
  *     auto-disables (noted in the settings UI)
  *
+ * v0.4.1:
+ *
+ *   - Inline Mood Tag (off by default): a trailing [MOOD: <label>] in the AI
+ *     message sets the expression sprite directly via /emote — no classifier
+ *     API round-trip. The tag is stripped from the rendered message only;
+ *     the chat data keeps it so the model stays consistent. No tag = the
+ *     classifier keeps working as configured.
+ *   - Cast chips get a radial-gradient backing behind the portrait, so
+ *     transparent-cutout portraits don't float inside the circle.
+ *   - tools/cutout.py: batch background removal (rembg) for making cutouts.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -97,6 +108,9 @@
         enableCounters: false,
         enableSpeakingOrder: false,
         enablePreload: false,
+
+        // v0.4.1.
+        enableMoodTag: false,
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 75,     // one Ken Burns sweep (alternates back)
@@ -187,6 +201,23 @@
         [/fear|afraid|terror|scared/, 'fear'],
         [/love|desire|lust/, 'love'],
     ];
+    // v0.4.1 Inline Mood Tag: trailing [MOOD: <label>] (ASCII or fullwidth
+    // brackets 〔〕, fullwidth colon tolerated), matched against the TAIL of
+    // the raw message so MAX_SCAN can never truncate it away.
+    const MOOD_TAG_RE = /[\[〔]\s*MOOD\s*[:：]\s*([a-z]+)\s*[\]〕]\s*$/i;
+    // The same tag inside rendered innerHTML (an optional preceding <br>).
+    const MOOD_TAG_DOM_RE = /(?:<br\s*\/?>\s*)?[\[〔]\s*MOOD\s*[:：]\s*[a-z]+\s*[\]〕]/gi;
+    const EMPTY_P_TAIL_RE = /<p>\s*<\/p>\s*$/i;
+    // The 28 labels the expressions extension ships (DEFAULT_EXPRESSIONS in
+    // SillyTavern's public/scripts/extensions/expressions/index.js). A tag
+    // carrying anything else is ignored, so the classifier still runs.
+    const EXPRESSION_LABELS = ['admiration', 'amusement', 'anger', 'annoyance',
+        'approval', 'caring', 'confusion', 'curiosity', 'desire',
+        'disappointment', 'disapproval', 'disgust', 'embarrassment',
+        'excitement', 'fear', 'gratitude', 'grief', 'joy', 'love',
+        'nervousness', 'optimism', 'pride', 'realization', 'relief',
+        'remorse', 'sadness', 'surprise', 'neutral'];
+    const EXPRESSION_LABEL_SET = new Set(EXPRESSION_LABELS);
     // Per-hex dialogue-span regexes for the mood heuristic, cached.
     const spanRegexCache = new Map(); // hex -> RegExp ('gi')
     function spanRegexFor(hex) {
@@ -1477,6 +1508,65 @@
         }
     }
 
+    // ------------------------------------------------------------------
+    // Inline Mood Tag (v0.4.1)
+    //
+    // The model appends [MOOD: <label>] as the last line of its reply (the
+    // settings drawer has a copyable prompt snippet). When found, the sprite
+    // is set directly with /emote <label> — an alias of the expressions
+    // extension's expression-set slash command, whose unnamed argument is
+    // the expression label — so no classifier API call is needed for that
+    // message. The tag is stripped from the RENDERED message only; the
+    // underlying chat data keeps it, which keeps the model consistent about
+    // emitting it. No tag (or an unknown label) = nothing happens and the
+    // expression classifier keeps working exactly as configured.
+    // ------------------------------------------------------------------
+
+    /** Trailing [MOOD: <label>] in the raw message -> validated label | null. */
+    function detectMoodTag(rawText) {
+        try {
+            if (!rawText) return null;
+            const tail = rawText.length > 300 ? rawText.slice(-300) : rawText;
+            const m = MOOD_TAG_RE.exec(tail.trimEnd());
+            if (!m) return null;
+            const label = m[1].toLowerCase();
+            return EXPRESSION_LABEL_SET.has(label) ? label : null;
+        } catch (e) { return null; }
+    }
+
+    /** Remove the tag from the last message's rendered .mes_text only. */
+    function stripMoodTagFromDom() {
+        const strip = function () {
+            try {
+                const mesText = document.querySelector('#chat .mes.last_mes .mes_text');
+                if (!mesText) return;
+                MOOD_TAG_DOM_RE.lastIndex = 0;
+                if (!MOOD_TAG_DOM_RE.test(mesText.innerHTML)) return;
+                mesText.innerHTML = mesText.innerHTML
+                    .replace(MOOD_TAG_DOM_RE, '')
+                    .replace(EMPTY_P_TAIL_RE, '');
+            } catch (e) { /* ignore */ }
+        };
+        // First attempt in the shared rAF batch; the render can land after
+        // MESSAGE_RECEIVED (and streamed messages re-render), so retry twice.
+        queueDom(strip);
+        sdTimeout(strip, 300);
+        sdTimeout(strip, 1200);
+    }
+
+    async function applyMoodTag(ctx, rawText, settings) {
+        try {
+            if (!settings.enableMoodTag) return;
+            const label = detectMoodTag(rawText);
+            if (!label) return;
+            stripMoodTagFromDom();
+            await runCommand(ctx, `/emote ${label}`);
+            console.log(`${LOG} mood tag -> /emote ${label}`);
+        } catch (e) {
+            console.error(`${LOG} mood tag failed`, e);
+        }
+    }
+
     function getLastAiMessage(ctx) {
         const chat = ctx.chat;
         if (!chat || !chat.length) return null;
@@ -1496,6 +1586,11 @@
 
             // ONE extraction + ONE header parse for the whole event (item 1).
             const scene = parseScene(last.mes, settings);
+
+            // Inline Mood Tag: fire-and-forget (self-contained) so it never
+            // delays the rest of the scene. Reads the RAW text — the tag
+            // trails the message and must survive the MAX_SCAN cap.
+            try { applyMoodTag(ctx, last.mes, settings); } catch (e) { /* ignore */ }
 
             try {
                 updateCastStrip(scene, settings);
@@ -2265,6 +2360,7 @@
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
+        ['enableMoodTag', 'Inline Mood Tag', 'A trailing [MOOD: <label>] in the AI reply sets the expression sprite directly (/emote) — no classifier API call. Add the prompt snippet below to your preset. The tag is hidden from the rendered message; no tag = the classifier works as usual.'],
     ];
 
     const REGEX_FIELDS = [
@@ -2292,6 +2388,12 @@
 
     const PROMPT_SNIPPET = 'Begin every reply with a status line in this exact format:\n'
         + '[ 🕰️ <12h time> | ☀️ <Weekday, Month D, YYYY> | 📍 <current location> | 🌥️ <weather> ]';
+
+    // Preset line for the Inline Mood Tag feature — lists all 28 labels the
+    // expressions extension understands.
+    const MOOD_PROMPT_SNIPPET = 'At the very end of every reply, on its own line, append '
+        + '[MOOD: <one word>] choosing the single best fit from: '
+        + EXPRESSION_LABELS.join(', ') + '.';
 
     function escapeHtml(s) {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -2382,6 +2484,13 @@
                         <div id="sd_copy_snippet" class="menu_button" title="Copy to clipboard">📋 Copy</div>
                     </div>
                     ${regexes}
+
+                    <div class="scene-director-section">Inline Mood Tag</div>
+                    <small class="scene-director-help">With the Inline Mood Tag feature on, the model reports its own mood in a trailing tag and the sprite follows it instantly — no expression-classifier API call for that message. Add this line to your preset / system prompt (the tag never shows in the rendered chat):</small>
+                    <div class="sd-snippet-wrap">
+                        <pre id="sd_mood_snippet" class="sd-snippet">${escapeHtml(MOOD_PROMPT_SNIPPET)}</pre>
+                        <div id="sd_copy_mood_snippet" class="menu_button" title="Copy to clipboard">📋 Copy</div>
+                    </div>
 
                     <div class="scene-director-section">Timings</div>
                     ${numbers}
@@ -2589,6 +2698,10 @@
                     + (p.member.key === speakerKey ? ' [speaking]' : '')
                     + (mood !== 'neutral' ? ` [${mood}]` : '');
             }).join(', ') : '(none detected)'}`);
+            if (settings.enableMoodTag) {
+                const moodTag = detectMoodTag(last.mes);
+                lines.push(`mood tag   : ${moodTag ? `${moodTag} -> /emote ${moodTag} (tag hidden from render)` : '(no trailing [MOOD: …] tag found)'}`);
+            }
             if (conflicts.prome) lines.push('compat     : Prome VN detected — weather/lighting overlay off');
             if (conflicts.weatherCycle) lines.push('compat     : st-weather-cycle detected — Ken Burns off');
             out.textContent = lines.join('\n');
@@ -2638,6 +2751,16 @@
                 navigator.clipboard.writeText(PROMPT_SNIPPET).then(function () {
                     copyBtn.textContent = '✓ Copied';
                     sdTimeout(function () { copyBtn.textContent = '📋 Copy'; }, 2000);
+                });
+            } catch (e) { /* ignore */ }
+        });
+
+        const copyMoodBtn = document.getElementById('sd_copy_mood_snippet');
+        if (copyMoodBtn) copyMoodBtn.addEventListener('click', function () {
+            try {
+                navigator.clipboard.writeText(MOOD_PROMPT_SNIPPET).then(function () {
+                    copyMoodBtn.textContent = '✓ Copied';
+                    sdTimeout(function () { copyMoodBtn.textContent = '📋 Copy'; }, 2000);
                 });
             } catch (e) { /* ignore */ }
         });
@@ -2712,7 +2835,7 @@
             if (settings.enableCrossfade) setupSpriteCrossfade();
             document.addEventListener('visibilitychange', onVisibilityChange);
             refreshStatics(settings);
-            console.log(`${LOG} loaded (v0.4.0)`);
+            console.log(`${LOG} loaded (v0.4.1)`);
         } catch (e) {
             console.error(`${LOG} failed to initialise`, e);
         }

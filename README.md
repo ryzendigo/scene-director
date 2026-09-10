@@ -68,6 +68,7 @@ guard has kicked in.
 | **Speaking Order** *(0.3.0)* | Cast chips ordered latest-speaker-first |
 | **Asset Preloading** *(0.3.0)* | Idle-callback prefetch of card backgrounds and neutral sprite variants (skipped on data-saver / 2G connections) |
 | **Card system + Scan wizard** *(0.4.0)* | Cast & Place cards replace the raw JSON maps; the Scan-my-chat wizard builds them from your existing chat |
+| **Inline Mood Tag** *(0.4.1)* | The model appends `[MOOD: <label>]` to each reply and the expression sprite follows it directly (`/emote`) — no classifier API call; the tag is hidden from the rendered chat |
 
 Every feature is independently toggleable. With no scene header in a message,
 everything no-ops quietly. The extension only reads messages and issues slash
@@ -134,6 +135,11 @@ One card per recurring character:
   (create an `npc/` folder inside one character's sprite folder and drop in one
   square PNG per member, named after its key). Cards added via **Add from my
   characters** use that character's avatar thumbnail automatically.
+  Transparent-cutout portraits look best — the chip draws a subtle
+  radial-gradient backing behind the image, so heads sit inside the circle
+  instead of floating on the source photo's background. Batch-convert a folder
+  of portraits with [`tools/cutout.py`](tools/README.md) (rembg-based, one
+  command).
 - **Colour swatch**: the character's pinned dialogue colour. Its hex appearing
   in the raw message means they *spoke* — the most precise presence signal.
 - **Name regex**: fallback detection for characters without a colour (matches
@@ -229,6 +235,31 @@ keyword sets are editable (Advanced JSON):
 
 It's a heuristic — tune the word lists to your story's prose. It will sometimes
 be wrong; that's what makes the bubbles charming rather than authoritative.
+
+### Inline Mood Tag (0.4.1)
+
+Normally the expressions extension classifies each reply (locally or via an
+API call) to pick the sprite. With **Inline Mood Tag** on, the model reports
+its own mood instead: it appends a trailing tag like `[MOOD: joy]` and Scene
+Director runs `/emote joy` immediately — zero classifier round-trips for
+tagged messages. Add this to your preset / system prompt (one-click copy in
+the settings drawer):
+
+> At the very end of every reply, on its own line, append [MOOD: \<one word\>]
+> choosing the single best fit from: admiration, amusement, anger, annoyance,
+> approval, caring, confusion, curiosity, desire, disappointment, disapproval,
+> disgust, embarrassment, excitement, fear, gratitude, grief, joy, love,
+> nervousness, optimism, pride, realization, relief, remorse, sadness,
+> surprise, neutral.
+
+Details:
+
+- The tag is **hidden from the rendered message** but kept in the chat data,
+  so the model keeps seeing (and emitting) its own tags consistently.
+- Fullwidth brackets (`〔MOOD: joy〕`) are accepted too.
+- A missing tag, or an unknown label, does nothing — your configured
+  expression classifier keeps working as the fallback.
+- **Test last message** shows the detected tag in its dry-run output.
 
 ### Life counters (Advanced JSON)
 
