@@ -1399,6 +1399,14 @@
             while ((m = re.exec(text)) !== null) { n++; if (m.index === re.lastIndex) re.lastIndex++; if (n >= 9) break; }
             return n;
         }
+        // Longest single match a key makes (0.8.2 tie-break: "japanese
+        // classroom" beats "classroom", "school rooftop" beats "school").
+        function longest(re, text) {
+            re.lastIndex = 0;
+            let best = 0; let m;
+            while ((m = re.exec(text)) !== null) { if (m[0].length > best) best = m[0].length; if (m.index === re.lastIndex) re.lastIndex++; if (best > 200) break; }
+            return best;
+        }
         function baseOf(file) { return file ? file.replace(VARIANT_RE, function (m, v, off, str) { return str.slice(str.lastIndexOf('.')); }) : file; }
         function withVariant(file, hour, weatherLower, available) {
             if (!file) return file;
@@ -1446,13 +1454,16 @@
                 if (placeFile) add(placeFile, 10.02, 'place', 'place "' + header.slice(0, 40) + '" +10');
             }
             // (2) header keyword → generic key.
-            let headerKey = null; let headerKeyHits = 0;
+            let headerKey = null; let headerKeyHits = 0; let headerKeyLen = 0;
             if (header) {
                 const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1, 'main-street': 1 };
                 for (const g of T.generic) {
                     // address words (road/street/city) are weaker evidence than a venue word
                     const n = count(g.re, header) - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
-                    if (n > headerKeyHits) { headerKeyHits = n; headerKey = g.key; }
+                    if (n <= 0) continue;
+                    // Equal hit counts: the longer matched phrase is the more specific key.
+                    const len = longest(g.re, header);
+                    if (n > headerKeyHits || (n === headerKeyHits && len > headerKeyLen)) { headerKeyHits = n; headerKeyLen = len; headerKey = g.key; }
                 }
                 if (headerKey) add(prefix + headerKey + '.jpg', 4.01, 'generic', 'generic(' + headerKey + ' +4)');
             }
