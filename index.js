@@ -1484,8 +1484,10 @@
                     // address words (road/street/city) are weaker evidence than a venue word
                     const n = k.n - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
                     if (n <= 0) continue;
-                    // Equal hit counts: the longer matched phrase is the more specific key.
-                    if (n > headerKeyHits || (n === headerKeyHits && k.len > headerKeyLen)) { headerKeyHits = n; headerKeyLen = k.len; headerKey = g.key; }
+                    // Equal hit counts: the FIRST row wins — the table is ordered
+                    // specific-before-broad (diner before interstate, subway
+                    // before platform, bar before hotel).
+                    if (n > headerKeyHits) { headerKeyHits = n; headerKeyLen = k.len; headerKey = g.key; }
                 }
                 if (headerKey) add(prefix + headerKey + '.jpg', 4.01, 'generic', 'generic(' + headerKey + ' +4)');
             }
