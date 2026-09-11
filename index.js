@@ -1202,7 +1202,7 @@
             ['tokyo-alley-night', 'tokyo[^|]*(?:alley|night)|shinjuku|golden gai|izakaya alley'],
             ['tokyo-street', 'tokyo|shibuya|akihabara|harajuku|osaka|kyoto street'],
             ['japanese-classroom', 'homeroom|class ?room \\d|japanese classroom|classroom [1-3]-[a-z]'],
-            ['school-rooftop', 'school roof|rooftop of the school|the roof(?:top)? at lunch'],
+            ['school-rooftop', 'school roof(?:top)?|rooftop of the school|the roof(?:top)? at lunch'],
             ['japanese-apartment', 'tatami|my apartment|her apartment|his apartment|futon'],
             ['shrine', 'shrine|torii'],
             ['cherry-blossom-park', 'cherry blossom|sakura|hanami'],
@@ -1215,7 +1215,7 @@
             ['dojo', 'dojo|training hall|kendo|the mat\\b'],
             ['bathhouse', 'bath ?house|sento'],
             // fantasy / sci-fi extras
-            ['elven-forest', 'elven|elf forest|enchanted forest|fae|fey\\b'],
+            ['elven-forest', 'elven (?:forest|wood|glade|realm)|elven|elf forest|enchanted forest|fae|fey\\b'],
             ['dwarven-hall', 'dwarven|dwarf hall|under the mountain|the forge\\b'],
             ['magic-academy', 'academy|school of magic|the great hall of the academy'],
             ['witch-cottage', "witch'?s? (?:cottage|hut|house)|the cottage in the woods|the hut in the woods"],
@@ -1457,13 +1457,35 @@
             let headerKey = null; let headerKeyHits = 0; let headerKeyLen = 0;
             if (header) {
                 const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1, 'main-street': 1 };
+                // 0.8.2: collect every key's matches with positions; a match
+                // that lies INSIDE another key's longer match is a broad word
+                // swallowed by a specific phrase ("classroom" inside "Japanese
+                // classroom") and does not count for the broad key.
+                const all = [];
                 for (const g of T.generic) {
+                    g.re.lastIndex = 0;
+                    let m;
+                    while ((m = g.re.exec(header)) !== null) {
+                        all.push({ key: g.key, start: m.index, end: m.index + m[0].length, len: m[0].length });
+                        if (m.index === g.re.lastIndex) g.re.lastIndex++;
+                        if (all.length > 200) break;
+                    }
+                }
+                const perKey = {};
+                for (const x of all) {
+                    const swallowed = all.some(function (y) { return y !== x && y.key !== x.key && y.len > x.len && y.start <= x.start && y.end >= x.end; });
+                    if (swallowed) continue;
+                    const k = perKey[x.key] || (perKey[x.key] = { n: 0, len: 0 });
+                    k.n++; if (x.len > k.len) k.len = x.len;
+                }
+                for (const g of T.generic) {
+                    const k = perKey[g.key];
+                    if (!k) continue;
                     // address words (road/street/city) are weaker evidence than a venue word
-                    const n = count(g.re, header) - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
+                    const n = k.n - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
                     if (n <= 0) continue;
                     // Equal hit counts: the longer matched phrase is the more specific key.
-                    const len = longest(g.re, header);
-                    if (n > headerKeyHits || (n === headerKeyHits && len > headerKeyLen)) { headerKeyHits = n; headerKeyLen = len; headerKey = g.key; }
+                    if (n > headerKeyHits || (n === headerKeyHits && k.len > headerKeyLen)) { headerKeyHits = n; headerKeyLen = k.len; headerKey = g.key; }
                 }
                 if (headerKey) add(prefix + headerKey + '.jpg', 4.01, 'generic', 'generic(' + headerKey + ' +4)');
             }
