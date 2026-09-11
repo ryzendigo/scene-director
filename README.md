@@ -160,6 +160,15 @@ One card per recurring character:
 
 ### Place cards
 
+> **Scope your matchers.** A Place card's regex is tested against the whole 📍
+> header, and the first matching card wins — so `kitchen` alone will claim
+> *every* kitchen in the story. Write `granny.*kitchen` / `farmhouse.*kitchen`
+> for house-specific rooms, order specific cards above generic ones, and never
+> use a street-address word (`road`, `street`, `avenue`) as a matcher: "40
+> Roberts Road, lounge room" is a lounge. Anything a card doesn't claim falls
+> through to the generic pack.
+
+
 One card per location. **First matching card wins**, so order specific places
 above generic ones ("Carter farmhouse kitchen" above "kitchen").
 
@@ -331,14 +340,15 @@ decided it; with *Debug Logging* on, each verdict is logged in full.
 `tools/mood-harness.mjs` runs the pure engine over a saved chat `.jsonl` so you
 can check verdicts against what you read.
 
-### Starter backgrounds (0.7.0)
+### Starter backgrounds (0.8.0 — pack v2)
 
-`backgrounds/` in this repo holds 30 generic scenes plus a `-night` variant of
-each — restaurant, cafe, pub, kitchen, dining, living, bedroom, bathroom,
-office, hallway, porch, backyard, street, city-street, park, beach, forest,
-country-road, farm, church, hospital, clinic, school, shop, hotel, car,
-transit, library, gym, rooftop — as `generic-<key>.jpg` / `generic-<key>-night.jpg`
-(~1600 px, ~250 KB each, CC0 / free to use, generated for this project).
+`backgrounds/` ships **77 generic day scenes** with a `-night` variant for
+most (`generic-<key>.jpg` / `generic-<key>-night.jpg`; `generic-rooftop.jpg` is
+day and `generic-rooftop-dusk.jpg` its dusk variant), ~1600 px, 33 MB in
+total, **CC0 / free to use, generated for this project**. `backgrounds/index.json`
+lists every packed file; the installer reads it.
+
+Scenes: apartment, backyard, bar, basement, bathroom, beach, bedroom, bookshop, cafe, campsite, car, castle-hall, cave, cell, cemetery, church, cinema, city-street, clinic, country-road, courtroom, cyberpunk-street, desert, dining, doctor-office, dungeon, farm, forest, garden-party, gym, gym-locker, hallway, harbour, hospital, hospital-corridor, hotel, hotel-lobby, inn-room, kitchen, laboratory, lake, laundry, library, living, mansion, mountains, nightclub, nursery, office, office-open, park, pharmacy, plane, platform, police-station, pool, porch, pub, restaurant, rooftop, ruins, school, ship-deck, shop, snow, spaceship-bridge, spaceship-corridor, stadium, street, tavern, temple, throne-room, transit, warehouse, wizard-study, workshop.
 
 **Install:** Extensions → Scene Director → *Install starter backgrounds*. It
 uploads each file through SillyTavern's own Backgrounds endpoint and skips
@@ -346,9 +356,96 @@ ones you already have. **Manual copy:** drop the files into your user's
 `backgrounds/` folder (`data/<user>/backgrounds/`) and reload.
 
 With **Generic Fallback** on (default), a 📍 header that matches no Place card
-is classified by keyword into one of these scenes; the narration's scene nouns
-(booth, pew, steering wheel…) can decide when the header offers nothing. Both
-keyword tables are editable under Advanced JSON.
+is classified by keyword into one of the generic keys below (specific keys are
+tried before broad ones; street-address words are weighted down so "40 Roberts
+Road, lounge room" is a lounge, not a street); the narration's scene nouns
+(booth, pew, steering wheel…) can decide when the header offers nothing. Keys
+whose image is missing are simply skipped by the verdict.
+
+| generic key | packed |
+|---|---|
+| `pharmacy` | ✔ |
+| `bookshop` | ✔ |
+| `library` | ✔ |
+| `doctor-office` | ✔ |
+| `hospital-corridor` | ✔ |
+| `hospital` | ✔ |
+| `clinic` | ✔ |
+| `courtroom` | ✔ |
+| `police-station` | ✔ |
+| `cell` | ✔ |
+| `courtroom` | ✔ |
+| `tavern` | ✔ |
+| `nightclub` | ✔ |
+| `bar` | ✔ |
+| `pub` | ✔ |
+| `restaurant` | ✔ |
+| `cafe` | ✔ |
+| `hotel-lobby` | ✔ |
+| `hotel` | ✔ |
+| `inn-room` | ✔ |
+| `penthouse` | — (no image yet; the engine skips it) |
+| `mansion` | ✔ |
+| `apartment` | ✔ |
+| `nursery` | ✔ |
+| `office-open` | ✔ |
+| `office` | ✔ |
+| `laboratory` | ✔ |
+| `warehouse` | ✔ |
+| `workshop` | ✔ |
+| `laundry` | ✔ |
+| `basement` | ✔ |
+| `school-hallway` | — (no image yet; the engine skips it) |
+| `school` | ✔ |
+| `gym-locker` | ✔ |
+| `pool` | ✔ |
+| `gym` | ✔ |
+| `stadium` | ✔ |
+| `cinema` | ✔ |
+| `shop` | ✔ |
+| `kitchen` | ✔ |
+| `dining` | ✔ |
+| `living` | ✔ |
+| `bedroom` | ✔ |
+| `bathroom` | ✔ |
+| `hallway` | ✔ |
+| `ship-deck` | ✔ |
+| `porch` | ✔ |
+| `garden-party` | ✔ |
+| `backyard` | ✔ |
+| `park` | ✔ |
+| `cemetery` | ✔ |
+| `temple` | ✔ |
+| `church` | ✔ |
+| `harbour` | ✔ |
+| `beach` | ✔ |
+| `lake` | ✔ |
+| `mountains` | ✔ |
+| `desert` | ✔ |
+| `snow` | ✔ |
+| `campsite` | ✔ |
+| `forest` | ✔ |
+| `country-road` | ✔ |
+| `farm` | ✔ |
+| `cave` | ✔ |
+| `ruins` | ✔ |
+| `castle-hall` | ✔ |
+| `throne-room` | ✔ |
+| `dungeon` | ✔ |
+| `wizard-study` | ✔ |
+| `spaceship-bridge` | ✔ |
+| `spaceship-corridor` | ✔ |
+| `cyberpunk-street` | ✔ |
+| `bunker` | — (no image yet; the engine skips it) |
+| `plane` | ✔ |
+| `transit` | ✔ |
+| `platform` | ✔ |
+| `car` | ✔ |
+| `rooftop` | ✔ |
+| `city-street` | ✔ |
+| `street` | ✔ |
+
+Both keyword tables are editable under Advanced JSON.
 
 ### Life counters (Advanced JSON)
 

@@ -166,6 +166,15 @@
  * override, nearest-sprite mapping that never falls to neutral, tooltips
  * from the same L0 material as the mood engine.
  *
+ * v0.8.0 — engine refresh: whole-word lexicon cues with ~35 semantic-trap
+ * rewrites, bereavement-gated grief, ending weights (last 40% ×2, last
+ * 20% ×3), stricter verdict floors, classifier "desire" only with a
+ * romantic cue; ~80 generic scene keys (fantasy/sci-fi included,
+ * specific-before-broad, address words weighted down), tightened presence
+ * cue/veto lists, unknown-speaker name fallback, tooltips from message
+ * text only; starter pack v2 (~80 scenes + night) with a manifest-driven
+ * installer.
+ *
  * Every feature is independently toggleable and fully configurable from the
  * extension's settings drawer. With no scene header present, everything
  * no-ops quietly. The extension only reads chat state and issues the same
@@ -294,7 +303,7 @@
         femaleNamesRegex: '',          // other female characters (she/her is the main character's only when none of these appear)
         moodLexicon: null,             // null = built-in table (MoodEngine.DEFAULT_LEXICON); else [[regex, label, weight, [vetoes]], ...]
         ownColorHex: '',            // the main character's dialogue colour (never an "unknown")
-        interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)?|breath(?:es|ed|e)|exhal(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)|goes? white|went white|pale|jaw works?|eyes come up|shine|colou?r (?:comes|came|drains|drained)|blinks?|lip trembl|goes? still|trembl|voice (?:goes|is|drops|cracks|wavers)|quiet(?:ly)?|flatly|softly',
+        interiorityRegex: 'thinks?|thought|feels?|felt|wants?|wanted|wish(?:es|ed)?|hopes?|hoped|fears?|feared|notices?|noticed|realis(?:es|ed)|realiz(?:es|ed)|decides?|decided|wonders?|wondered|looks?|looked|glanc(?:es|ed)|watch(?:es|ed)|flush(?:es|ed)|stiffen(?:s|ed)|soften(?:s|ed)|smil(?:es|ed)|frown(?:s|ed)|swallow(?:s|ed)?|breath(?:es|ed|e)|exhal(?:es|ed)|grip(?:s|ped)|hesitat(?:es|ed)|goes? white|went white|pale|jaw works?|eyes come up|shine|colou?r (?:comes|came|drains|drained)|blinks?|blinked|lip trembl|goes? still|went still|trembl|shak(?:es|ing)|voice (?:goes|is|drops|cracks|wavers)|quiet(?:ly)?|flatly|softly',
 
         // v0.3.0 numeric tuning.
         kenBurnsSeconds: 40,     // one Ken Burns sweep (alternates back)
@@ -443,6 +452,8 @@
         const PRONOUN_SHE = /\b(?:she|her|hers|herself)\b/i;
         const NEG_RE = /\b(?:not|never|no|isn't|wasn't|doesn't|didn't|hardly|without|nor)\s+(?:\w+\s+){0,2}$/i;
         const LAST_FRACTION = 0.6; // sentences beyond this point weigh double
+        // The ending is the mood she's left in: last 40% ×2, last 20% ×3.
+        function weightAt(frac) { return frac >= 0.8 ? 3 : (frac >= LAST_FRACTION ? 2 : 1); }
 
         // The lexicon: [regexSource, label, weight, vetoes]. Weight is per
         // hit (times 2 in the message's last 40%). Vetoes are labels a hit
@@ -456,66 +467,86 @@
             ['smirk(?:s|ed|ing)?', 'amusement', 1.5, []],
             ['teas(?:es|ed|ing)', 'amusement', 1.5, []],
             ['wry(?:ly)?', 'amusement', 1, []],
-            ['snort(?:s|ed)?', 'amusement', 1.5, []],
+            ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
-            ['beam(?:s|ed|ing)', 'joy', 2, ['sadness']],
-            ['(?:face|eyes) lights? up|lights up', 'joy', 2, ['sadness']],
-            ['delight(?:ed|s)?', 'joy', 2, []],
+            ['(?:she|I|face|smile)\\s+beams?\\b|beaming|beams\\s+at', 'joy', 2, ['sadness']],  // not ceiling beams / beams of light
+            ['(?:face|eyes|she)\\s+lights?\\s+up|lights\\s+up\\s+(?:at|when|like)', 'joy', 2, ['sadness']],  // not a sign/screen lighting up
+            ['(?<!turkish\\s)delight(?:ed|s)?', 'joy', 2, []],
             ['\\bhappy\\b|happi(?:ly|ness)', 'joy', 1.5, []],
-            ['humm(?:ing|ed)|hums', 'joy', 1, []],
-            ['bright(?:ens|ened)\\b', 'joy', 1.5, []],
+            ['(?:she|I)\\s+hums?\\b|humming\\s+(?:to\\s+herself|under\\s+her\\s+breath)', 'joy', 1, []],  // not the fridge/porch light humming
+            ['(?:face|eyes|she|smile)\\s+brighten(?:s|ed)?\\b|brightens?\\s+(?:at|when)', 'joy', 1.5, []],  // not the sky/day brightening
             // embarrassment
-            ['(?:cheeks?|face|neck|ears)\\s+(?:(?:go|goes|going|went|turn|turns|turning|turned|burn|burning)\\s+)?(?:pink|red|hot|scarlet|crimson|warm)', 'embarrassment', 3, []],
+            ['(?:cheeks?|face|neck|ears)\\s+(?:(?:go|goes|going|went|turn|turns|turning|turned|burn|burning)\\s+)?(?:pink|red|hot|scarlet|crimson|warm)(?!\\s+(?:settles|stays|sits|holds))', 'embarrassment', 3, []],
             ['(?:goes|went|gone|turning|turns|turned)\\s+pink', 'embarrassment', 3, []],
-            ['pink\\s+(?:across|in|on|over)\\s+(?:her|the)\\s+(?:cheeks|face)', 'embarrassment', 3, []],
+            ['(?:goes|went|gone|turns?|turned)\\s+(?:bright\\s+)?(?:red|scarlet|crimson)|red\\s+(?:from|to)\\s+the\\s+(?:ears|hairline|roots|collar)', 'embarrassment', 3, ['anger', 'annoyance']],
+            ['getting\\s+used\\s+to\\s+it|don\'t\\s+have\\s+to\\s+encourage', 'amusement', 2, ['anger']],
+            // "the pink in her cheeks settles/stays/instead of climbing" = the blush NOT rising
+            ['pink\\s+(?:across|in|on|over)\\s+(?:her|the)\\s+(?:cheeks|face)(?!\\s+(?:settles|stays|sits|holds|instead|doesn\'t|does\\s+not))', 'embarrassment', 3, []],
+            // composed reproach — telling him off, not blushing
+            ['I\'m\\s+cross|I\\s+am\\s+cross|cross\\s+(?:about|with|because)|that\'s\\s+the\\s+part\\s+that\\s+stings|wrong\\s+twice\\s+over|I\'m\\s+not\\s+sorry\\s+I', 'annoyance', 3, ['embarrassment']],
+            ['(?:fork|finger|knife|spoon)\\s+(?:stays\\s+)?(?:in\\s+her\\s+fist\\s+)?point(?:s|ed|ing)?\\s+at\\s+(?:him|you)|points?\\s+(?:the|her)\\s+(?:fork|finger)\\s+at', 'disapproval', 1.5, ['embarrassment']],
             ['blush(?:es|ed|ing)?', 'embarrassment', 3, []],
-            ['flush(?:es|ed|ing)?', 'embarrassment', 2, []],
+            ['flush(?:es|ed|ing)?(?!\\s+(?:the|it|a)\\b)(?!\\s+toilet)', 'embarrassment', 2, []],
             ['ducks?\\s+her\\s+head', 'embarrassment', 2, []],
             ['hides?\\s+her\\s+face', 'embarrassment', 2, []],
             ['mortif(?:ied|ying)', 'embarrassment', 3, []],
             ['sheepish(?:ly)?', 'embarrassment', 2, []],
             // sadness / grief
-            ['\\btears?\\b|tearful', 'sadness', 3, ['joy', 'amusement', 'pride']],
-            ['\\bcr(?:y|ies|ied|ying)\\b|\\bwe(?:ep|pt|eping)\\b', 'sadness', 3, ['joy', 'amusement', 'pride']],
+            // tears the NOUN only — "she tears a corner off the napkin" is a verb
+            ['(?:\\bin\\s+tears\\b|\\b(?:her|his|the|with|through|of|fresh|hot|silent)\\s+tears\\b|\\btears\\s+(?:in|on|down|well|spill|prick|sting|stand|run|slide|track|fall|come|gather|blur)|\\ba\\s+tear\\b|\\btear\\s+(?:slides|slips|runs|falls|tracks|rolls)|tearful)', 'sadness', 3, ['joy', 'amusement', 'pride']],
+            ['(?:she|I)(?:\\s+\\w+){0,2}\\s+(?:cr(?:y|ies|ied|ying)|we(?:ep|pt|eping))\\b(?!\\s+out)|her\\s+crying|(?:starts?|started|begins?|began)\\s+to\\s+cry|crying\\s+(?:now|quietly|silently|properly)', 'sadness', 3, ['joy', 'amusement', 'pride']],  // her crying only: not a baby's cries, not 'cried out', not 'far cry'
             ['\\bsob(?:s|bed|bing)?\\b', 'sadness', 3, ['joy', 'amusement', 'pride']],
             ['throat\\s+(?:goes|is|was|gone|feels)?\\s*(?:tight|thick|closing)', 'sadness', 2, []],
             ['voice\\s+(?:cracks|wavers|breaks|catches)', 'sadness', 2, []],
-            ['eyes\\s+(?:fill|sting|burn|well|prick)', 'sadness', 2.5, []],
+            ['eyes\\s+(?:fill|sting|burn|well|prick)(?!\\s+(?:from|with|in)\\s+(?:the\\s+)?(?:smoke|onions?|wind|chlorine|sweat|dust|sun))', 'sadness', 2.5, []],
             ['lip\\s+trembl(?:es|ing)', 'sadness', 2, []],
             ['\\bgriev(?:es|ed|ing)|\\bgrief\\b|mourn(?:s|ed|ing)?', 'grief', 3, ['joy', 'amusement']],
-            ['\\baches?\\b|aching', 'grief', 1, []],
+            ['heart\\s+aches?|ache\\s+in\\s+her\\s+(?:chest|throat)|aching\\s+(?:in\\s+her\\s+)?(?:chest|throat)', 'sadness', 1, []],
             // anger / annoyance
             ['(?<!\\bit\\s)(?<!\\blet\\s)\\bsnap(?:s|ped)\\b(?!\\s+(?:back|shut|closed|open|the|it|a\\b))', 'anger', 2.5, []],
-            ['\\bdr(?:y|ier|yly)\\b', 'amusement', 1, []],
-            ['jaw\\s+(?:sets?|set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)', 'anger', 2.5, []],
+            ['dryly|dr(?:y|ier)\\s+(?:voice|tone|smile|look|humou?r|little\\s+laugh)|(?:voice|tone)\\s+(?:goes|comes\\s+out|is)\\s+dr(?:y|ier)|says?\\s+(?:it\\s+)?dr(?:y|ily)', 'amusement', 1, []],  // not dry towels/clothes/hands
+            // a set jaw alone is resolve; only a HARD/clenched/tight jaw reads as anger
+            ['jaw\\s+(?:set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)|clench(?:es|ed)?\\s+(?:her\\s+)?jaw', 'anger', 2.5, []],
+            ['jaw\\s+sets?\\b(?!\\s+hard)', 'disapproval', 1, []],
+            ['pink\\s+(?:comes|climbs|creeps|rises)\\s+up\\s+her\\s+(?:throat|neck)|colou?r\\s+(?:climbs|creeps)\\s+(?:up\\s+)?her\\s+(?:throat|neck)', 'embarrassment', 2, []],
             ['bites?\\s+(?:it\\s+)?off|through\\s+her\\s+teeth|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],
             // grief / shock physical tells (controlled, not angry)
-            ['jaw\\s+works?|jaw\\s+working|swallows?\\s+(?:nothing|hard\\s+on\\s+nothing)|swallow(?:s|ed)\\s+nothing', 'grief', 3, []],
-            ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes|went)|colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'grief', 3, []],
-            ['wet\\s+shine|shine\\s+(?:along|on|in)\\s+(?:the|her)\\s+(?:lower\\s+)?(?:lid|lids|lashes|eyes)|lower\\s+lid|not\\s+falling', 'grief', 3, ['joy', 'amusement', 'pride']],
+            ['jaw\\s+works?|jaw\\s+working|swallows?\\s+(?:nothing|hard\\s+on\\s+nothing)|swallow(?:s|ed)\\s+nothing', 'sadness', 3, []],
+            ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes\\s+out\\s+of|leaves)|colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'sadness', 3, []],  // 'colour goes high in her cheeks' is a blush, not this
+            ['wet\\s+shine|shine\\s+(?:along|on|in)\\s+(?:the|her)\\s+(?:lower\\s+)?(?:lid|lids|lashes|eyes)|lower\\s+lid|not\\s+falling', 'sadness', 3, ['joy', 'amusement', 'pride']],
             ['practi[cs]ed\\s+(?:exhale|breath)|lets?\\s+(?:it|the\\s+breath)\\s+out\\s+slow(?:ly)?', 'sadness', 1.5, []],
             ['eyes\\s+come\\s+up|looks?\\s+up\\s+slowly', 'realization', 1, []],
-            ['glar(?:es|ed|ing)', 'anger', 3, []],
+            ['(?:she|I)\\s+glar(?:es|ed|ing)|glar(?:es|ed|ing)\\s+(?:at|across|up\\s+at|over)', 'anger', 3, []],  // not the sun glaring off the bonnet
             ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'anger', 2, []],
             ['furious|fury|rage', 'anger', 3, []],
             ['\\btemper\\b', 'anger', 2, []],
-            ['hiss(?:es|ed)?\\b', 'anger', 2, []],
-            ['slam(?:s|med)?', 'anger', 2, []],
-            ['\\bsharp(?:ly)?\\b', 'annoyance', 1, []],
+            ['(?:she|I)\\s+hiss(?:es|ed)?\\b|hiss(?:es|ed)\\s+(?:at|through\\s+her\\s+teeth)', 'anger', 2, []],  // not the pan/kettle
+            ['(?:she|I)\\s+slams?\\b|slams?\\s+(?:it|the\\s+\\w+)\\s+(?:down|shut)|slammed\\s+(?:it|the\\s+\\w+)\\s+(?:down|shut)', 'anger', 2, []],  // not a door slamming in the wind
+            ['sharply|voice\\s+(?:goes|is|comes\\s+out)\\s+sharp|sharp\\s+(?:voice|tone|look|edge\\s+(?:in|to)\\s+(?:her|it))|says?\\s+(?:it\\s+)?sharp', 'annoyance', 1, []],  // not 'sharp scratch', sharps bin, sharp knife
             ['rolls?\\s+her\\s+eyes', 'annoyance', 2, []],
             ['(?:sighs?|breathes?)\\s+through\\s+her\\s+nose', 'annoyance', 1.5, []],
-            ['\\bhuff(?:s|ed)?\\b', 'annoyance', 2, []],
+            ['huff(?:s|ed)?\\b(?!\\s+(?:a|of|out\\s+a)\\s+(?:laugh|breath\\s+of\\s+laughter))', 'annoyance', 2, []],
             ['\\btsk', 'annoyance', 1, []],
             ['exasperat(?:ed|ion)', 'annoyance', 2.5, []],
             ['irritat(?:ed|ion)|irked', 'annoyance', 2, []],
             // fear / nervousness
-            ['stiffen(?:s|ed|ing)?', 'fear', 2, []],
-            ['(?:goes|went|gone|holds?)\\s+(?:very\\s+)?still', 'fear', 2, []],
-            ['\\bpale(?:s|d)?\\b|colou?r\\s+drains', 'fear', 2.5, []],
+            ['(?:she|I|her\\s+back|her\\s+shoulders|her\\s+spine)\\s+stiffen(?:s|ed|ing)?|stiffens?\\s+(?:against\\s+(?:him|you|his)|under\\s+(?:his|your)|at\\s+the\\s+(?:sound|touch|word)|when\\s+(?:he|you))', 'fear', 2, []],  // not the concrete/mix stiffening
+            // stillness in his arms / against him is anticipation, not fear
+            ['(?:goes|went|gone|holds?)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under)\\s+(?:his|your|the)\\s+(?:arms?|hands?|chest|hold|touch|embrace))', 'fear', 2, []],
+            // controlled anger / resolve tells (quiet fury, not fear)
+            ['quiet\\s+and\\s+level|level\\s+(?:voice|tone)|voice\\s+(?:is\\s+)?level', 'anger', 1.5, ['fear']],
+            ['done\\s+being\\s+\\w+|not\\s+\\w+\\s+anymore|I\\s+don\'t\\s+care\\s+if|I\'ll\\s+take\\s+the\\s+hit', 'disapproval', 2, ['fear']],
+            ['pulls?\\s+her\\s+hands?\\s+(?:back|away|out)', 'disapproval', 1.5, []],
+            ['(?:goes|went|gone|turns|turned|looks)\\s+(?:very\\s+)?pale|pale\\s+(?:as|around\\s+the|under\\s+the)|face\\s+(?:is|has\\s+gone)\\s+pale|\\bpales\\b', 'fear', 2.5, []],  // not pale blue / pale light / pale moonlight
             ['heart\\s+(?:hammers|pounds|races|lurches)', 'fear', 2, []],
             ['breath\\s+catches|catches\\s+her\\s+breath', 'surprise', 1.5, []],
-            ['afraid|scared|terrified|\\bdread', 'fear', 3, []],
-            ['trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b', 'fear', 1.5, []],
+            // Only HER fear counts: "he was scared", "daddy's scared", "you're
+            // scared" must not register (the subject is someone else).
+            // Fear words count only when SHE is the subject ("she's scared",
+            // "I'm afraid", "she looks terrified") — never as a noun ("that
+            // scared"), never about someone else ("he was scared").
+            ['\\b(?:she|she\'s|she\\s+is|she\\s+was|she\\s+looks|she\\s+sounds|she\\s+feels|I|I\'m|I\\s+am|I\\s+was|I\\s+feel)\\s+(?:\\w+\\s+){0,2}(?:afraid|scared|terrified|frightened|dreading)\\b', 'fear', 3, []],
+            ['trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)', 'fear', 1.5, []],  // not 'shakes her head', not shaking with laughter
             ['flinch(?:es|ed)?', 'fear', 2, []],
             ['fidget(?:s|ed|ing)?', 'nervousness', 2, []],
             ['twists?\\s+her\\s+(?:fingers|ring|hands)', 'nervousness', 2, []],
@@ -524,8 +555,8 @@
             ['wring(?:s|ing)?\\s+her\\s+hands', 'nervousness', 2, []],
             ['anxious|nervous(?:ly)?', 'nervousness', 3, []],
             // desire / love / caring
-            ['settl(?:es|ed|ing)\\s+(?:in\\s+)?(?:closer|against|into)|curls?\\s+into|leans?\\s+into\\s+(?:him|you)', 'love', 2, []],
-            ['\\bheat\\b', 'desire', 1, []],
+            ['settl(?:es|ed|ing)\\s+(?:in\\s+)?(?:closer|against\\s+(?:him|you|his)|into\\s+(?:him|you|his))|curls?\\s+into\\s+(?:him|you)|leans?\\s+into\\s+(?:him|you)', 'love', 2, []],  // not 'settles against the headrest'
+            ['heat\\s+(?:in|climbs|climbing|low\\s+in|rises\\s+in)\\s+her\\s+(?:cheeks|face|belly|voice|eyes|chest)|heated\\s+look', 'desire', 1, []],  // not the heat of the day / the stove
             ['breath(?:y|less)', 'desire', 1, []],
             ['kiss(?:es|ed|ing)?', 'love', 2, []],
             ['nuzzl(?:es|ed|ing)', 'love', 2, []],
@@ -539,18 +570,18 @@
             ['makes?\\s+sure\\s+(?:he|you)|checks?\\s+on\\s+(?:him|you)|fuss(?:es|ing)\\s+over', 'caring', 1, []],
             // surprise / realization / curiosity / confusion
             ['eyes\\s+(?:widen|go\\s+wide|fly\\s+open)', 'surprise', 3, []],
-            ['\\bblinks?\\b', 'surprise', 1, []],
-            ['startl(?:es|ed)', 'surprise', 3, []],
+            ['\\bblinks?\\b(?!\\s+(?:it|them|the\\s+shine)\\s+(?:flat|away|back))', 'surprise', 1, []],
+            ['(?:she|I|looks?|looking)\\s+startled|startles?\\s+(?:her|me)|startled\\s+(?:laugh|breath|look|sound|,)', 'surprise', 3, []],  // not a startled bird
             ['\\bgasps?\\b', 'surprise', 2, []],
             ['realis(?:es|ed|ing)|realiz(?:es|ed|ing)|dawns\\s+on', 'realization', 2, []],
             ['tilts?\\s+her\\s+head|head\\s+tilts', 'curiosity', 2, []],
-            ['curious(?:ly)?', 'curiosity', 2.5, []],
+            ['curious(?:ly)?(?!\\s+(?:thing|case|little|way|habit|look\\s+on\\s+his))', 'curiosity', 2.5, []],
             ['eyebrows?\\s+(?:lifts?|rais(?:es|ed)|arch(?:es|ed)?)', 'curiosity', 1.5, []],
             ['frown(?:s|ed|ing)?', 'confusion', 1, []],
             ['puzzled|confused|bewildered', 'confusion', 3, []],
             // relief / disappointment / disapproval / disgust
             ['shoulders\\s+(?:drop|come\\s+down|loosen|ease)', 'relief', 2.5, []],
-            ['relie(?:f|ved)', 'relief', 3, []],
+            ['relieved(?!\\s+of)|(?:with|in|of)\\s+relief|relief\\s+(?:floods|washes|comes|in\\s+her)|sighs?\\s+(?:of|with)\\s+relief', 'relief', 3, []],  // not a relief map / relieved of duty
             ['breathes?\\s+out|lets?\\s+out\\s+a\\s+breath|exhal(?:es|ed)', 'relief', 1.5, []],
             ['\\bsighs?\\b', 'relief', 1, []],
             ['unclench(?:es|ed)?', 'relief', 1.5, []],
@@ -566,12 +597,12 @@
             ['lifts?\\s+her\\s+chin|chin\\s+(?:lifts|up)', 'pride', 2, []],
             ['\\bproud(?:ly)?\\b', 'pride', 3, []],
             ['\\bsmug(?:ly)?\\b', 'pride', 1.5, []],
-            ['thank(?:s|ful|\\s+you)|grateful', 'gratitude', 1.5, []],
-            ['approv(?:es|ed|ing|al)|nods?\\s+(?:firmly|approvingly)', 'approval', 2, []],
+            ['(?<!\\bno\\s)(?<!\\bno,\\s)thank(?:s|ful|\\s+you)|grateful', 'gratitude', 1.5, []],  // not 'no thank you, ma\'am'
+            ['(?<!planning\\s)(?<!council\\s)(?<!shire\\s)approv(?:es|ed|ing|al)(?!\\s+(?:from|by)\\b)|nods?\\s+(?:firmly|approvingly)', 'approval', 2, []],  // not planning approval
             ['hopeful(?:ly)?|looking\\s+forward', 'optimism', 1.5, []],
-            ['\\bsorry\\b', 'remorse', 1.5, []],
-            ['guilt(?:y)?|ashamed|regret(?:s|ted)?', 'remorse', 3, []],
-            ['excited(?:ly)?|can\'t\\s+wait|bounc(?:es|ing)', 'excitement', 2.5, []],
+            ['(?<!\\bnot\\s)(?<!\\bnever\\s)(?<!\\bn\'t\\s)\\bsorry\\b(?!\\s+for\\s+your)', 'remorse', 1.5, []],  // not 'I'm not sorry', not condolences
+            ['(?<!\\bno\\s)(?<!\\bnot\\s)(?<!\\bpleads?\\s)(?<!\\bpleaded\\s)(?<!\\bfound\\s)guilt(?:y)?(?!\\s+(?:plea|verdict|of\\s+(?:murder|assault)))|ashamed|(?<!\\bno\\s)(?<!\\bnot\\s)regret(?:s|ted)?', 'remorse', 3, []],  // not 'pleaded guilty'
+            ['excited(?:ly)?|can\'t\\s+wait|(?:she|I)\\s+bounc(?:es|ing)|bounc(?:es|ing)\\s+on\\s+(?:her\\s+toes|the\\s+balls)', 'excitement', 2.5, []],  // not the truck bouncing
             ['admir(?:es|ed|ing|ation)|impressed|\\bawe\\b', 'admiration', 2.5, []],
             // neutral — positive indication only
             ['matter-of-fact(?:ly)?|even(?:ly)?\\s+(?:voice|tone)|calm(?:ly)?', 'neutral', 1, []],
@@ -582,7 +613,16 @@
             for (const row of (table || DEFAULT_LEXICON)) {
                 try {
                     if (!row || !row[0] || !LABEL_SET.has(row[1])) continue;
-                    out.push({ re: new RegExp(row[0], 'gi'), label: row[1], w: Number(row[2]) || 1, vetoes: row[3] || [] });
+                    // Whole-word cues: a bare pattern like "rage" must never
+                    // match inside "encourage". Add \b at the ends whenever the
+                    // pattern starts/ends with a word character; alternations
+                    // are wrapped in a group so the boundary applies to each.
+                    let src = String(row[0]);
+                    const startsWord = /^[A-Za-z0-9]/.test(src) || /^\((?!\?<|\?!)/.test(src) || /^\\b/.test(src);
+                    const stripped = src.replace(/(?:\(\?[!=](?:[^()]|\([^()]*\))*\))+$/, '');
+                    const endsWord = !/\\b$/.test(stripped) && /[A-Za-z0-9)]$/.test(stripped);
+                    src = (startsWord ? '\\b' : '') + '(?:' + src + ')' + (endsWord ? '\\b' : '');
+                    out.push({ re: new RegExp(src, 'gi'), label: row[1], w: Number(row[2]) || 1, vetoes: row[3] || [] });
                 } catch (e) { /* skip bad row */ }
             }
             return out;
@@ -608,7 +648,7 @@
             while ((m = FONT_ANY_RE.exec(text)) !== null) {
                 if (hex && m[1].toLowerCase() === hex) {
                     const inner = m[2].replace(TAG_STRIP_RE, ' ').replace(/\s+/g, ' ').trim();
-                    if (inner) { parts.push({ text: inner, w: (m.index / total) >= LAST_FRACTION ? 2 : 1, kind: 'dialogue' }); dialogue++; }
+                    if (inner) { parts.push({ text: inner, w: weightAt(m.index / total), kind: 'dialogue' }); dialogue++; }
                 }
             }
             // (b) narration about her, processed IN DOCUMENT ORDER so a
@@ -645,7 +685,7 @@
                     let hers = named || (pron && !other && (prevHers || Boolean(o && o.soloFemale)));
                     prevHers = hers ? !other || named : (other ? false : prevHers);
                     if (!hers) continue;
-                    parts.push({ text: sent, w: ((ch.at + sm.index) / total) >= LAST_FRACTION ? 2 : 1, kind: 'narration' });
+                    parts.push({ text: sent, w: weightAt((ch.at + sm.index) / total), kind: 'narration' });
                     count++;
                 }
             }
@@ -751,7 +791,17 @@
          *   clear sentence tops out ~0.15–0.2 raw.)
          * @returns {{final:string|null, rule:string, hold:boolean}}
          */
+        // "grief" is a bereavement word: it may only win when the text has a
+        // death in it; otherwise the same tells resolve to sadness.
+        const BEREAVEMENT_RE = /\b(?:died|dead|death|dying|funeral|buried|burial|grave(?:side|yard)?|coffin|casket|passed\s+(?:away|on)|mourn(?:s|ed|ing)?|wake\b|eulog|cemetery|the\s+late\b|lost\s+(?:her|his|their|my)\s+(?:mother|father|mom|mama|dad|daddy|papa|husband|wife|baby|child|son|daughter|sister|brother|friend|grandmother|grandfather)|miscarr|stillborn)\b/i;
         function verdict(input) {
+            const out = verdictCore(input);
+            if (out && out.final === 'grief' && !BEREAVEMENT_RE.test(String(input.text || ''))) {
+                return { final: 'sadness', rule: out.rule + ' (grief→sadness: no bereavement)', hold: out.hold };
+            }
+            return out;
+        }
+        function verdictCore(input) {
             const tag = input.tag || null;
             const lex = input.lex || { top: null, topScore: 0, vetoes: new Set(), hitWeight: 0, hitCount: 0, cues: [] };
             const local = normaliseLocal(input.local);
@@ -759,7 +809,10 @@
             const vetoed = function (l) { return lex.vetoes.has(l); };
             const okNeutral = function (share) { return share >= 0.5 && lex.hitCount === 0; };
             // go_emotions' catch-all labels need a clearer margin.
-            const need = function (l) { return (l === 'confusion' || l === 'neutral') ? 0.45 : 0.35; };
+            // go_emotions "desire" = wanting things ("I want the vitamins"), not
+            // attraction: without a romantic lexicon cue it needs a clear margin.
+            const romantic = Boolean(lex.scores && ((lex.scores.desire || 0) + (lex.scores.love || 0) > 0));
+            const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic)) ? 0.45 : 0.35; };
             if (tag) {
                 if (vetoed(tag) && lex.hitCount >= 2 && lex.top) return { final: lex.top, rule: '2 tag vetoed by lexicon', hold: false };
                 return { final: tag, rule: '1 tag', hold: false };
@@ -792,12 +845,16 @@
             } else if (strongLex) {
                 return { final: lex.top, rule: '3a lexicon (strong)', hold: false };
             }
-            // 3c: any lexicon evidence (>= 2 weighted hits) before a weak classifier.
-            if (lex.top && lex.top !== 'neutral' && lex.hitWeight >= 2) return { final: lex.top, rule: '3c lexicon', hold: false };
+            // 3c: real lexicon evidence before a weak classifier — the top label
+            // needs >= 3 weight of its own (one explicit cue, or two supporting
+            // ones); thinner than that, holding the previous mood is safer.
+            if (lex.top && lex.top !== 'neutral' && lex.topScore >= 3) return { final: lex.top, rule: '3c lexicon', hold: false };
             // 3d: best non-vetoed of the classifier's top-3 (never neutral/confusion here).
             for (const c of local.slice(0, 3)) {
                 if (c.label === 'neutral' || c.label === 'confusion' || vetoed(c.label)) continue;
-                if (c.share >= 0.25) return { final: c.label, rule: '3d local top-3', hold: false };
+                if (c.label === 'desire' && !romantic) continue;
+                // 0.30 share of the top-5 is the floor; ~0.25 is near-uniform noise.
+                if (c.share >= 0.30) return { final: c.label, rule: '3d local top-3', hold: false };
             }
             if (lex.top === 'neutral' && lex.hitWeight >= 2 && lex.hitCount >= 2) return { final: 'neutral', rule: '3c lexicon (positive neutral)', hold: false };
             return { final: prev, rule: '3e hold', hold: true };
@@ -864,16 +921,16 @@
         const SENTENCE_SPLIT_RE = /[.!?\n]/;
         const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/m;
         // Physical arrival / position cues (narration only). No speech verbs.
-        const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:in|over|up)|com(?:es|ing) (?:in|over|up)|came (?:in|over|up)|step(?:s|ped)? (?:in|inside|closer|forward|up)|appear(?:s|ed)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
+        const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:in|over|up)|com(?:es|ing) (?:in|over|up)|came (?:in|over|up)|step(?:s|ped)? (?:in|inside|closer|forward|up)|appear(?:s|ed)(?! to)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
         // Physical action verbs (narration only, weaker evidence).
         const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|frowns?|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|sets? down|picks? up|waves?|shakes? (?:her|his) head|folds? (?:her|his) arms|pats?|squeez(?:es|ed)|hugs?|kiss(?:es|ed)|touch(?:es|ed)|points?|gestur(?:es|ed)|snorts?|sighs?';
         // Reported speech / phone / absence — any of these in the sentence
         // that names the character vetoes them for this message.
-        const DEFAULT_ABSENCE = 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|said|says?|would say|tell(?:s|ing)?|told|remember(?:s|ed|ing)?|miss(?:es|ed|ing)?|wonder(?:s|ed|ing)?|promised?|about|mention(?:s|ed)?|th(?:ink|ought)s? (?:of|about)|wish(?:es|ed)?|later|tomorrow|yesterday|last (?:night|week|time)|wrote|reckon(?:s|ed)?|thinks?|used to|back (?:home|at)';
-        const DEFAULT_DEPART = 'leaves|left|gone|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|hangs? up|hung up|head(?:s|ed) (?:out|off|home)|goes out|departs?|departed|goodbye|good night';
+        const DEFAULT_ABSENCE = 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?(?! (?:out|across|over|up the stairs))|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|said|says?|would say|tell(?:s|ing)?|told|remember(?:s|ed|ing)?|miss(?:es|ed|ing)? (?:her|him|you|them|it|the|my|his)|wonder(?:s|ed|ing)?|promised?|about(?! to\b)|mention(?:s|ed)?|th(?:ink|ought)s? (?:of|about)|wish(?:es|ed)?|later|tomorrow|yesterday|last (?:night|week|time)|wrote|reckon(?:s|ed)?|thinks?|used to|back (?:home|at)';
+        const DEFAULT_DEPART = '(?<!the )(?<!gum )(?<!dry )leaves(?! (?:on|of|in|rustl|fall|turn|are|were))|left(?! (?:hand|side|arm|leg|foot|over|behind|it|them|a |the (?:book|bag|plate|cup|notebook|door|keys|tap|light|kettle)))|gone(?! (?:quiet|still|white|pale|red|pink|cold|soft|grey|hard|to sleep|through|off in|wrong))|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|hangs? up|hung up|head(?:s|ed) (?:out|off|home)|goes out|departs?|departed|goodbye|good night';
         // Props: handled / present cues, and memory contexts that veto.
         const DEFAULT_HANDLED = 'on the (?:table|bench|counter|seat|desk|bed)|in (?:her|his|your) (?:hand|hands|lap|bag|pocket)|holds?|holding|held|sets? (?:it |the \\w+ )?down|picks? (?:it |the \\w+ )?up|takes?|took|hands? (?:her|him|you|it)|opens?|closes?|puts?|lays?|lifts?|pours?|sips?|drinks?|eats?|wraps?|clutch(?:es|ed)|grips?|turns? (?:it|the \\w+) over|passes?';
-        const DEFAULT_MEMORY = 'remember(?:s|ed|ing)?|last (?:night|week|time|year)|yesterday|later|tomorrow|going to|gonna|will|would|used to|had been|back (?:then|home|at)|once|promis(?:es|ed)|mention(?:s|ed)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|wish(?:es|ed)?|miss(?:es|ed)?|talk(?:s|ed|ing)? (?:of|about)';
+        const DEFAULT_MEMORY = 'remember(?:s|ed|ing)?|last (?:night|week|time|year)|yesterday|later|tomorrow|going to|gonna|will|would|used to|had been|back (?:then|home|at)|once(?! more| again)|promis(?:es|ed)|mention(?:s|ed)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|wish(?:es|ed)?|miss(?:es|ed)?|talk(?:s|ed|ing)? (?:of|about)';
 
         function compile(src, flags) {
             try { return src ? new RegExp('\\b(?:' + src + ')\\b', flags || 'i') : null; } catch (e) { return null; }
@@ -1074,6 +1131,24 @@
                     if (!(stopWords && stopWords.has(cm[1].split(' ')[0]))) label = cm[1];
                 }
             }
+            if (!label) {
+                // Fallback: the narration usually names a new speaker in its
+                // first sentence ("Marie looks up from the register…"), long
+                // before their first line — take the most repeated capitalised
+                // name in the whole narration (>= 2 uses), else the earliest.
+                const counts = new Map(); let first = null;
+                CAP_NAME_RE.lastIndex = 0;
+                while ((cm = CAP_NAME_RE.exec(masked.narr || '')) !== null) {
+                    const nm = cm[1];
+                    if (stopWords && stopWords.has(nm.split(' ')[0])) continue;
+                    if (/^(?:Dr|Mr|Mrs|Ms|Miss)\b/.test(nm) && nm.split(' ').length === 1) continue;
+                    counts.set(nm, (counts.get(nm) || 0) + 1);
+                    if (!first) first = nm;
+                }
+                let best = null, bestN = 1;
+                for (const [nm, n] of counts) if (n > bestN) { best = nm; bestN = n; }
+                label = best || first;
+            }
             return label;
         }
 
@@ -1106,49 +1181,101 @@
     const BackgroundEngine = (function () {
         // Header keyword → generic key. Order matters only for ties.
         const DEFAULT_GENERIC = [
-            ['restaurant', "restaurant|steakhouse|bistro|grill|eatery|hog'?s breath|diner"],
-            ['cafe', 'caf[eé]|coffee|bakery|tea ?room'],
-            ['pub', 'pub|\\bbar\\b|tavern|hotel bar|saloon'],
+            // Specific venues first; broad room/street words last. Every key
+            // maps to backgrounds/generic-<key>.jpg (missing files are skipped).
+            ['pharmacy', 'pharmacy|chemist|drugstore|drug store'],
+            ['bookshop', 'book ?shop|book ?store|dymocks|newsagen|bookseller'],
+            ['library', 'library|reading room|archives?'],
+            ['doctor-office', "doctor'?s? (?:office|rooms?|surgery)|consulting room|\\bgp\\b|examination room"],
+            ['hospital-corridor', 'hospital corridor|ward corridor'],
+            ['hospital', 'hospital|\\bward\\b|emergency department|\\ba&e\\b|\\bicu\\b|maternity'],
+            ['clinic', 'clinic|medical centre|waiting room|surgery'],
+            ['courtroom', 'court ?room|court ?house|magistrate|the court\\b(?! ?yard)|tribunal'],
+            ['police-station', 'police station|cop shop|precinct|police headquarters'],
+            ['cell', 'holding cell|the cells\\b|lock-?up|\\bjail\\b|prison|remand|custody suite'],
+            ['courtroom', 'in court\\b'],
+            ['tavern', 'tavern|taproom|alehouse|mead ?hall'],
+            ['nightclub', 'night ?club|dance floor|the club\\b'],
+            ['bar', 'cocktail bar|wine bar|hotel bar|\\bbar\\b(?! stool)'],
+            ['pub', '\\bpub\\b|public house|saloon|beer garden|front bar|\\brsl\\b'],
+            ['restaurant', "restaurant|steakhouse|bistro|grill|eatery|diner|trattoria|pizzeria"],
+            ['cafe', 'caf[eé]|coffee ?shop|bakery|tea ?room|espresso'],
+            ['hotel-lobby', 'hotel lobby|lobby|foyer|reception area'],
+            ['hotel', 'hotel room|hotel|motel|\\binn\\b(?! room)|(?<!en )suite|resort'],
+            ['inn-room', 'inn room|room at the inn|lodgings|rented room'],
+            ['penthouse', 'penthouse'],
+            ['mansion', 'mansion|manor|estate house|entrance hall|grand hall'],
+            ['apartment', 'apartment|\\bflat\\b(?! out| tyre| tire)|\\bunit\\b|condo|studio apartment'],
+            ['nursery', "nursery|baby'?s room|the cot\\b"],
+            ['office-open', 'open[- ]plan|cubicle|office floor|the office\\b'],
+            ['office', 'office|\\bstudy\\b|home office'],
+            ['laboratory', 'laborator|\\bthe lab\\b|research (?:lab|facility)'],
+            ['warehouse', 'warehouse|storeroom|loading dock|depot'],
+            ['workshop', 'workshop|garage(?! sale)|mechanic|the shed\\b'],
+            ['laundry', 'laundromat|laundrette|laundry'],
+            ['basement', 'basement|cellar'],
+            ['school-hallway', 'lockers|school (?:hallway|corridor)'],
+            ['school', 'school|classroom|university|lecture|campus|kindergarten|daycare'],
+            ['gym-locker', 'locker room|change rooms?|changing room'],
+            ['pool', 'swimming pool|the pool\\b(?! table| room| cue)|pool ?side|aquatic'],
+            ['gym', '\\bgym\\b|basketball court|tennis court|weights room|fitness'],
+            ['stadium', 'stadium|arena|footy ground|football field|oval\\b|grandstand|racecourse'],
+            ['cinema', 'cinema|movie theat|theatre|theater'],
+            ['shop', 'shopping (?:centre|center|mall)|(?<!book)shop|(?<!book)store|supermarket|\\bmall\\b|market(?! street)|grocer|boutique|department store'],
             ['kitchen', 'kitchen'],
-            ['dining', 'dining room'],
-            ['living', 'living room|lounge ?room|sitting room|family room|lounge'],
-            ['bedroom', 'bedroom|bed room'],
-            ['bathroom', 'bathroom|shower|\\bbath\\b|ensuite'],
-            ['office', 'office|\\bstudy\\b'],
-            ['hallway', 'hallway|corridor|landing'],
-            ['porch', 'porch|verandah?|\\bdeck\\b'],
-            ['backyard', 'backyard|back yard|garden|\\byard\\b'],
-            ['street', 'street|footpath|sidewalk|avenue|\\broad\\b(?!.*country)'],
-            ['city-street', 'city|downtown|\\bcbd\\b|main street'],
-            ['park', '\\bpark\\b|playground|\\boval\\b'],
-            ['beach', 'beach|shore|jetty|pier|coast'],
-            ['forest', 'forest|\\bbush\\b|woods|trail|\\btrack\\b'],
-            ['country-road', 'country road|highway|freeway|back road|dirt road'],
-            ['farm', 'farm|paddock|\\bfield\\b|barn|shed'],
-            ['church', 'church|chapel|cathedral|\\bmass\\b'],
-            ['hospital', 'hospital|\\bward\\b|emergency'],
-            ['clinic', 'clinic|surgery|doctor|medical centre|waiting room'],
-            ['school', 'school|classroom|university|lecture'],
-            ['shop', 'shop|store|supermarket|mall|market|grocer'],
-            ['hotel', 'hotel room|motel|\\binn\\b|suite'],
-            ['car', '\\bcar\\b|truck|\\bute\\b|landcruiser|\\bcab\\b|driving|vehicle|car park'],
-            ['transit', 'train|\\bbus\\b|tram|station|airport|plane|terminal'],
-            ['library', 'library|bookshop'],
-            ['gym', '\\bgym\\b|\\bpool\\b|court'],
-            ['rooftop', 'rooftop|balcony'],
+            ['dining', 'dining room|dining table'],
+            ['living', '(?<!airport )(?<!arrivals )(?<!departures? )(?<!hotel )(?<!vip )(?<!members )lounge|living room|sitting room|family room|front room|rumpus'],
+            ['bedroom', 'bedroom|bed room|master bed|guest room|spare room|dorm'],
+            ['bathroom', 'bathroom|shower|\\bbath\\b|ensuite|en suite|toilet|restroom|washroom|powder room'],
+            ['hallway', 'hallway|corridor|passageway|(?:upstairs |the )landing|stairs|staircase'],
+            ['ship-deck', "ship'?s? deck|on deck|quarterdeck|deck of the|the deck\\b(?! chair)|aboard"],
+            ['porch', 'porch|verandah?|(?:back|front|timber|wooden|pool) deck|patio|stoop'],
+            ['garden-party', 'wedding reception|marquee|garden party|the party\\b|birthday party'],
+            ['backyard', 'backyard|back yard|back garden|garden(?!s\\b)(?! centre)(?! city)|(?<!car )(?<!ship)(?<!grave)(?<!church)(?<!farm)\\byard\\b|clothesline|lawn'],
+            ['park', '(?<!car )(?<!caravan )(?<!trailer )(?<!theme )\\bpark\\b(?!ing)|botanic|gardens\\b|playground|reserve\\b'],
+            ['cemetery', 'cemetery|graveyard|grave ?side|the grave\\b|memorial park'],
+            ['temple', 'temple|shrine|monastery|abbey|mosque|synagogue'],
+            ['church', 'church|chapel|cathedral|\\bmass\\b|basilica|vestry'],
+            ['harbour', 'harbou?r|marina|wharf|\\bdocks?\\b|boat ramp|jetty|pier'],
+            ['beach', 'beach|shore(?:line)?\\b|coast|surf\\b|dunes?\\b|the sand\\b'],
+            ['lake', '\\blake\\b|\\bdam\\b|reservoir|billabong|lagoon'],
+            ['mountains', 'mountain|alpine|summit|ridge|the peak|hillside|lookout'],
+            ['desert', 'desert|outback|red dirt|salt lake|the nullarbor'],
+            ['snow', '\\bsnow|ski (?:field|resort|lodge)|blizzard|glacier'],
+            ['campsite', 'camp ?site|camping|camp ?fire|the tent\\b|caravan park|the camp\\b'],
+            ['forest', 'forest|\\bbush\\b|woods|woodland|(?<!race )(?<!train )(?<!railway )\\btrack\\b|trail|rainforest|jungle'],
+            ['country-road', 'country road|highway|freeway|back road|dirt road|gravel road|the road (?:to|out|north|south)'],
+            ['farm', 'farm|paddock|(?<!football )(?<!sports )\\bfield\\b|barn|stables?|shearing|homestead|orchard|vineyard'],
+            ['cave', '\\bcave\\b|cavern|grotto|the mine\\b|tunnel'],
+            ['ruins', '\\bruins?\\b|abandoned (?:house|building|factory)|derelict'],
+            ['castle-hall', 'castle|great hall|the keep\\b|fortress|citadel'],
+            ['throne-room', 'throne'],
+            ['dungeon', 'dungeon|catacomb|crypt|oubliette'],
+            ['wizard-study', "wizard|sorcer|mage'?s|alchem|apothecary|the tower\\b"],
+            ['spaceship-bridge', 'the bridge\\b(?! over| across)|command deck|cockpit|flight deck'],
+            ['spaceship-corridor', 'spaceship|starship|space station|airlock|cargo bay|the ship\\b(?! deck)|shuttle'],
+            ['cyberpunk-street', 'neon|cyberpunk|megacity|night market|arcology|the sprawl'],
+            ['bunker', 'bunker|fallout shelter|the vault\\b|safe room|underground'],
+            ['plane', 'on the plane|aircraft|aeroplane|airplane|cabin crew|business class|economy class|the flight\\b'],
+            ['transit', 'airport|arrivals|departures|terminal|\\btrain\\b|\\bbus\\b|tram|ferry|(?<!petrol )(?<!service )(?<!fire )(?<!police )station'],
+            ['platform', 'platform'],
+            ['car', 'inside the (?:car|truck|cab|ute|van)|in the (?:car|truck|cab|ute|van)\\b|\\bthe cab\\b|driving|behind the wheel|passenger seat|front seat'],
+            ['rooftop', 'rooftop|roof terrace|balcony|the roof\\b'],
+            ['city-street', '(?<!garden )city|downtown|\\bcbd\\b|main street|high street|laneway|alley'],
+            ['street', 'street|footpath|sidewalk|avenue|\\broad\\b|driveway|car ?park|parking'],
         ];
         // Narration scene nouns → key (+1 each, cap +3).
         const DEFAULT_NOUNS = [
-            ['restaurant', 'booth|menu|waitress|waiter|bill|entr[ée]e|main course|tablecloth|cutlery'],
-            ['cafe', 'barista|latte|flat white|scone|counter'],
+            ['restaurant', 'booth|menu|waitress|waiter|entr[ée]e|main course|tablecloth|cutlery'],
+            ['cafe', 'barista|latte|flat white|scone|espresso machine'],
             ['pub', 'bar stool|pint|beer|schooner|jukebox|pool table'],
             ['kitchen', 'stove|kettle|bench|sink|fridge|oven|toaster|pan\\b|pot\\b'],
             ['dining', 'dining table|place mats?|serving dish'],
             ['living', 'couch|sofa|armchair|telly|television|fireplace|coffee table'],
             ['bedroom', '\\bbed\\b|quilt|pillow|doona|bedside|sheets|mattress'],
-            ['bathroom', 'shower|tiles|basin|mirror|towel|tap\\b|bathtub'],
+            ['bathroom', 'shower|tiles|basin|towel|tap\\b|bathtub|vanity'],
             ['office', 'desk|keyboard|filing cabinet|monitor'],
-            ['porch', 'verandah|porch|screen door|steps'],
+            ['porch', 'verandah|porch|screen door|porch steps|front steps'],
             ['backyard', 'clothesline|lawn|hose|fence|washing'],
             ['street', 'footpath|kerb|traffic|shopfront|crossing'],
             ['park', 'swing|slide|bench|grass|picnic'],
@@ -1156,12 +1283,12 @@
             ['forest', 'trees|undergrowth|leaf litter|gum trees|scrub'],
             ['country-road', 'highway|bitumen|gravel|road train|paddocks?'],
             ['farm', 'paddock|tractor|hay|fence line|cattle|sheep'],
-            ['church', 'pew|altar|hymn|pulpit|stained glass|candle'],
+            ['church', 'pew|altar|hymn|pulpit|stained glass|crucifix'],
             ['hospital', 'ward|drip|gurney|nurse|monitor'],
             ['clinic', 'consulting|examination|surgery|waiting room|receptionist|stethoscope'],
             ['car', 'steering wheel|windscreen|dashboard|seatbelt|glovebox|handbrake|footwell|headrest|indicator'],
             ['transit', 'platform|carriage|ticket|departure'],
-            ['shop', 'trolley|checkout|aisle|shelf|register'],
+            ['shop', 'trolley|checkout|aisle|register|barcode'],
         ];
         const VARIANT_RE = /-(night|rain|dusk)\.[a-z0-9]+$/i;
 
@@ -1231,8 +1358,10 @@
             // (2) header keyword → generic key.
             let headerKey = null; let headerKeyHits = 0;
             if (header) {
+                const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1 };
                 for (const g of T.generic) {
-                    const n = count(g.re, header);
+                    // address words (road/street/city) are weaker evidence than a venue word
+                    const n = count(g.re, header) - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
                     if (n > headerKeyHits) { headerKeyHits = n; headerKey = g.key; }
                 }
                 if (headerKey) add(prefix + headerKey + '.jpg', 4.01, 'generic', 'generic(' + headerKey + ' +4)');
@@ -2442,9 +2571,10 @@
                 dbg('privacy: hidden (' + (reason || 'curtain') + ')');
             } else {
                 if (st.enableIdlePresence || st.enableTypingPresence) startIdleLoop();
-                updateKenBurns(st);
                 dbg('privacy: restored (' + (reason || 'curtain') + ')');
-                try { onMessage(); } catch (e) { /* ignore */ }
+                // Overlays were only hidden by a body class; state is intact,
+                // so no pipeline re-run (it caused double sprite swaps).
+                try { driftStart(st); } catch (e) { /* ignore */ }
             }
             updatePrivacyStatus();
         } catch (e) { /* ignore */ }
@@ -3088,9 +3218,9 @@
             if (thoughtCache.key !== ck) { thoughtCache.key = ck; thoughtCache.map.clear(); }
             if (thoughtCache.map.has(key)) return thoughtCache.map.get(key);
             const interRe = compileRegex(settings.interiorityRegex ? '\\b(?:' + settings.interiorityRegex + ')\\b' : '');
-            let raw = last.mes || '';
-            const reasoning = last.extra && last.extra.reasoning;
-            if (reasoning) raw = String(reasoning) + '\n' + raw;
+            // 0.8.0: message text only — the reasoning/planning block is the
+            // model talking to itself, not the character's inner state.
+            const raw = last.mes || '';
             // 0.7.2: the SAME L0 speaker material as the mood engine.
             let ext;
             if (String(key).indexOf('main:') === 0) {
@@ -3325,7 +3455,8 @@
             let targetVh = (settings.spriteAuto || !settings.spriteVh) ? defaultVh : Number(settings.spriteVh);
             targetVh = Math.max(30, Math.min(100, targetVh));
             let hPx = targetVh * vh;
-            if (hPx * aspect > gutter) hPx = gutter / aspect; // never over the chat
+            // Gutter clamp only in auto mode — a manual size is the user's call.
+            if (settings.spriteAuto && hPx * aspect > gutter) hPx = gutter / aspect;
             hPx = Math.min(hPx, window.innerHeight - 8);
             const root = document.documentElement.style;
             root.setProperty('--scene-director-sprite-h', Math.round(hPx) + 'px');
@@ -4930,7 +5061,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         <div id="scene_director_settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Scene Director v0.7.2</b>
+                    <b>Scene Director v0.8.0</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -5532,7 +5663,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // field "avatar", the same call the Backgrounds panel makes), skipping
     // files already installed.
     // ------------------------------------------------------------------
-    const STARTER_KEYS = ['restaurant', 'cafe', 'pub', 'kitchen', 'dining', 'living', 'bedroom', 'bathroom', 'office', 'hallway', 'porch', 'backyard', 'street', 'city-street', 'park', 'beach', 'forest', 'country-road', 'farm', 'church', 'hospital', 'clinic', 'school', 'shop', 'hotel', 'car', 'transit', 'library', 'gym', 'rooftop'];
+    // 0.8.0: the pack ships its own manifest (backgrounds/index.json).
     function extensionBaseUrl() {
         // The stylesheet ST loaded for us tells us where this extension lives.
         const link = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
@@ -5545,11 +5676,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         try {
             const ctx = SillyTavern.getContext();
             const existing = new Set(await fetchBackgroundsList(true));
-            const files = [];
-            for (const k of STARTER_KEYS) files.push('generic-' + k + '.jpg', 'generic-' + k + '-night.jpg');
+            const base = extensionBaseUrl();
+            let files = [];
+            try {
+                const mr = await fetch(base + 'backgrounds/index.json', { cache: 'no-cache' });
+                if (mr.ok) files = await mr.json();
+            } catch (e) { /* fall through */ }
+            if (!Array.isArray(files) || !files.length) { say('Starter pack: backgrounds/index.json not found in the extension folder.'); return; }
             const todo = files.filter(function (f) { return !existing.has(f); });
             if (!todo.length) { say('Starter pack: all ' + files.length + ' files already installed.'); return; }
-            const base = extensionBaseUrl();
             let done = 0; let failed = 0;
             for (const f of todo) {
                 say(`Installing starter backgrounds… ${done + failed + 1}/${todo.length} (${f})`);
@@ -5657,7 +5792,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.7.2)');
+            dbg('loaded (v0.8.0)');
             try { setupPrivacy(); } catch (e) { /* ignore */ }
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
