@@ -340,15 +340,17 @@ decided it; with *Debug Logging* on, each verdict is logged in full.
 `tools/mood-harness.mjs` runs the pure engine over a saved chat `.jsonl` so you
 can check verdicts against what you read.
 
-### Starter backgrounds (0.8.1 — pack v2, complete)
+### Starter backgrounds (0.8.2 — pack v2, world edition)
 
-`backgrounds/` ships **101 generic day scenes**, each with a `-night`
+`backgrounds/` ships **163 generic day scenes**, each with a `-night`
 variant (`generic-<key>.jpg` / `generic-<key>-night.jpg`; `generic-rooftop.jpg`
-is day and `generic-rooftop-dusk.jpg` its dusk variant), ~1600 px, 41 MB in
-total, **CC0 / free to use, generated for this project**. `backgrounds/index.json`
-lists every packed file; the installer reads it.
+is day and `generic-rooftop-dusk.jpg` its dusk variant), ~1600 px, 60 MB in
+total, **CC0 / free to use, generated for this project** — everyday rooms and
+places, US/anywhere scenes, world cities, anime-style Japan, fantasy, sci-fi,
+horror and entertainment venues. `backgrounds/index.json` lists every packed
+file; the installer reads it.
 
-Scenes: apartment, backyard, bar, basement, bathroom, beach, bedroom, bookshop, brownstone, bunker, cabin, cafe, campsite, campus, car, castle-hall, cave, cell, cemetery, church, cinema, city-park-us, city-street, clapboard-church, clinic, country-road, courtroom, cyberpunk-street, desert, diner, dining, doctor-office, dungeon, farm, forest, garden-party, gas-station, gym, gym-locker, hallway, harbour, high-school, hospital, hospital-corridor, hotel, hotel-lobby, inn-room, interstate, kitchen, laboratory, lake, lake-house, laundry, library, living, main-street, mansion, motel, mountains, nightclub, nursery, nyc-street, office, office-open, park, penthouse, pharmacy, plane, platform, police-station, pool, porch, pub, ranch, red-barn, restaurant, rooftop, ruins, school, school-hallway, ship-deck, shop, snow, southern-porch, spaceship-bridge, spaceship-corridor, sports-bar, stadium, street, strip-mall, subway, tavern, temple, throne-room, trailer, transit, us-courthouse, us-suburb, warehouse, wizard-study, workshop.
+Scenes: alien-planet, alpine-chalet, amusement-park, apartment, aquarium, arcade, arctic, art-gallery, backyard, bar, basement, bathhouse, bathroom, bazaar, beach, beach-bar, bedroom, bookshop, boxing-gym, brownstone, bunker, cabin, cafe, campsite, campus, car, casino, castle-courtyard, castle-hall, cave, cell, cemetery, cherry-blossom-park, church, cinema, city-park-us, city-street, clapboard-church, cliff-overlook, clinic, concert-stage, country-road, courtroom, cyberpunk-street, desert, desert-oasis, diner, dining, doctor-office, dojo, dragon-lair, dungeon, dwarven-hall, elven-forest, farm, farm-cottage, forest, garden-party, gas-station, greenhouse, gym, gym-locker, hallway, harbour, haunted-house, high-school, hospital, hospital-corridor, hotel, hotel-lobby, inn-room, interstate, izakaya, japanese-apartment, japanese-classroom, jungle-temple, karaoke, kitchen, konbini, laboratory, lake, lake-house, laundry, library, limo, living, london-street, magic-academy, main-street, mansion, mars-base, medieval-market, mediterranean-village, military-base, motel, mountains, museum, nightclub, nursery, nyc-street, office, office-open, onsen, paris-street, park, penthouse, pharmacy, pirate-cabin, plane, platform, police-station, pool, poolside-villa, porch, private-jet, pub, ranch, red-barn, restaurant, rooftop, ruins, ryokan, savanna, school, school-hallway, school-rooftop, ship-deck, shop, shrine, snow, southern-porch, space-colony, spaceship-bridge, spaceship-corridor, sports-bar, stadium, steampunk-street, street, strip-mall, submarine, subway, tavern, temple, throne-room, tokyo-street, trailer, train-crossing, transit, tropical-beach, us-courthouse, us-suburb, vampire-hall, venice-canal, victorian-parlour, warehouse, wasteland, waterfall, western-saloon, witch-cottage, wizard-study, workshop, yacht, zombie-street.
 
 **Install:** Extensions → Scene Director → *Install starter backgrounds*. It
 uploads each file through SillyTavern's own Backgrounds endpoint and skips
@@ -364,6 +366,69 @@ Road, lounge room" is a lounge, not a street); the narration's scene nouns
 | generic key | packed |
 |---|---|
 | `pharmacy` | ✔ |
+| `paris-street` | ✔ |
+| `london-street` | ✔ |
+| `venice-canal` | ✔ |
+| `mediterranean-village` | ✔ |
+| `alpine-chalet` | ✔ |
+| `tropical-beach` | ✔ |
+| `savanna` | ✔ |
+| `jungle-temple` | ✔ |
+| `desert-oasis` | ✔ |
+| `bazaar` | ✔ |
+| `waterfall` | ✔ |
+| `cliff-overlook` | ✔ |
+| `arctic` | ✔ |
+| `tokyo-alley-night` | — |
+| `tokyo-street` | ✔ |
+| `japanese-classroom` | ✔ |
+| `school-rooftop` | ✔ |
+| `japanese-apartment` | ✔ |
+| `shrine` | ✔ |
+| `cherry-blossom-park` | ✔ |
+| `onsen` | ✔ |
+| `ryokan` | ✔ |
+| `konbini` | ✔ |
+| `karaoke` | ✔ |
+| `izakaya` | ✔ |
+| `train-crossing` | ✔ |
+| `dojo` | ✔ |
+| `bathhouse` | ✔ |
+| `elven-forest` | ✔ |
+| `dwarven-hall` | ✔ |
+| `magic-academy` | ✔ |
+| `witch-cottage` | ✔ |
+| `dragon-lair` | ✔ |
+| `castle-courtyard` | ✔ |
+| `medieval-market` | ✔ |
+| `pirate-cabin` | ✔ |
+| `western-saloon` | ✔ |
+| `victorian-parlour` | ✔ |
+| `steampunk-street` | ✔ |
+| `haunted-house` | ✔ |
+| `vampire-hall` | ✔ |
+| `wasteland` | ✔ |
+| `zombie-street` | ✔ |
+| `military-base` | ✔ |
+| `submarine` | ✔ |
+| `alien-planet` | ✔ |
+| `mars-base` | ✔ |
+| `space-colony` | ✔ |
+| `casino` | ✔ |
+| `concert-stage` | ✔ |
+| `art-gallery` | ✔ |
+| `museum` | ✔ |
+| `aquarium` | ✔ |
+| `amusement-park` | ✔ |
+| `arcade` | ✔ |
+| `boxing-gym` | ✔ |
+| `yacht` | ✔ |
+| `private-jet` | ✔ |
+| `limo` | ✔ |
+| `poolside-villa` | ✔ |
+| `beach-bar` | ✔ |
+| `farm-cottage` | ✔ |
+| `greenhouse` | ✔ |
 | `diner` | ✔ |
 | `gas-station` | ✔ |
 | `strip-mall` | ✔ |
@@ -395,7 +460,6 @@ Road, lounge room" is a lounge, not a street); the narration's scene nouns
 | `courtroom` | ✔ |
 | `police-station` | ✔ |
 | `cell` | ✔ |
-| `courtroom` | ✔ |
 | `tavern` | ✔ |
 | `nightclub` | ✔ |
 | `bar` | ✔ |

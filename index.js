@@ -1184,6 +1184,73 @@
             // Specific venues first; broad room/street words last. Every key
             // maps to backgrounds/generic-<key>.jpg (missing files are skipped).
             ['pharmacy', 'pharmacy|chemist|drugstore|drug store'],
+            // world / travel (schnell pack)
+            ['paris-street', 'paris|parisian|the seine|montmartre'],
+            ['london-street', 'london|soho|camden|the thames'],
+            ['venice-canal', 'venice|gondola|canal\\b'],
+            ['mediterranean-village', 'santorini|greek island|amalfi|mediterranean|whitewashed'],
+            ['alpine-chalet', 'chalet|ski lodge|alpine hut'],
+            ['tropical-beach', 'tropical|palm-?fringed|bali|maldives|caribbean|the islands\\b'],
+            ['savanna', 'savanna|safari|serengeti|the plains\\b'],
+            ['jungle-temple', 'jungle temple|angkor|lost temple|overgrown temple'],
+            ['desert-oasis', 'oasis'],
+            ['bazaar', 'bazaar|souk|spice market'],
+            ['waterfall', 'waterfall|falls\\b|cascade'],
+            ['cliff-overlook', 'cliff|overlook|headland|the bluff'],
+            ['arctic', 'arctic|antarctic|tundra|ice ?field|aurora'],
+            // Japan / anime staples
+            ['tokyo-alley-night', 'tokyo[^|]*(?:alley|night)|shinjuku|golden gai|izakaya alley'],
+            ['tokyo-street', 'tokyo|shibuya|akihabara|harajuku|osaka|kyoto street'],
+            ['japanese-classroom', 'homeroom|class ?room \\d|japanese classroom|classroom [1-3]-[a-z]'],
+            ['school-rooftop', 'school roof|rooftop of the school|the roof(?:top)? at lunch'],
+            ['japanese-apartment', 'tatami|my apartment|her apartment|his apartment|futon'],
+            ['shrine', 'shrine|torii'],
+            ['cherry-blossom-park', 'cherry blossom|sakura|hanami'],
+            ['onsen', 'onsen|hot spring'],
+            ['ryokan', 'ryokan|shoji'],
+            ['konbini', 'konbini|convenience store|7-?eleven|lawson|family ?mart'],
+            ['karaoke', 'karaoke'],
+            ['izakaya', 'izakaya|ramen shop|yakitori'],
+            ['train-crossing', 'railway crossing|level crossing|train crossing'],
+            ['dojo', 'dojo|training hall|kendo|the mat\\b'],
+            ['bathhouse', 'bath ?house|sento'],
+            // fantasy / sci-fi extras
+            ['elven-forest', 'elven|elf forest|enchanted forest|fae|fey\\b'],
+            ['dwarven-hall', 'dwarven|dwarf hall|under the mountain|the forge\\b'],
+            ['magic-academy', 'academy|school of magic|the great hall of the academy'],
+            ['witch-cottage', "witch'?s? (?:cottage|hut|house)|the cottage in the woods|the hut in the woods"],
+            ['dragon-lair', "dragon'?s? (?:lair|den|cave)|the hoard"],
+            ['castle-courtyard', 'courtyard|bailey\\b'],
+            ['medieval-market', 'market square|the market\\b|marketplace'],
+            ['pirate-cabin', "captain'?s (?:cabin|quarters)|pirate ship"],
+            ['western-saloon', 'saloon|frontier town|old west'],
+            ['victorian-parlour', 'parlou?r|drawing room|victorian'],
+            ['steampunk-street', 'steampunk|airship|clockwork city'],
+            ['haunted-house', 'haunted|abandoned mansion|the old house on'],
+            ['vampire-hall', "vampire|count'?s castle|gothic hall"],
+            ['wasteland', 'wasteland|post-?apocal|the ruins of the old city|irradiated'],
+            ['zombie-street', 'zombie|overrun|the dead city|quarantine zone'],
+            ['military-base', 'military base|the base\\b|barracks|hangar|command post'],
+            ['submarine', 'submarine|the sub\\b|conning tower'],
+            ['alien-planet', 'alien planet|alien world|another world|xeno'],
+            ['mars-base', 'mars|martian|red planet'],
+            ['space-colony', 'colony|habitat ring|o.?neill cylinder|orbital'],
+            // entertainment / modern extras
+            ['casino', 'casino|blackjack|roulette'],
+            ['concert-stage', 'concert|the stage\\b|backstage|the gig\\b|festival'],
+            ['art-gallery', 'gallery|exhibition'],
+            ['museum', 'museum'],
+            ['aquarium', 'aquarium'],
+            ['amusement-park', 'amusement park|theme park|carnival|fairground|the fair\\b|ferris'],
+            ['arcade', 'arcade'],
+            ['boxing-gym', 'boxing|the ring\\b|fight club|mma'],
+            ['yacht', 'yacht|on the boat\\b|sailing'],
+            ['private-jet', 'private jet|the jet\\b'],
+            ['limo', 'limo|limousine|back of the car'],
+            ['poolside-villa', 'villa|poolside|infinity pool'],
+            ['beach-bar', 'beach bar|tiki|beach shack'],
+            ['farm-cottage', 'cottage|croft'],
+            ['greenhouse', 'greenhouse|glasshouse|conservatory'],
             // US / anywhere set (flux-schnell pack)
             ['diner', '\\bdiner\\b|waffle house|ihop'],
             ['gas-station', 'gas station|petrol station|service station|\\bservo\\b|truck stop'],
@@ -1381,7 +1448,7 @@
             // (2) header keyword → generic key.
             let headerKey = null; let headerKeyHits = 0;
             if (header) {
-                const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1, 'main-street': 1 }; // 0.8.1: "on Main Street" is an address too
+                const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1, 'main-street': 1 };
                 for (const g of T.generic) {
                     // address words (road/street/city) are weaker evidence than a venue word
                     const n = count(g.re, header) - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
@@ -5084,7 +5151,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         <div id="scene_director_settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Scene Director v0.8.1</b>
+                    <b>Scene Director v0.8.2</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -5815,7 +5882,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.8.1)');
+            dbg('loaded (v0.8.2)');
             try { setupPrivacy(); } catch (e) { /* ignore */ }
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {
