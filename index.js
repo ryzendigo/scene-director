@@ -1184,6 +1184,29 @@
             // Specific venues first; broad room/street words last. Every key
             // maps to backgrounds/generic-<key>.jpg (missing files are skipped).
             ['pharmacy', 'pharmacy|chemist|drugstore|drug store'],
+            // US / anywhere set (flux-schnell pack)
+            ['diner', '\\bdiner\\b|waffle house|ihop'],
+            ['gas-station', 'gas station|petrol station|service station|\\bservo\\b|truck stop'],
+            ['strip-mall', 'strip mall|parking lot'],
+            ['main-street', 'main street|small town|town square|high street'],
+            ['interstate', 'interstate|turnpike|\\bi-\\d+\\b|route \\d+|state road'],
+            ['subway', 'subway|metro station|underground station|the tube\\b'],
+            ['brownstone', 'brownstone|fire escape|walk-?up apartment'],
+            ['nyc-street', 'manhattan|brooklyn|new york|the city street|downtown block'],
+            ['campus', 'campus|college|quad\\b|dorm'],
+            ['southern-porch', 'wraparound porch|porch swing|southern porch|screened porch'],
+            ['red-barn', 'red barn|the barnyard|hayloft|farmstead'],
+            ['ranch', 'ranch|corral|the stables\\b'],
+            ['cabin', 'cabin|lodge|the hut\\b'],
+            ['lake-house', 'lake house|boathouse|the dock\\b'],
+            ['motel', 'motel'],
+            ['sports-bar', 'sports bar'],
+            ['clapboard-church', 'baptist|methodist|clapboard church|country church|chapel'],
+            ['us-courthouse', 'courthouse steps|county courthouse|city hall'],
+            ['trailer', 'trailer|mobile home|caravan\\b(?! park)'],
+            ['high-school', 'high school'],
+            ['city-park-us', 'central park|city park'],
+            ['us-suburb', 'cul-de-sac|the suburbs|suburban street|neighborhood'],
             ['bookshop', 'book ?shop|book ?store|dymocks|newsagen|bookseller'],
             ['library', 'library|reading room|archives?'],
             ['doctor-office', "doctor'?s? (?:office|rooms?|surgery)|consulting room|\\bgp\\b|examination room"],
@@ -1235,7 +1258,7 @@
             ['park', '(?<!car )(?<!caravan )(?<!trailer )(?<!theme )\\bpark\\b(?!ing)|botanic|gardens\\b|playground|reserve\\b'],
             ['cemetery', 'cemetery|graveyard|grave ?side|the grave\\b|memorial park'],
             ['temple', 'temple|shrine|monastery|abbey|mosque|synagogue'],
-            ['church', 'church|chapel|cathedral|\\bmass\\b|basilica|vestry'],
+            ['church', 'church|cathedral|\\bmass\\b|basilica|vestry'],
             ['harbour', 'harbou?r|marina|wharf|\\bdocks?\\b|boat ramp|jetty|pier'],
             ['beach', 'beach|shore(?:line)?\\b|coast|surf\\b|dunes?\\b|the sand\\b'],
             ['lake', '\\blake\\b|\\bdam\\b|reservoir|billabong|lagoon'],
@@ -1358,7 +1381,7 @@
             // (2) header keyword → generic key.
             let headerKey = null; let headerKeyHits = 0;
             if (header) {
-                const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1 };
+                const ADDRESS_KEYS = { street: 1, 'city-street': 1, 'country-road': 1, 'main-street': 1 }; // 0.8.1: "on Main Street" is an address too
                 for (const g of T.generic) {
                     // address words (road/street/city) are weaker evidence than a venue word
                     const n = count(g.re, header) - (ADDRESS_KEYS[g.key] ? 0.5 : 0);
@@ -5061,7 +5084,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         <div id="scene_director_settings">
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Scene Director v0.8.0</b>
+                    <b>Scene Director v0.8.1</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -5792,7 +5815,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { seedPresenceFromChat(settings); } catch (e) { /* ignore */ }
             try { setupStripResizeObserver(); } catch (e) { /* ignore */ }
             try { replayExpression(ctx, settings, 2500); } catch (e) { /* ignore */ }
-            dbg('loaded (v0.8.0)');
+            dbg('loaded (v0.8.1)');
             try { setupPrivacy(); } catch (e) { /* ignore */ }
             try { updateMoodStatus(); } catch (e) { /* ignore */ }
         } catch (e) {

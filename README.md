@@ -340,15 +340,15 @@ decided it; with *Debug Logging* on, each verdict is logged in full.
 `tools/mood-harness.mjs` runs the pure engine over a saved chat `.jsonl` so you
 can check verdicts against what you read.
 
-### Starter backgrounds (0.8.0 — pack v2)
+### Starter backgrounds (0.8.1 — pack v2, complete)
 
-`backgrounds/` ships **77 generic day scenes** with a `-night` variant for
-most (`generic-<key>.jpg` / `generic-<key>-night.jpg`; `generic-rooftop.jpg` is
-day and `generic-rooftop-dusk.jpg` its dusk variant), ~1600 px, 33 MB in
+`backgrounds/` ships **101 generic day scenes**, each with a `-night`
+variant (`generic-<key>.jpg` / `generic-<key>-night.jpg`; `generic-rooftop.jpg`
+is day and `generic-rooftop-dusk.jpg` its dusk variant), ~1600 px, 41 MB in
 total, **CC0 / free to use, generated for this project**. `backgrounds/index.json`
 lists every packed file; the installer reads it.
 
-Scenes: apartment, backyard, bar, basement, bathroom, beach, bedroom, bookshop, cafe, campsite, car, castle-hall, cave, cell, cemetery, church, cinema, city-street, clinic, country-road, courtroom, cyberpunk-street, desert, dining, doctor-office, dungeon, farm, forest, garden-party, gym, gym-locker, hallway, harbour, hospital, hospital-corridor, hotel, hotel-lobby, inn-room, kitchen, laboratory, lake, laundry, library, living, mansion, mountains, nightclub, nursery, office, office-open, park, pharmacy, plane, platform, police-station, pool, porch, pub, restaurant, rooftop, ruins, school, ship-deck, shop, snow, spaceship-bridge, spaceship-corridor, stadium, street, tavern, temple, throne-room, transit, warehouse, wizard-study, workshop.
+Scenes: apartment, backyard, bar, basement, bathroom, beach, bedroom, bookshop, brownstone, bunker, cabin, cafe, campsite, campus, car, castle-hall, cave, cell, cemetery, church, cinema, city-park-us, city-street, clapboard-church, clinic, country-road, courtroom, cyberpunk-street, desert, diner, dining, doctor-office, dungeon, farm, forest, garden-party, gas-station, gym, gym-locker, hallway, harbour, high-school, hospital, hospital-corridor, hotel, hotel-lobby, inn-room, interstate, kitchen, laboratory, lake, lake-house, laundry, library, living, main-street, mansion, motel, mountains, nightclub, nursery, nyc-street, office, office-open, park, penthouse, pharmacy, plane, platform, police-station, pool, porch, pub, ranch, red-barn, restaurant, rooftop, ruins, school, school-hallway, ship-deck, shop, snow, southern-porch, spaceship-bridge, spaceship-corridor, sports-bar, stadium, street, strip-mall, subway, tavern, temple, throne-room, trailer, transit, us-courthouse, us-suburb, warehouse, wizard-study, workshop.
 
 **Install:** Extensions → Scene Director → *Install starter backgrounds*. It
 uploads each file through SillyTavern's own Backgrounds endpoint and skips
@@ -359,12 +359,33 @@ With **Generic Fallback** on (default), a 📍 header that matches no Place card
 is classified by keyword into one of the generic keys below (specific keys are
 tried before broad ones; street-address words are weighted down so "40 Roberts
 Road, lounge room" is a lounge, not a street); the narration's scene nouns
-(booth, pew, steering wheel…) can decide when the header offers nothing. Keys
-whose image is missing are simply skipped by the verdict.
+(booth, pew, steering wheel…) can decide when the header offers nothing.
 
 | generic key | packed |
 |---|---|
 | `pharmacy` | ✔ |
+| `diner` | ✔ |
+| `gas-station` | ✔ |
+| `strip-mall` | ✔ |
+| `main-street` | ✔ |
+| `interstate` | ✔ |
+| `subway` | ✔ |
+| `brownstone` | ✔ |
+| `nyc-street` | ✔ |
+| `campus` | ✔ |
+| `southern-porch` | ✔ |
+| `red-barn` | ✔ |
+| `ranch` | ✔ |
+| `cabin` | ✔ |
+| `lake-house` | ✔ |
+| `motel` | ✔ |
+| `sports-bar` | ✔ |
+| `clapboard-church` | ✔ |
+| `us-courthouse` | ✔ |
+| `trailer` | ✔ |
+| `high-school` | ✔ |
+| `city-park-us` | ✔ |
+| `us-suburb` | ✔ |
 | `bookshop` | ✔ |
 | `library` | ✔ |
 | `doctor-office` | ✔ |
@@ -384,7 +405,7 @@ whose image is missing are simply skipped by the verdict.
 | `hotel-lobby` | ✔ |
 | `hotel` | ✔ |
 | `inn-room` | ✔ |
-| `penthouse` | — (no image yet; the engine skips it) |
+| `penthouse` | ✔ |
 | `mansion` | ✔ |
 | `apartment` | ✔ |
 | `nursery` | ✔ |
@@ -395,7 +416,7 @@ whose image is missing are simply skipped by the verdict.
 | `workshop` | ✔ |
 | `laundry` | ✔ |
 | `basement` | ✔ |
-| `school-hallway` | — (no image yet; the engine skips it) |
+| `school-hallway` | ✔ |
 | `school` | ✔ |
 | `gym-locker` | ✔ |
 | `pool` | ✔ |
@@ -436,7 +457,7 @@ whose image is missing are simply skipped by the verdict.
 | `spaceship-bridge` | ✔ |
 | `spaceship-corridor` | ✔ |
 | `cyberpunk-street` | ✔ |
-| `bunker` | — (no image yet; the engine skips it) |
+| `bunker` | ✔ |
 | `plane` | ✔ |
 | `transit` | ✔ |
 | `platform` | ✔ |
