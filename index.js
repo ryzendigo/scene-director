@@ -254,6 +254,9 @@
         hudScale: 1,                // 0.8-1.6
         hudOpacity: 0.85,
         hudDate: true, hudLoc: true, hudWeather: true, hudCounters: true,
+        hudWardrobe: true,          // 0.8.7: HUD row with what the character is wearing
+        wardrobeInject: true,       // 0.8.7: [WARDROBE — …] line for the model
+        wardrobeCostumeRules: [],   // 0.8.7: [{"pattern": "slip|nightgown", "costume": "pajamas"}] — tracked outfit -> costume folder
         holdCostume: false,         // freeze Auto Costumes at the current outfit
         enableChatGlass: false,     // see-through chat panel
         chatOpacity: 0.55,
@@ -1246,6 +1249,157 @@
             compileTables, mask, ownerAt, sentenceAround, evaluate, evaluateProp, liveMatch, nameGuess };
     })();
     // === PRESENCE ENGINE (pure) END ===
+    // === WARDROBE ENGINE (pure) BEGIN ===
+    // Tracks what each character is wearing from the prose. Pure functions only.
+    //   scan(text, cast, state, opts) -> { state, changes }   one message
+    //   describe(state.<key>) -> 'green dress, cream cardigan'
+    // A garment phrase = up to three qualifiers (colour / material / cut) + a
+    // garment noun. Put-on verbs add, take-off verbs remove, "naked/nothing on"
+    // clears. Attribution: a sentence naming a cast member is theirs; she/her
+    // goes to the main character when no other woman is named; he/his/I to the
+    // user. Remembered or hypothetical sentences never change anything.
+    const WardrobeEngine = (function () {
+        const NOUN = '(?:sun ?dress|dress|gown|slip|nightgown|nightie|night ?dress|cardigan|cardi|jumper|sweater|hoodie|jacket|coat|blazer|parka|shirt|blouse|tank ?top|crop ?top|singlet|t-?shirt|tee|flannel|jeans|trousers|pants|shorts|cut-?offs|skirt|leggings|stockings|tights|socks|boots|shoes|heels|flats|sneakers|trainers|sandals|thongs|slippers|bra|panties|knickers|underwear|underpants|boxers|briefs|swimsuit|swimmers|bikini|bathers|towel|apron|scarf|hat|beanie|cap|gloves|belt|suit|tie|pyjamas|pajamas|pjs|robe|dressing ?gown|bathrobe|overalls|uniform|vest|jersey|cover-?up|onesie)';
+        const QUAL = "(?:(?:dark|light|pale|deep|bright|old|new|little|long|short|big|thin|thick|soft|warm|good|best|clean|wet|damp|dry|torn|faded|worn|fitted|loose|tight|oversized|buttoned|unbuttoned|open|plain|floral|striped|checked|plaid|knit(?:ted)?|woollen|wool|cotton|linen|silk|satin|lace|denim|leather|flannel(?:ette)?|ribbed|navy|blue|green|red|white|cream|ivory|black|grey|gray|brown|tan|camel|yellow|pink|rose|lilac|purple|wine|maroon|orange|gold|golden|silver|sage|mint|emerald|his|her|my|your|their|Ryan's|Granty's|church|Sunday|summer|winter|work|wedding|school|going-out|borrowed|bloodstained|men's|mens)\\s+){0,3}";
+        const GARMENT_RE = new RegExp('\\b(' + QUAL + NOUN + ')\\b', 'gi');
+        const ON_RE = new RegExp("\\b(?:puts?|put|pulls?|pulled|slips?|slipped|tugs?|tugged|shrugs?|shrugged|steps?|stepped|gets?|got|throws?|threw|buttons?|buttoned|zips?|zipped|wriggles?|wriggled|draws?|drew|hooks?|hooked|wraps?|wrapped|drapes?|draped|climbs?|climbed|goes|went|gets?|got)\\s+(?:the|a|an|into|on|back|it)?\\s*(?:herself|himself|myself)?\\s*(?:on|into|up|over|round|around|back on|back into)?\\s+(?:the\\s+|a\\s+|an\\s+)?(" + QUAL + NOUN + ")\\b|\\b(?:wearing|wears|wore|dressed\\s+in|has\\s+on|had\\s+on|still\\s+in|back\\s+in|changes?\\s+into|changed\\s+into|buttoned\\s+into|zipped\\s+into|in)\\s+(?:a\\s+|the\\s+)?(" + QUAL + NOUN + ")\\b|\\b(" + QUAL + NOUN + ")\\s+(?:goes|went|comes|came)\\s+(?:back\\s+)?on\\b", 'gi');
+        const OFF_RE = new RegExp("\\b(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\\s+(?:the|a|off|out of|down)?\\s*(?:off|out\\s+of|down|away)?\\s*(?:the|a)?\\s*(" + QUAL + NOUN + ")\\s*(?:off|down|away|over\\s+her\\s+head|to\\s+the\\s+floor|onto\\s+the\\s+floor)?\\b|\\b(" + QUAL + NOUN + ")\\s+(?:comes|came|falls|fell|slides|slid|drops|dropped|goes|went|is|was)\\s+(?:off|down|to\\s+the\\s+floor|onto\\s+the\\s+floor|over\\s+(?:her|his)\\s+head|gone|discarded|in\\s+a\\s+heap)\\b|\\bout\\s+of\\s+(" + QUAL + NOUN + ")\\b", 'gi');
+        const NAKED_RE = /\bnaked\b|\bnude\b|\b(?:with|wearing|has|had|got|in)\s+nothing\s+on\b|\bnothing\s+on\s+(?:at\s+all|but|under|beneath|except)\b|\bnot\s+a\s+stitch\b|\bbare\s+(?:from|to)\b|\bin\s+nothing\s+(?:at\s+all|but)\b|\bstripped\s+bare\b|\bwithout\s+a\s+thread\b|\bwearing\s+nothing\b/i;
+        const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|on the plane|at the wedding|in Rome|in Virginia|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put))\b/i;
+        const OFF_VERB_HEAD = /^(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\b/i;
+        const SENT_RE = /[^.!?\n]+[.!?…]*["”']?/g;
+        const SHE_RE = /\b(?:she|her|hers|herself)\b/i;
+        const HE_RE = /\b(?:he|him|his|himself)\b/;
+        const I_RE = /\b(?:I|me|my|myself|I'm|I've|I'll)\b/;
+        const YOU_RE = /\b(?:you|your|yourself)\b/i;
+        // a stranger described in passing ("a bloke in a black coat", "an older man in a dark shirt")
+        const STRANGER_RE = /\b(?:an?|the|one|some|older|young|old)\s+(?:bloke|man|woman|girl|guy|lady|waiter|waitress|player|bartender|nurse|doctor|driver|stranger|kid|boy|couple|sonographer|receptionist|officer|cop|policeman|priest)\b/i;
+        const CAT = {
+            dress: /\b(?:sun ?dress|dress|gown)$/i, night: /\b(?:slip|nightgown|nightie|night ?dress|pyjamas|pajamas|pjs|robe|dressing ?gown|bathrobe|onesie)$/i,
+            top: /\b(?:shirt|blouse|tank ?top|crop ?top|singlet|t-?shirt|tee|flannel|jersey|vest)$/i, outer: /\b(?:cardigan|cardi|jumper|sweater|hoodie|jacket|coat|blazer|parka|cover-?up)$/i,
+            bottom: /\b(?:jeans|trousers|pants|shorts|cut-?offs|skirt|leggings|overalls)$/i, legs: /\b(?:stockings|tights|socks)$/i,
+            feet: /\b(?:boots|shoes|heels|flats|sneakers|trainers|sandals|thongs|slippers)$/i, under: /\b(?:bra|panties|knickers|underwear|underpants|boxers|briefs)$/i,
+            swim: /\b(?:swimsuit|swimmers|bikini|bathers)$/i, acc: /\b(?:towel|apron|scarf|hat|beanie|cap|gloves|belt|tie)$/i, suit: /\b(?:suit|uniform)$/i,
+        };
+        function category(desc) { for (const k of Object.keys(CAT)) if (CAT[k].test(desc)) return k; return 'other'; }
+        function norm(desc) { return String(desc).toLowerCase().replace(/\s+/g, ' ').replace(/^(?:(?:the|a|an|her|his|my|your|their|own)\s+)+/, '').trim(); }
+        function noun(desc) { const m = new RegExp(NOUN + '$', 'i').exec(norm(desc)); return m ? m[0].replace(/\s+/g, '') : norm(desc); }
+        /** Who a sentence is about: a cast key, 'main', 'user', or null. */
+        function whose(sent, cast, opts) {
+            const speaker = (opts && opts.speaker) || 'main';
+            const addressee = speaker === 'user' ? 'main' : 'user';
+            for (const c of cast) if (c.re && c.re.test(sent)) return c.key;
+            if (opts && opts.mainRe && opts.mainRe.test(sent)) return 'main';
+            if (opts && opts.userRe && opts.userRe.test(sent)) return 'user';
+            if (YOU_RE.test(sent) && !SHE_RE.test(sent) && !HE_RE.test(sent)) return addressee;
+            if (I_RE.test(sent) && !SHE_RE.test(sent) && !HE_RE.test(sent)) return speaker;
+            const sheN = (sent.match(/\b(?:she|her|hers|herself)\b/gi) || []).length;
+            const heN = (sent.match(/\b(?:he|him|his|himself)\b/g) || []).length;
+            if (sheN && !(opts && opts.otherFemale)) return 'main';
+            if (sheN && sheN >= heN) return 'main';          // another woman is around but she is the actor here
+            if (heN && opts && opts.userIsMale !== false) return 'user';
+            if (I_RE.test(sent)) return speaker;
+            return null;
+        }
+        function put(state, key, desc, at) {
+            const s = state[key] || (state[key] = {});
+            const n = norm(desc); const cat = category(n);
+            // a new dress replaces the old dress; a new top replaces the old top, etc.
+            for (const k of Object.keys(s)) { if (category(k) === cat && cat !== 'acc' && cat !== 'other') delete s[k]; }
+            // a dress and a top/bottom do not coexist unless it is outerwear
+            if (cat === 'dress') for (const k of Object.keys(s)) { const c = category(k); if (c === 'top' || c === 'bottom' || c === 'night' || c === 'swim') delete s[k]; }
+            if (cat === 'top' || cat === 'bottom') for (const k of Object.keys(s)) { const c = category(k); if (c === 'dress' || c === 'night' || c === 'swim') delete s[k]; }
+            if (cat === 'night' || cat === 'swim') for (const k of Object.keys(s)) { const c = category(k); if (c === 'dress' || c === 'top' || c === 'bottom' || (cat === 'swim' && c === 'under')) delete s[k]; }
+            s[n] = { at, cat };
+        }
+        function take(state, key, desc) {
+            const s = state[key]; if (!s) return false;
+            const n = norm(desc); const nn = noun(n); let hit = false;
+            for (const k of Object.keys(s)) { if (k === n || noun(k) === nn) { delete s[k]; hit = true; } }
+            return hit;
+        }
+        function strip(state, key, at, keepAcc) {
+            const s = state[key] || (state[key] = {});
+            for (const k of Object.keys(s)) { if (keepAcc && s[k].cat === 'acc') continue; delete s[k]; }
+            s['(nothing)'] = { at, cat: 'none' };
+        }
+        /** Owner of one garment phrase: its possessive first, then the sentence. */
+        function ownerOf(desc, sent, cast, opts, idx) {
+            const d = String(desc).trim().toLowerCase();
+            const speaker = (opts && opts.speaker) || 'main';           // who wrote the message
+            const addressee = speaker === 'user' ? 'main' : 'user';
+            if (/^(?:her)\s/.test(d)) {
+                for (const c of cast) if (c.female && c.re && c.re.test(sent)) return c.key;
+                return 'main';
+            }
+            if (/^(?:his)\s/.test(d)) {
+                for (const c of cast) if (c.female === false && c.re && c.re.test(sent)) return c.key;
+                return 'user';
+            }
+            if (/^(?:my)\s/.test(d)) return speaker;
+            if (/^(?:your)\s/.test(d)) return addressee;
+            // no possessive: a stranger named before the garment owns it (and we do not track strangers)
+            const before = typeof idx === 'number' ? sent.slice(0, idx) : sent;
+            if (STRANGER_RE.test(before) && !(opts && opts.mainRe && opts.mainRe.test(before)) && !(opts && opts.userRe && opts.userRe.test(before))) {
+                let castBefore = false; for (const c of cast) if (c.re && c.re.test(before)) castBefore = true;
+                if (!castBefore) return null;
+            }
+            // attribute by the CLAUSE around the garment, not the whole sentence
+            // ("she stands in her slip while he takes the suit off" -> the suit is his)
+            const clause = clauseAt(sent, typeof idx === 'number' ? idx : 0);
+            for (const c of cast) if (c.re && c.re.test(clause)) return c.key;
+            const w = whose(clause, cast, opts);
+            if (w) return w;
+            for (const c of cast) if (c.re && c.re.test(sent)) return c.key;
+            return whose(sent, cast, opts);
+        }
+        function clauseAt(sent, idx) {
+            const SPLIT = /,|;|:|\bwhile\b|\band then\b|\bbut\b|\bbefore\b|\bafter\b|\buntil\b|\bas\b|\bthen\b/gi;
+            let a = 0, b = sent.length, m;
+            while ((m = SPLIT.exec(sent)) !== null) { if (m.index < idx) a = m.index + m[0].length; else { b = m.index; break; } }
+            return sent.slice(a, b);
+        }
+        function scan(text, cast, state, opts) {
+            const changes = [];
+            const at = (opts && opts.at) || 0;
+            const src = String(text || '').replace(/<[^>]+>/g, ' ');
+            SENT_RE.lastIndex = 0;
+            let sm;
+            while ((sm = SENT_RE.exec(src)) !== null) {
+                const sent = sm[0].replace(/\s+/g, ' ').trim();
+                if (sent.length < 6 || MEMORY_RE.test(sent)) continue;
+                const subj = whose(sent, cast, opts);
+                if (NAKED_RE.test(sent) && subj) { strip(state, subj, at, true); changes.push(subj + ': (nothing)'); }
+                OFF_RE.lastIndex = 0; let m;
+                while ((m = OFF_RE.exec(sent)) !== null) {
+                    const d = m[1] || m[2] || m[3]; if (!d) continue;
+                    const who = ownerOf(d, sent, cast, opts, m.index); if (!who) continue;
+                    if (take(state, who, d)) changes.push(who + ': -' + norm(d));
+                }
+                ON_RE.lastIndex = 0;
+                while ((m = ON_RE.exec(sent)) !== null) {
+                    const d = m[1] || m[2] || m[3]; if (!d) continue;
+                    // "pulls off her dress" also matches ON via 'pulls ... dress' — skip when an OFF verb+off is in the same clause
+                    const head = sent.slice(Math.max(0, m.index - 2), m.index + m[0].length);
+                    if (/\b(?:off|out of)\b/i.test(head) && OFF_VERB_HEAD.test(m[0])) continue;
+                    const who = ownerOf(d, sent, cast, opts, m.index); if (!who) continue;
+                    put(state, who, d, at); changes.push(who + ': +' + norm(d));
+                    const s = state[who]; if (s && s['(nothing)']) delete s['(nothing)'];
+                }
+            }
+            return { state, changes };
+        }
+        const ORDER = ['dress', 'night', 'swim', 'top', 'bottom', 'outer', 'legs', 'feet', 'under', 'acc', 'suit', 'other', 'none'];
+        function describe(s) {
+            if (!s) return '';
+            const keys = Object.keys(s);
+            if (!keys.length) return '';
+            keys.sort(function (a, b) { return ORDER.indexOf(s[a].cat) - ORDER.indexOf(s[b].cat); });
+            return keys.map(function (k) { return k === '(nothing)' ? 'nothing' : k; }).join(', ');
+        }
+        return { scan, describe, norm, category, GARMENT_RE, MEMORY_RE };
+    })();
+    // === WARDROBE ENGINE (pure) END ===
     // === BACKGROUND ENGINE (pure) BEGIN ===
     // Layered evidence/veto verdict for the background — the same pattern as
     // moods and presence. Pure: no DOM, no ST. The caller supplies the
@@ -2332,7 +2486,7 @@
         if (title !== undefined) row.title = title || '';
     }
     function orderHudRows(hud) {
-        for (const cls of ['sd-hud-time', 'sd-hud-date', 'sd-hud-loc', 'sd-hud-wx', 'sd-hud-counters']) {
+        for (const cls of ['sd-hud-time', 'sd-hud-date', 'sd-hud-loc', 'sd-hud-wx', 'sd-hud-wear', 'sd-hud-counters']) {
             const r = hud.querySelector('.' + cls); if (r) hud.appendChild(r);
         }
     }
@@ -2374,6 +2528,7 @@
                 let counters = '';
                 try { if (settings.hudCounters) counters = buildCounters((scene.date && scene.date.day) ? scene.date : lastParsedDate, settings); } catch (e) { /* ignore */ }
                 setHudRow(hud, 'sd-hud-counters', counters ? esc(counters) : null);
+                try { const w = wearing('main'); setHudRow(hud, 'sd-hud-wear', (settings.hudWardrobe !== false && w) ? '👗 ' + esc(w) : null, w); } catch (e) { /* ignore */ }
                 orderHudRows(hud);
             });
         } catch (e) {
@@ -3537,7 +3692,7 @@
             showThoughtTip(img, {
                 key: 'main:' + name, label: name, nameRe, aliasRe: null,
                 emoji: (settings.moodEmoji && settings.moodEmoji[lastMoodLabel]) || '',
-                extra: lastMoodLabel ? 'mood: ' + lastMoodLabel : null, bio: null,
+                extra: [lastMoodLabel ? 'mood: ' + lastMoodLabel : '', wearing('main') ? 'wearing: ' + wearing('main') : ''].filter(Boolean).join(' · ') || null, bio: null,
             });
         });
         holder.addEventListener('mouseleave', hideThoughtTip);
@@ -3886,7 +4041,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     key: member.key, label: member.label,
                     nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
                     emoji: mood !== 'neutral' ? ((settings.moodEmoji && settings.moodEmoji[mood]) || MOOD_EMOJI[mood]) : '',
-                    extra: null, bio: settings.enableBioCards ? bioLineFor(member, settings) : null,
+                    extra: wearing(member.key) ? 'wearing: ' + wearing(member.key) : null, bio: settings.enableBioCards ? bioLineFor(member, settings) : null,
                 });
             });
             wrap.addEventListener('mouseleave', hideThoughtTip);
@@ -4063,6 +4218,83 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // emitting it. No tag (or an unknown label) = nothing happens and the
     // expression classifier keeps working exactly as configured.
     // ------------------------------------------------------------------
+
+    // --- 0.8.7: wardrobe — what everyone is wearing ---------------------------
+    // Rebuilt deterministically from the last WARDROBE_LOOKBACK messages on every
+    // message (user and AI), so swipes and edits never leave stale garments behind.
+    const WARDROBE_LOOKBACK = 80;
+    const WARDROBE_INJECT_KEY = 'scene-director-wardrobe';
+    let wardrobe = {};
+    function wardrobeCast(settings) {
+        return (settings.cast || []).map(function (m) {
+            const re = compileRegex(m.nameRegex || ''); return re ? { key: m.key, re, female: (m.gender === 'female') ? true : (m.gender === 'male' ? false : undefined), label: m.label } : null;
+        }).filter(Boolean);
+    }
+    function rebuildWardrobe() {
+        try {
+            const ctx = SillyTavern.getContext(); const settings = getSettings();
+            const chat = ctx.chat || [];
+            const mainName = String(ctx.name2 || '').split(' ')[0]; const userName = String(ctx.name1 || '').split(' ')[0];
+            const mainRe = mainName ? new RegExp('\\b' + mainName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
+            const userRe = userName ? new RegExp('\\b' + userName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
+            const cast = wardrobeCast(settings);
+            const femaleRes = cast.filter(function (c) { return c.female; }).map(function (c) { return c.re; });
+            const start = Math.max(0, chat.length - WARDROBE_LOOKBACK);
+            const state = {}; const recent = [];
+            for (let i = start; i < chat.length; i++) {
+                const m = chat[i]; if (!m || m.is_system) continue;
+                const text = String(m.mes || '').split('<details')[0].slice(0, 20000);
+                const r = WardrobeEngine.scan(text, cast, state, {
+                    at: i, mainRe, userRe, otherFemale: femaleRes.some(function (re) { return re.test(text); }),
+                    userIsMale: settings.userIsMale !== false, speaker: m.is_user ? 'user' : 'main',
+                });
+                if (r.changes.length && i >= chat.length - 2) recent.push('#' + i + ' ' + r.changes.join(', '));
+            }
+            wardrobe = state;
+            if (recent.length) dbg('wardrobe ' + recent.join(' | '));
+            try { const meta = chatMeta(true); if (meta) { meta.wardrobe = state; saveMeta(); } } catch (e) { /* ignore */ }
+            updateWardrobeUi(settings);
+            updateWardrobeInjection(settings);
+        } catch (e) { console.error(`${LOG} wardrobe rebuild failed`, e); }
+    }
+    function wearing(key) { try { return WardrobeEngine.describe(wardrobe[key]); } catch (e) { return ''; } }
+    function wardrobeLabel(key, settings) {
+        const ctx = SillyTavern.getContext();
+        if (key === 'main') return String(ctx.name2 || 'the character').split(' ')[0];
+        if (key === 'user') return String(ctx.name1 || 'the user').split(' ')[0];
+        const m = (settings.cast || []).find(function (x) { return x.key === key; }); return m ? m.label : key;
+    }
+    function updateWardrobeUi(settings) {
+        try {
+            const hud = document.getElementById('scene-director-hud');
+            if (!hud) return;
+            const w = wearing('main');
+            setHudRow(hud, 'sd-hud-wear', (settings.hudWardrobe !== false && w) ? '👗 ' + escapeHtml(w) : null, w);
+            orderHudRows(hud);
+        } catch (e) { /* ignore */ }
+    }
+    function updateWardrobeInjection(settings) {
+        try {
+            const ctx = SillyTavern.getContext();
+            if (typeof ctx.setExtensionPrompt !== 'function') return;
+            let line = '';
+            if (settings.wardrobeInject !== false) {
+                const parts = [];
+                for (const key of Object.keys(wardrobe)) { const w = wearing(key); if (w) parts.push(wardrobeLabel(key, settings) + ': ' + w); }
+                if (parts.length) line = '[WARDROBE — currently wearing, from the story so far: ' + parts.join('; ') + '. Keep clothing consistent with this unless someone changes in the scene.]';
+            }
+            ctx.setExtensionPrompt(WARDROBE_INJECT_KEY, line, 1 /* IN_CHAT */, 1 /* depth */, false, 0 /* SYSTEM */);
+        } catch (e) { /* ignore */ }
+    }
+    /** Costume folder from the tracked outfit (first matching wardrobeCostumeRules row), else null. */
+    function wardrobeCostume(settings) {
+        try {
+            const rules = settings.wardrobeCostumeRules; if (!Array.isArray(rules) || !rules.length) return null;
+            const w = wearing('main'); if (!w) return null;
+            for (const rule of rules) { const re = compileRegex(rule.pattern); if (re && re.test(w)) return rule.costume || ''; }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
 
     // v0.5.0: zero-setup — the instruction auto-injects near the end of the
     // context via ctx.setExtensionPrompt(key, value, position, depth, scan,
@@ -4405,6 +4637,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         try {
             const ctx = SillyTavern.getContext();
             const settings = getSettings();
+            try { rebuildWardrobe(); } catch (e) { /* ignore */ }
             const last = getLastAiMessage(ctx);
             if (!last) return;
 
@@ -4511,7 +4744,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 try {
                     // Drawer toggle or the window flag freezes auto-costume.
                     if (settings.holdCostume || window.sceneDirectorHoldCostume) return;
-                    const desired = pickCostume(location, scene.hour, settings);
+                    let desired = pickCostume(location, scene.hour, settings);
+                    const wc = wardrobeCostume(settings); if (wc !== null) desired = wc;   // 0.8.7: what she is wearing wins
                     if (desired !== null && desired !== lastCostume) {
                         await runCommand(ctx, desired ? `/costume ${costumeArg(ctx, desired)}` : '/costume');
                         // 0.5.1: the /costume handler re-classifies; redraw
@@ -4536,6 +4770,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function onChatChanged() {
         // New chat: forget dedupe state, clear pending timers, re-attach the
         // sprite observer fresh, and clear the previous chat's UI (item 5).
+        try { setTimeout(rebuildWardrobe, 100); } catch (e) { /* ignore */ }
         lastBg = null;
         lastBgGraded = false;
         lastBgLoc = null;
@@ -5306,6 +5541,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['seasonalMap', 'Seasonal map', '[{"month": 12, "from": "living.jpg", "to": "living-christmas.jpg"}]'],
         ['eraRules', 'Era rules', '[{"minYear": 2027, "pattern": "build site", "from": "frame.jpg", "to": "finished.jpg"}]'],
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
+        ['wardrobeCostumeRules', 'Wardrobe → costume', '[{"pattern": "slip|nightgown", "costume": "pajamas"}, {"pattern": "^nothing", "costume": "nude"}] — regex on what she is wearing (tracked from the prose), first match wins, beats the time rules'],
         ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
         ['bgGenericLexicon', 'Background: header keywords', '[["restaurant", "restaurant|bistro"], ...] — null = built-in; the 📍 header keyword that picks a generic scene (+4)'],
         ['bgNounLexicon', 'Background: narration nouns', '[["restaurant", "booth|menu|waitress"], ...] — null = built-in; scene nouns in narration (+1 each, cap +3, never over the header)'],
@@ -5431,6 +5667,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         <label class="checkbox_label"><input type="checkbox" id="sd_hudLoc" /><span>Location row</span></label>
                         <label class="checkbox_label"><input type="checkbox" id="sd_hudWeather" /><span>Weather row</span></label>
                         <label class="checkbox_label"><input type="checkbox" id="sd_hudCounters" /><span>Counters row</span></label>
+                        <label class="checkbox_label" title="What the character is wearing, tracked from the prose (0.8.7)"><input type="checkbox" id="sd_hudWardrobe" /><span>Wardrobe row 👗</span></label>
+                        <label class="checkbox_label" title="A [WARDROBE — …] system line near the end of the context so outfits stay consistent (0.8.7)"><input type="checkbox" id="sd_wardrobeInject" /><span>Tell the model what everyone wears</span></label>
                     </div>
                     <label class="checkbox_label" title="28% of the window height, capped to the free gutter beside the chat panel; a tall column shrinks to fit">
                         <input type="checkbox" id="sd_chipSizeAuto" />
@@ -5846,7 +6084,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         };
         bindSelect('sd_hudPosition', 'hudPosition');
         bindSelect('sd_hudStyle', 'hudStyle');
-        for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters']) bindCheck('sd_' + k, k);
+        for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters', 'hudWardrobe', 'wardrobeInject']) bindCheck('sd_' + k, k);
         // 0.8.6: drag-to-position toggle + reset
         try {
             const dragCb = document.getElementById('sd_spriteDrag');
@@ -6097,6 +6335,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const et = ctx.eventTypes || ctx.event_types;
             ctx.eventSource.on(et.MESSAGE_RECEIVED, onMessage);
             ctx.eventSource.on(et.MESSAGE_SWIPED, onMessage);
+            if (et.MESSAGE_SENT) ctx.eventSource.on(et.MESSAGE_SENT, function () { setTimeout(rebuildWardrobe, 50); });
+            if (et.MESSAGE_EDITED) ctx.eventSource.on(et.MESSAGE_EDITED, function () { setTimeout(rebuildWardrobe, 50); });
             if (et.CHAT_CHANGED) ctx.eventSource.on(et.CHAT_CHANGED, onChatChanged);
             // Generation hooks are lazy — only when a feature needs them.
             if (settings.enableTypingPresence || settings.enableIdlePresence) {

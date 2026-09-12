@@ -37,6 +37,7 @@
 #scene-director-hud .sd-hud-ampm { font-size: calc(11px * var(--sd-hud-scale)); font-weight: 400; opacity: 0.85; margin-left: calc(4px * var(--sd-hud-scale)); }
 #scene-director-hud .sd-hud-date { font-size: calc(14px * var(--sd-hud-scale)); font-weight: 600; }
 #scene-director-hud .sd-hud-loc, #scene-director-hud .sd-hud-wx, #scene-director-hud .sd-hud-counters { font-weight: 400; opacity: 0.72; }
+#scene-director-hud .sd-hud-wear { font-weight: 400; opacity: 0.8; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #scene-director-hud .sd-hud-loc { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
 #scene-director-hud .sd-hud-wx .sd-hud-wxicon { font-size: calc(13px * var(--sd-hud-scale)); }
 @keyframes sd-hud-change { from { opacity: 0.2; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
