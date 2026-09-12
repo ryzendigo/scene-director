@@ -468,6 +468,7 @@
             ['teas(?:es|ed|ing)', 'amusement', 1.5, []],
             ['wry(?:ly)?', 'amusement', 1, []],
             ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
+            ['married a good man|I\'?m (?:just )?going to keep you|keep you\\b|forehead\\s+(?:into|against|to)\\s+(?:his|your)\\s+(?:chest|collarbone|neck|shoulder)|(?:hand|palm)\\s+(?:flat\\s+|pushed\\s+|slides?\\s+)?(?:up\\s+)?under\\s+(?:his|your)\\s+shirt|mouth\\s+off\\s+hers|lifts?\\s+his\\s+mouth|her\\s+(?:ear|cheek|head)\\s+(?:flat\\s+)?(?:on|against)\\s+(?:his|your)\\s+(?:chest|sternum|heart)', 'love', 2, ['fear', 'anger', 'disgust']],
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
             // the noun too: "a slow broad smile she cannot get off her face", "lets the smile through"
             ['(?:a|the|her)\\s+(?:slow\\s+|small\\s+|broad\\s+|wide\\s+|soft\\s+|shy\\s+|helpless\\s+|real\\s+|warm\\s+|big\\s+|proper\\s+)?smile\\b(?!\\s+(?:fad|di|drop|go|slip|fall|that\\s+does\\s+not|which\\s+does\\s+not|is\\s+gone|has\\s+gone))|lets?\\s+the\\s+smile\\s+through|cannot\\s+get\\s+off\\s+her\\s+face', 'joy', 1.5, ['grief']],  // not a smile that fades/dies/drops
@@ -749,6 +750,7 @@
             // it sets no hard veto. In her own speech any past-tense frame counts; in narration only
             // an explicit memory marker does, so past-tense-narrated stories keep their lexicon.
             const MEMORY_DLG_RE = /\b(?:I|we|you|he|she|they)\s+(?:was|were|had|'d|used to)\b|\b(?:back then|back (?:home|in)|that (?:day|night|morning|afternoon|time|summer|winter)|on the (?:plane|flight|boat|train)|at the (?:wedding|funeral)|when I was|years? ago|last (?:night|week|month|year|time)|the (?:first|last) time|I remember|once,?\s)\b/i;
+            const FUTURE_DLG_RE = /\b(?:I'?ll not have|I won'?t have|I'?ll be|I'?m going to|going to|gonna|would|if (?:you|I|we|she|he)|tomorrow|next time|when (?:we|I|you) (?:get|go|are|have)|one day|someday|next (?:week|month|year)|in a few months|by (?:then|the time))\b/i;
             const MEMORY_NARR_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|the day (?:she|he|they)|that (?:day|night|morning) (?:she|he|they)|when she was (?:a girl|small|little|young|nine|ten|eleven|twelve|thirteen))\b/i;
             const sentenceAt = function (text, i) {
                 let a = i; while (a > 0 && !/[.!?]/.test(text[a - 1])) a--;
@@ -764,12 +766,12 @@
                         const before = p.text.slice(Math.max(0, m.index - 24), m.index);
                         if (NEG_RE.test(before)) { vetoes.add(cue.label); cues.push('¬' + m[0]); continue; }
                         const sent = sentenceAt(p.text, m.index);
-                        const remembered = (p.kind === 'dialogue' ? MEMORY_DLG_RE : MEMORY_NARR_RE).test(sent);
+                        const remembered = (p.kind === 'dialogue' ? (MEMORY_DLG_RE.test(sent) || FUTURE_DLG_RE.test(sent)) : MEMORY_NARR_RE.test(sent));
                         if (remembered) {
                             const wm = cue.w * p.w * 0.25;
                             scores[cue.label] = (scores[cue.label] || 0) + wm;
                             hitWeight += wm; hitCount++;
-                            cues.push(m[0] + '→' + cue.label + ' (remembered ×0.25)');
+                            cues.push(m[0] + '→' + cue.label + ' (not now ×0.25)');
                             continue;
                         }
                         const w = cue.w * p.w;
