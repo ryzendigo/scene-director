@@ -860,8 +860,12 @@
             const WARM = new Set(['love', 'joy', 'amusement', 'gratitude', 'caring', 'admiration', 'excitement', 'optimism', 'pride', 'relief', 'approval', 'desire']);
             const DARK = { sadness: ['sadness', 'grief', 'remorse', 'disappointment'], grief: ['grief', 'sadness'], remorse: ['remorse', 'sadness'], disappointment: ['disappointment', 'sadness'],
                 fear: ['fear', 'nervousness'], anger: ['anger', 'annoyance', 'disapproval'], disgust: ['disgust', 'disapproval'] };
+            // ...or when the lexicon itself is reading warm (a kiss, a smile) with no dark cue at all —
+            // then the classifier's "sad" on wet eyes needs the same clear margin whatever came before.
+            const warmLex = Array.from(WARM).reduce(function (a, k) { return a + ((lex.scores && lex.scores[k]) || 0); }, 0);
             const darkSwing = function (l) {
-                if (!DARK[l] || !WARM.has(prev)) return false;
+                if (!DARK[l]) return false;
+                if (!WARM.has(prev) && warmLex < 1.5) return false;
                 return !DARK[l].some(function (k) { return lex.scores && (lex.scores[k] || 0) > 0; });
             };
             const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic) || darkSwing(l)) ? 0.45 : 0.35; };
@@ -909,6 +913,11 @@
                 if (c.share >= (darkSwing(c.label) ? 0.45 : 0.30)) return { final: c.label, rule: '3d local top-3', hold: false };
             }
             if (lex.top === 'neutral' && lex.hitWeight >= 2 && lex.hitCount >= 2) return { final: 'neutral', rule: '3c lexicon (positive neutral)', hold: false };
+            // 3c-lite: a held DARK mood does not survive a message whose only cues are warm (a kiss,
+            // a smile ≥ 2) — one wrong "sad" must not chain into the next tender beat.
+            if (lex.top && WARM.has(lex.top) && lex.topScore >= 2 && prev && DARK[prev] && !DARK[prev].some(function (k) { return (lex.scores[k] || 0) > 0; })) {
+                return { final: lex.top, rule: '3c-lite warm lexicon over held dark', hold: false };
+            }
             return { final: prev, rule: '3e hold', hold: true };
         }
 
