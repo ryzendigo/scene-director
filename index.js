@@ -469,6 +469,8 @@
             ['wry(?:ly)?', 'amusement', 1, []],
             ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
+            // the noun too: "a slow broad smile she cannot get off her face", "lets the smile through"
+            ['(?:a|the|her)\\s+(?:slow\\s+|small\\s+|broad\\s+|wide\\s+|soft\\s+|shy\\s+|helpless\\s+|real\\s+|warm\\s+|big\\s+|proper\\s+)?smile\\b(?!\\s+(?:fad|di|drop|go|slip|fall|that\\s+does\\s+not|which\\s+does\\s+not|is\\s+gone|has\\s+gone))|lets?\\s+the\\s+smile\\s+through|cannot\\s+get\\s+off\\s+her\\s+face', 'joy', 1.5, ['grief']],  // not a smile that fades/dies/drops
             ['(?:she|I|face|smile)\\s+beams?\\b|beaming|beams\\s+at', 'joy', 2, ['sadness']],  // not ceiling beams / beams of light
             ['(?:face|eyes|she)\\s+lights?\\s+up|lights\\s+up\\s+(?:at|when|like)', 'joy', 2, ['sadness']],  // not a sign/screen lighting up
             ['(?<!turkish\\s)delight(?:ed|s)?', 'joy', 2, []],
@@ -642,7 +644,19 @@
             const total = text.length || 1;
             const hex = o && o.hex ? String(o.hex).toLowerCase() : null;
             let dialogue = 0;
-            // (a) own dialogue spans.
+            // Fallback: the model sometimes drops the colour tags entirely. With no <font> span
+            // anywhere in the message, plain quoted speech is hers unless the words right before
+            // the quote name another speaker ("the girl says", another cast name).
+            FONT_ANY_RE.lastIndex = 0;
+            if (hex && !FONT_ANY_RE.test(text)) {
+                const OTHER_SPEAKER_RE = /(?:\b(?:he|the (?:girl|woman|man|waiter|waitress|nurse|doctor|driver|player|bartender|boy)|[A-Z][a-z]+)\s+(?:says?|said|asks?|asked|calls?|called|tells?|told|adds?|murmurs?|answers?)[^"“]{0,40})$/;
+                text = text.replace(/["“]([^"”]{2,600})["”]/g, function (all, inner, at) {
+                    const before = text.slice(Math.max(0, at - 60), at);
+                    let other = OTHER_SPEAKER_RE.test(before);
+                    if (!other && o && Array.isArray(o.otherNameRes)) for (const r of o.otherNameRes) { if (r && r.test(before)) { other = true; break; } }
+                    return other ? all : '<font color="' + hex + '">"' + inner + '"</font>';
+                });
+            }
             FONT_ANY_RE.lastIndex = 0;
             let m;
             while ((m = FONT_ANY_RE.exec(text)) !== null) {
@@ -770,7 +784,14 @@
             }
             // Hard vetoes.
             if (laughter) for (const l of ['sadness', 'grief', 'anger', 'fear']) vetoes.add(l);
-            if (tears) for (const l of ['joy', 'amusement', 'pride']) vetoes.add(l);
+            // Happy tears: a wet shine or tears alongside a smile/grin/beam is joy (or love), not
+            // sadness — "a shine along her lower lashes and a slow broad smile she cannot get off her face".
+            const smiling = cues.some(function (c) { return /→(?:joy|love|amusement|gratitude)$/.test(c) && /smil|grin|beam|laugh|lit up/i.test(c); });
+            if ((wetEyes || tears) && smiling) {
+                vetoes.add('sadness'); vetoes.add('grief'); vetoes.add('disappointment');
+                for (const l of ['joy', 'love', 'amusement', 'pride', 'gratitude']) vetoes.delete(l);  // the tear cue's own vetoes no longer apply
+                scores.joy = (scores.joy || 0) + 4; cues.push('happy tears→joy');
+            } else if (tears) for (const l of ['joy', 'amusement', 'pride']) vetoes.add(l);
             // Wet eyes / tears rule out anger unless an explicit anger cue
             // (glare, snap, jaw set, slam, through her teeth) is also there.
             if ((wetEyes || tears) && !explicitAnger) { vetoes.add('anger'); vetoes.add('annoyance'); }
