@@ -470,6 +470,7 @@
             ['wry(?:ly)?', 'amusement', 1, []],
             ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
             ['married a good man|I\'?m (?:just )?going to keep you|keep you\\b|forehead\\s+(?:into|against|to)\\s+(?:his|your)\\s+(?:chest|collarbone|neck|shoulder)|(?:hand|palm)\\s+(?:flat\\s+|pushed\\s+|slides?\\s+)?(?:up\\s+)?under\\s+(?:his|your)\\s+shirt|mouth\\s+off\\s+hers|lifts?\\s+his\\s+mouth|her\\s+(?:ear|cheek|head)\\s+(?:flat\\s+)?(?:on|against)\\s+(?:his|your)\\s+(?:chest|sternum|heart)', 'love', 2, ['fear', 'anger', 'disgust']],
+            ['grind(?:s|ing)\\s+(?:down|against|on)|rid(?:es|ing)\\s+(?:you|him)|hot\\s+and\\s+slick|slick\\s+and|sweat\\s+(?:at|on|down)\\s+(?:the\\s+small\\s+of\\s+)?her\\s+back|breathing\\s+hard|(?:noise|moan|sound)\\s+(?:she|he)\\s+(?:has\\s+to\\s+)?bites?\\s+off|humming\\s+noises|(?:back|spine)\\s+arches|arches\\s+(?:with|into|under)|comes?\\s+down\\s+onto\\s+you|the\\s+length\\s+of\\s+you|watching\\s+you\\s+under\\s+her\\s+lashes|let\\s+me\\s+work|I\\s+want\\s+to\\s+hear\\s+you', 'desire', 2.5, ['anger', 'fear', 'sadness', 'disgust']],
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
             // the noun too: "a slow broad smile she cannot get off her face", "lets the smile through"
             ['(?:a|the|her)\\s+(?:slow\\s+|small\\s+|broad\\s+|wide\\s+|soft\\s+|shy\\s+|helpless\\s+|real\\s+|warm\\s+|big\\s+|proper\\s+)?smile\\b(?!\\s+(?:fad|di|drop|go|slip|fall|that\\s+does\\s+not|which\\s+does\\s+not|is\\s+gone|has\\s+gone))|lets?\\s+the\\s+smile\\s+through|cannot\\s+get\\s+off\\s+her\\s+face', 'joy', 1.5, ['grief']],  // not a smile that fades/dies/drops
@@ -513,7 +514,7 @@
             ['jaw\\s+(?:set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)|clench(?:es|ed)?\\s+(?:her\\s+)?jaw', 'anger', 2.5, []],
             ['jaw\\s+sets?\\b(?!\\s+hard)', 'disapproval', 1, []],
             ['pink\\s+(?:comes|climbs|creeps|rises)\\s+up\\s+her\\s+(?:throat|neck)|colou?r\\s+(?:climbs|creeps)\\s+(?:up\\s+)?her\\s+(?:throat|neck)', 'embarrassment', 2, []],
-            ['bites?\\s+(?:it\\s+)?off|through\\s+her\\s+teeth|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],
+            ['bites?\\s+(?:it\\s+)?off(?!\\s+(?:against|a\\s+(?:noise|sound|moan|cry|gasp|laugh)|the\\s+(?:noise|sound|moan|cry|gasp|laugh)))(?<!(?:noise|sound|moan|cry|gasp|laugh)\\s(?:she|he)\\s(?:has\\s)?to\\s)|through\\s+her\\s+teeth(?!\\s+(?:as|while|when)\\s+(?:she|he)\\s+(?:comes|moves|rides|arches))|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],  // not a moan she bites off
             // grief / shock physical tells (controlled, not angry)
             ['jaw\\s+works?|jaw\\s+working|swallows?\\s+(?:nothing|hard\\s+on\\s+nothing)|swallow(?:s|ed)\\s+nothing', 'sadness', 3, []],
             ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes\\s+out\\s+of|leaves)|colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'sadness', 3, []],  // 'colour goes high in her cheeks' is a blush, not this
