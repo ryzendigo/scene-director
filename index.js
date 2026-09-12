@@ -534,7 +534,9 @@
             // fear / nervousness
             ['(?:she|I|her\\s+back|her\\s+shoulders|her\\s+spine)\\s+stiffen(?:s|ed|ing)?|stiffens?\\s+(?:against\\s+(?:him|you|his)|under\\s+(?:his|your)|at\\s+the\\s+(?:sound|touch|word)|when\\s+(?:he|you))', 'fear', 2, []],  // not the concrete/mix stiffening
             // stillness in his arms / against him is anticipation, not fear
-            ['(?:goes|went|gone|holds?)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under)\\s+(?:his|your|the)\\s+(?:arms?|hands?|chest|hold|touch|embrace))', 'fear', 2, []],
+            // 'goes still' is fear only for the whole person; a mouth/face/smile gone still is attention.
+            ['(?<!(?:mouth|face|smile|features|expression|eyes|hands?|voice)\\s)(?:goes|went|gone|holds?)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under)\\s+(?:his|your|the)\\s+(?:arms?|hands?|chest|hold|touch|embrace))(?!,?\\s+(?:listening|watching|waiting|attentive))', 'fear', 2, []],
+            ['listen(?:s|ing)?\\s+with\\s+her\\s+whole\\s+(?:face|body|self)|(?:mouth|face)\\s+gone\\s+still|eyes\\s+flat\\s+on\\s+(?:him|you)|(?:whole|entire)\\s+attention', 'curiosity', 2, []],  // attentive, not afraid
             // controlled anger / resolve tells (quiet fury, not fear)
             ['quiet\\s+and\\s+level|level\\s+(?:voice|tone)|voice\\s+(?:is\\s+)?level', 'anger', 1.5, ['fear']],
             ['done\\s+being\\s+\\w+|not\\s+\\w+\\s+anymore|I\\s+don\'t\\s+care\\s+if|I\'ll\\s+take\\s+the\\s+hit', 'disapproval', 2, ['fear']],
