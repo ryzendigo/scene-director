@@ -546,7 +546,7 @@
             // "I'm afraid", "she looks terrified") — never as a noun ("that
             // scared"), never about someone else ("he was scared").
             ['\\b(?:she|she\'s|she\\s+is|she\\s+was|she\\s+looks|she\\s+sounds|she\\s+feels|I|I\'m|I\\s+am|I\\s+was|I\\s+feel)\\s+(?:\\w+\\s+){0,2}(?:afraid|scared|terrified|frightened|dreading)\\b', 'fear', 3, []],
-            ['(?<!(?:was|were|been)\\s)(?:trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)(?!\\s+in\\s+(?:my|her|his)\\s+(?:shoes|boots)))', 'fear', 1.5, []],  // not 'I was shaking in my shoes' (memory/idiom)  // not 'shakes her head', not shaking with laughter
+            ['(?:trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)(?!\\s+in\\s+(?:my|her|his)\\s+(?:shoes|boots)))', 'fear', 1.5, []],  // not 'I was shaking in my shoes' (memory/idiom)  // not 'shakes her head', not shaking with laughter
             ['flinch(?:es|ed)?', 'fear', 2, []],
             ['fidget(?:s|ed|ing)?', 'nervousness', 2, []],
             ['twists?\\s+her\\s+(?:fingers|ring|hands)', 'nervousness', 2, []],
@@ -728,6 +728,17 @@
             const vetoes = new Set();
             let hitWeight = 0; let hitCount = 0;
             let laughter = false; let tears = false; let wetEyes = false; let explicitAnger = false;
+            // A cue inside a remembered moment ("I was so scared on the plane", "I near enough
+            // cried into the tray table") is about THEN, not now: its weight drops to a quarter and
+            // it sets no hard veto. In her own speech any past-tense frame counts; in narration only
+            // an explicit memory marker does, so past-tense-narrated stories keep their lexicon.
+            const MEMORY_DLG_RE = /\b(?:I|we|you|he|she|they)\s+(?:was|were|had|'d|used to)\b|\b(?:back then|back (?:home|in)|that (?:day|night|morning|afternoon|time|summer|winter)|on the (?:plane|flight|boat|train)|at the (?:wedding|funeral)|when I was|years? ago|last (?:night|week|month|year|time)|the (?:first|last) time|I remember|once,?\s)\b/i;
+            const MEMORY_NARR_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|the day (?:she|he|they)|that (?:day|night|morning) (?:she|he|they)|when she was (?:a girl|small|little|young|nine|ten|eleven|twelve|thirteen))\b/i;
+            const sentenceAt = function (text, i) {
+                let a = i; while (a > 0 && !/[.!?]/.test(text[a - 1])) a--;
+                let b = i; while (b < text.length && !/[.!?]/.test(text[b])) b++;
+                return text.slice(a, b);
+            };
             for (const p of ext.parts) {
                 for (const cue of table) {
                     cue.re.lastIndex = 0;
@@ -736,6 +747,15 @@
                         if (m.index === cue.re.lastIndex) cue.re.lastIndex++;
                         const before = p.text.slice(Math.max(0, m.index - 24), m.index);
                         if (NEG_RE.test(before)) { vetoes.add(cue.label); cues.push('¬' + m[0]); continue; }
+                        const sent = sentenceAt(p.text, m.index);
+                        const remembered = (p.kind === 'dialogue' ? MEMORY_DLG_RE : MEMORY_NARR_RE).test(sent);
+                        if (remembered) {
+                            const wm = cue.w * p.w * 0.25;
+                            scores[cue.label] = (scores[cue.label] || 0) + wm;
+                            hitWeight += wm; hitCount++;
+                            cues.push(m[0] + '→' + cue.label + ' (remembered ×0.25)');
+                            continue;
+                        }
                         const w = cue.w * p.w;
                         scores[cue.label] = (scores[cue.label] || 0) + w;
                         hitWeight += w; hitCount++;
