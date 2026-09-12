@@ -297,7 +297,8 @@
         spriteAuto: true,           // match ST's size for the static sprites
         spriteVh: null,             // height in vh when auto is off (30-100)
         spriteDx: 0,                // horizontal offset, vw (-20..20)
-        spriteDy: 0,                // vertical offset, vh (-10..10)
+        spriteDy: 0,                // vertical offset, vh (-60..60)
+        spriteDrag: true,           // 0.8.6: drag the sprite with the mouse to position it
         // v0.6.0 mood engine.
         enableLocalClassifier: true,   // L2: ST's server-side go_emotions classifier
         femaleNamesRegex: '',          // other female characters (she/her is the main character's only when none of these appear)
@@ -3681,7 +3682,7 @@
             }
             const defaultVh = Math.min(90, (gutter / spriteRefAspect) / vh);
             let targetVh = (settings.spriteAuto || !settings.spriteVh) ? defaultVh : Number(settings.spriteVh);
-            targetVh = Math.max(30, Math.min(100, targetVh));
+            targetVh = Math.max(20, Math.min(160, targetVh));
             let hPx = targetVh * vh;
             // Gutter clamp only in auto mode — a manual size is the user's call.
             if (settings.spriteAuto && hPx * aspect > gutter) hPx = gutter / aspect;
@@ -3693,6 +3694,74 @@
             const lab = document.getElementById('sd_spriteVhVal');
             if (lab) lab.textContent = Math.round(hPx / vh) + 'vh' + (settings.spriteAuto ? ' (auto = ' + defaultVh.toFixed(0) + 'vh)' : '');
         } catch (e) { /* ignore */ }
+    }
+
+    // 0.8.6: drag the sprite with the mouse. Delegated on document so ST's re-created img
+    // nodes need no re-binding; writes the same spriteDx/spriteDy the sliders use.
+    let spriteDragInstalled = false;
+    function syncSpriteSliders() {
+        try {
+            const st = getSettings();
+            for (const [id, key, unit] of [['sd_spriteDx', 'spriteDx', 'vw'], ['sd_spriteDy', 'spriteDy', 'vh']]) {
+                const el = document.getElementById(id); const val = document.getElementById(id + 'Val');
+                if (el) el.value = String(st[key] || 0);
+                if (val) val.textContent = (st[key] || 0) + unit;
+            }
+        } catch (e) { /* ignore */ }
+    }
+    function installSpriteDrag() {
+        if (spriteDragInstalled) return; spriteDragInstalled = true;
+        let drag = null;
+        const isSprite = function (el) {
+            return el && el.tagName === 'IMG' && el.closest && el.closest('#expression-holder') && !el.classList.contains('scene-director-sprite-ghost');
+        };
+        document.addEventListener('pointerdown', function (ev) {
+            const st = getSettings();
+            if (st.spriteDrag === false || ev.button !== 0 || !isSprite(ev.target)) return;
+            drag = { x: ev.clientX, y: ev.clientY, dx: Number(st.spriteDx) || 0, dy: Number(st.spriteDy) || 0, moved: false };
+            try { ev.target.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+            document.body.classList.add('scene-director-sprite-dragging');
+            ev.preventDefault();
+        }, true);
+        document.addEventListener('pointermove', function (ev) {
+            if (!drag) return;
+            const st = getSettings();
+            const vw = window.innerWidth / 100, vh = window.innerHeight / 100;
+            const nx = Math.max(-80, Math.min(80, drag.dx + (ev.clientX - drag.x) / vw));
+            const ny = Math.max(-60, Math.min(60, drag.dy + (ev.clientY - drag.y) / vh));
+            if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 3) drag.moved = true;
+            st.spriteDx = Math.round(nx * 10) / 10; st.spriteDy = Math.round(ny * 10) / 10;
+            const root = document.documentElement.style;
+            root.setProperty('--scene-director-sprite-dx', st.spriteDx + 'vw');
+            root.setProperty('--scene-director-sprite-dy', st.spriteDy + 'vh');
+        }, true);
+        const end = function () {
+            if (!drag) return;
+            const moved = drag.moved; drag = null;
+            document.body.classList.remove('scene-director-sprite-dragging');
+            if (moved) { saveSettings(); syncSpriteSliders(); try { applyStripAppearance(getSettings()); } catch (e) { /* ignore */ } }
+        };
+        document.addEventListener('pointerup', end, true);
+        document.addEventListener('pointercancel', end, true);
+        // Mouse wheel over the sprite scales it (turns auto size off); 2vh a notch, Shift = fine.
+        let wheelSave = null;
+        document.addEventListener('wheel', function (ev) {
+            const st = getSettings();
+            if (st.spriteDrag === false || !isSprite(ev.target)) return;
+            ev.preventDefault();
+            const vh = window.innerHeight / 100;
+            const curPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scene-director-sprite-h')) || (62 * vh);
+            const cur = (st.spriteAuto || !st.spriteVh) ? curPx / vh : Number(st.spriteVh);
+            const step = ev.shiftKey ? 0.5 : 2;
+            st.spriteAuto = false;
+            st.spriteVh = Math.max(20, Math.min(160, Math.round((cur + (ev.deltaY < 0 ? step : -step)) * 2) / 2));
+            applySpriteSize(st);
+            try {
+                const cb = document.getElementById('sd_spriteAuto'); if (cb) cb.checked = false;
+                const sl = document.getElementById('sd_spriteVh'); if (sl) sl.value = String(st.spriteVh);
+            } catch (e) { /* ignore */ }
+            clearTimeout(wheelSave); wheelSave = setTimeout(function () { saveSettings(); try { applyStripAppearance(getSettings()); } catch (e) { /* ignore */ } }, 400);
+        }, { passive: false, capture: true });
     }
 
     function applyHudAppearance(settings) {
@@ -5377,17 +5446,22 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     </label>
                     <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
                         <span style="font-size:12px;">Character size</span>
-                        <input type="range" id="sd_spriteVh" min="30" max="100" step="1" style="flex:1;" title="Character height, % of the window height" />
+                        <input type="range" id="sd_spriteVh" min="20" max="160" step="1" style="flex:1;" title="Character height, % of the window height" />
                         <span id="sd_spriteVhVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
                     <div class="scene-director-card-row" style="display:flex;gap:8px;align-items:center;">
                         <span style="font-size:12px;">X offset</span>
-                        <input type="range" id="sd_spriteDx" min="-20" max="20" step="1" style="flex:1;" title="Horizontal offset, % of the window width" />
+                        <input type="range" id="sd_spriteDx" min="-80" max="80" step="1" style="flex:1;" title="Horizontal offset, % of the window width" />
                         <span id="sd_spriteDxVal" style="font-size:12px;min-width:42px;"></span>
                         <span style="font-size:12px;">Y offset</span>
-                        <input type="range" id="sd_spriteDy" min="-10" max="10" step="1" style="flex:1;" title="Vertical offset, % of the window height" />
+                        <input type="range" id="sd_spriteDy" min="-60" max="60" step="1" style="flex:1;" title="Vertical offset, % of the window height" />
                         <span id="sd_spriteDyVal" style="font-size:12px;min-width:42px;"></span>
                     </div>
+                    <label class="checkbox_label" title="Click and drag the character with the mouse to place it; the offset sliders follow">
+                        <input type="checkbox" id="sd_spriteDrag" />
+                        <span>Drag and scale with the mouse (wheel over the sprite to scale)</span>
+                        <button type="button" class="menu_button" id="sd_spriteReset" style="margin-left:auto;" title="Put the character back to the default spot">Reset position</button>
+                    </label>
                     <label class="checkbox_label" title="Freeze Auto Costumes — the outfit stays whatever /costume last set (window.sceneDirectorHoldCostume works too)">
                         <input type="checkbox" id="sd_holdCostume" />
                         <span>Hold costume</span>
@@ -5772,6 +5846,21 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         bindSelect('sd_hudPosition', 'hudPosition');
         bindSelect('sd_hudStyle', 'hudStyle');
         for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters']) bindCheck('sd_' + k, k);
+        // 0.8.6: drag-to-position toggle + reset
+        try {
+            const dragCb = document.getElementById('sd_spriteDrag');
+            if (dragCb) {
+                dragCb.checked = getSettings().spriteDrag !== false;
+                dragCb.addEventListener('change', function () {
+                    const st = getSettings(); st.spriteDrag = dragCb.checked; saveSettings();
+                    document.body.classList.toggle('scene-director-drag-on', dragCb.checked);
+                });
+            }
+            const rb = document.getElementById('sd_spriteReset');
+            if (rb) rb.addEventListener('click', function () {
+                const st = getSettings(); st.spriteDx = 0; st.spriteDy = 0; saveSettings(); applySpriteSize(st); syncSpriteSliders();
+            });
+        } catch (e) { /* ignore */ }
         for (const [id, key, dflt] of [['sd_hudScale', 'hudScale', 1], ['sd_hudOpacity', 'hudOpacity', 0.85]]) {
             const el2 = document.getElementById(id); const val = document.getElementById(id + 'Val');
             if (!el2) continue;
@@ -6001,6 +6090,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const ctx = SillyTavern.getContext();
             const settings = getSettings();
             migrateSettings(settings);
+            try { installSpriteDrag(); document.body.classList.toggle('scene-director-drag-on', settings.spriteDrag !== false); } catch (e) { /* ignore */ }
             conflicts = detectConflicts(ctx);
             addSettingsUi();
             const et = ctx.eventTypes || ctx.event_types;

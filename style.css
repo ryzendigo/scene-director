@@ -755,6 +755,9 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     min-height: 0 !important;
     object-fit: contain;
 }
+body.scene-director-drag-on #expression-holder img:not(.scene-director-sprite-ghost) { cursor: grab; touch-action: none; pointer-events: auto; }
+body.scene-director-sprite-dragging #expression-holder img:not(.scene-director-sprite-ghost) { cursor: grabbing; }
+body.scene-director-sprite-dragging { user-select: none; }
 #expression-holder {
     height: var(--scene-director-sprite-h, 62vh) !important;
     width: auto !important;
