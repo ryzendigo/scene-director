@@ -739,6 +739,9 @@ body.scene-director-typing #expression-holder img:not(.scene-director-sprite-gho
     animation: scene-director-drift-up 4s ease-out forwards;
 }
 #scene-director-cast-strip .scene-director-chip.unknown img { opacity: 0.9; }
+/* 0.8.3: on the phone — in the scene, not the room */
+#scene-director-cast-strip .scene-director-chip.phone { opacity: 0.8; filter: saturate(0.7); }
+#scene-director-cast-strip .scene-director-chip-phone { position: absolute; top: 4px; left: 4px; font-size: 16px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); pointer-events: none; }
 
 /* ---- 0.6.2: fixed rendered sprite height (static and animated identical);
    the crossfade clone matches the same selector, so blends never pop. ---- */

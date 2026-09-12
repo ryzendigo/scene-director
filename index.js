@@ -546,7 +546,7 @@
             // "I'm afraid", "she looks terrified") — never as a noun ("that
             // scared"), never about someone else ("he was scared").
             ['\\b(?:she|she\'s|she\\s+is|she\\s+was|she\\s+looks|she\\s+sounds|she\\s+feels|I|I\'m|I\\s+am|I\\s+was|I\\s+feel)\\s+(?:\\w+\\s+){0,2}(?:afraid|scared|terrified|frightened|dreading)\\b', 'fear', 3, []],
-            ['trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)', 'fear', 1.5, []],  // not 'shakes her head', not shaking with laughter
+            ['(?<!(?:was|were|been)\\s)(?:trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)(?!\\s+in\\s+(?:my|her|his)\\s+(?:shoes|boots)))', 'fear', 1.5, []],  // not 'I was shaking in my shoes' (memory/idiom)  // not 'shakes her head', not shaking with laughter
             ['flinch(?:es|ed)?', 'fear', 2, []],
             ['fidget(?:s|ed|ing)?', 'nervousness', 2, []],
             ['twists?\\s+her\\s+(?:fingers|ring|hands)', 'nervousness', 2, []],
@@ -589,7 +589,7 @@
             ['face\\s+falls|shoulders\\s+sag', 'disappointment', 2.5, []],
             ['purses?\\s+her\\s+lips|lips\\s+thin', 'disapproval', 2, []],
             ['disapprov(?:es|ed|ing|al)', 'disapproval', 3, []],
-            ['shakes?\\s+her\\s+head', 'disapproval', 1, []],
+            ['(?<!(?:asks?|asked|offers?|offered|whether|if)\\b[^.!?]{0,80})shakes?\\s+her\\s+head(?!\\s+(?:without\\s+looking|no\\b|at\\s+(?:the\\s+)?(?:girl|waiter|waitress|menu|card|pudding|dessert|offer)))', 'disapproval', 0.75, []],  // declining an offer is not disapproval
             ['wrinkles?\\s+her\\s+nose|nose\\s+wrinkles', 'disgust', 2.5, []],
             ['grimac(?:es|ed|ing)', 'disgust', 2, []],
             ['disgust(?:ed|ing)?|revolted', 'disgust', 3, []],
@@ -812,7 +812,18 @@
             // go_emotions "desire" = wanting things ("I want the vitamins"), not
             // attraction: without a romantic lexicon cue it needs a clear margin.
             const romantic = Boolean(lex.scores && ((lex.scores.desire || 0) + (lex.scores.love || 0) > 0));
-            const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic)) ? 0.45 : 0.35; };
+            // A classifier-only swing from a warm mood into a dark one (love → sadness on
+            // "I know he'd cry") needs a clear margin: go_emotions reads cry/blood/knelt as
+            // sadness even when she is saying something tender. With any lexicon cue in that
+            // family the normal floor applies.
+            const WARM = new Set(['love', 'joy', 'amusement', 'gratitude', 'caring', 'admiration', 'excitement', 'optimism', 'pride', 'relief', 'approval', 'desire']);
+            const DARK = { sadness: ['sadness', 'grief', 'remorse', 'disappointment'], grief: ['grief', 'sadness'], remorse: ['remorse', 'sadness'], disappointment: ['disappointment', 'sadness'],
+                fear: ['fear', 'nervousness'], anger: ['anger', 'annoyance', 'disapproval'], disgust: ['disgust', 'disapproval'] };
+            const darkSwing = function (l) {
+                if (!DARK[l] || !WARM.has(prev)) return false;
+                return !DARK[l].some(function (k) { return lex.scores && (lex.scores[k] || 0) > 0; });
+            };
+            const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic) || darkSwing(l)) ? 0.45 : 0.35; };
             if (tag) {
                 if (vetoed(tag) && lex.hitCount >= 2 && lex.top) return { final: lex.top, rule: '2 tag vetoed by lexicon', hold: false };
                 return { final: tag, rule: '1 tag', hold: false };
@@ -854,7 +865,7 @@
                 if (c.label === 'neutral' || c.label === 'confusion' || vetoed(c.label)) continue;
                 if (c.label === 'desire' && !romantic) continue;
                 // 0.30 share of the top-5 is the floor; ~0.25 is near-uniform noise.
-                if (c.share >= 0.30) return { final: c.label, rule: '3d local top-3', hold: false };
+                if (c.share >= (darkSwing(c.label) ? 0.45 : 0.30)) return { final: c.label, rule: '3d local top-3', hold: false };
             }
             if (lex.top === 'neutral' && lex.hitWeight >= 2 && lex.hitCount >= 2) return { final: 'neutral', rule: '3c lexicon (positive neutral)', hold: false };
             return { final: prev, rule: '3e hold', hold: true };
@@ -908,7 +919,7 @@
     // the node harness can extract this block and run saved messages.
     //
     // The one structural rule everything hangs on: text INSIDE any coloured
-    // dialogue span or plain quote characters belongs to a SPEAKER, and a
+    // dialogue span or plain quotation marks belongs to a SPEAKER, and a
     // name inside someone else's speech is a mention, never presence —
     // characters talk about people constantly. Only NARRATION (outside all
     // quotes/spans) can carry presence cues. A speaker's own span is the
@@ -1007,8 +1018,26 @@
             const text = masked.text; const narr = masked.narr;
             const lower = text.toLowerCase();
             // 1. Own coloured dialogue: decisive.
-            if (member.hex && lower.indexOf(String(member.hex).toLowerCase()) >= 0) {
-                score += 10; strong = true; evidence.push('own dialogue ' + member.hex);
+            const hexes = [member.hex].concat(member.aliasHexes || []).filter(Boolean).map(function (h) { return String(h).toLowerCase(); });
+            for (const h of hexes) {
+                if (lower.indexOf(h) >= 0) { score += 10; strong = true; evidence.push('own dialogue ' + h + (h !== String(member.hex || '').toLowerCase() ? ' (aliased)' : '')); break; }
+            }
+            // Speaking down a phone line: in the scene, but not in the room.
+            // Decided only from the text immediately AROUND this member's own
+            // lines (±180 chars), and only by voice-through-a-phone phrasing —
+            // a receiver being put down elsewhere in the message is not it.
+            const PHONE_RE = /down the (?:line|cable|wire)|over the phone|on the phone|through the (?:receiver|earpiece|phone|line)|into the (?:phone|receiver|mouthpiece)|voice (?:arrives|comes|crackles)[^.]{0,50}\b(?:line|phone|cable|receiver|earpiece)|(?:line|phone|receiver) (?:crackles|hisses|clicks)|ringback|speakerphone|hangs? up|hung up/i;
+            let phone = false;
+            if (strong) {
+                for (const h of hexes) {
+                    let at = lower.indexOf(h);
+                    while (at >= 0 && !phone) {
+                        const win = text.slice(Math.max(0, at - 180), Math.min(text.length, at + 180));
+                        if (PHONE_RE.test(win)) phone = true;
+                        at = lower.indexOf(h, at + 1);
+                    }
+                    if (phone) break;
+                }
             }
             // 2. Name / alias occurrences.
             let lastArrivalIdx = -1; let anyNarrationName = false; let anyQuotedName = false;
@@ -1064,11 +1093,16 @@
             // 5. Location changed with no fresh evidence.
             if (opts && opts.locChanged && score === 0) vetoes.push('location changed, no fresh evidence');
             // Quoted-only mention vetoes only matter when there is no real evidence.
-            const realVetoes = vetoes.filter(function (v) { return !(v.indexOf('inside ') === 0 && score > 0 && anyNarrationName); });
+            let realVetoes = vetoes.filter(function (v) { return !(v.indexOf('inside ') === 0 && score > 0 && anyNarrationName); });
+            // A member speaking in their OWN colour is in the scene: absence /
+            // reported-speech vetoes come from narration about them and do not
+            // outrank their own line. Departures still do — except on a call,
+            // where "goodbye" just ends the call (they drop off next message).
+            if (strong) realVetoes = realVetoes.filter(function (v) { return v.indexOf('departure') === 0 && !phone; });
             const present = score >= 4 && realVetoes.length === 0;
             const detail = 'presence ' + member.key + ': +' + score + (evidence.length ? ' (' + evidence.join(', ') + ')' : '')
-                + (realVetoes.length ? ' veto[' + realVetoes.join('; ') + ']' : '') + ' → ' + (present ? 'present' : 'absent');
-            return { key: member.key, score, evidence, vetoes: realVetoes, present, strong, detail };
+                + (realVetoes.length ? ' veto[' + realVetoes.join('; ') + ']' : '') + ' → ' + (present ? (phone ? 'present (phone)' : 'present') : 'absent');
+            return { key: member.key, score, evidence, vetoes: realVetoes, present, strong, phone, detail };
         }
 
         /** Prop verdict: { score, vetoes, present, detail }. ownHex = the main character's colour. */
@@ -1923,25 +1957,31 @@
             const u = unknownInfo.get('unk:' + h);
             return u ? u.label : h;
         };
+        // 0.8.3: unknown colours first, so a drifted colour whose nearby name matches a
+        // Cast card is treated as that member's (colour alias) instead of a stranger.
+        const unknowns = settings.enableUnknownSpeakers ? detectUnknownSpeakers(scene, settings) : [];
         for (const member of settings.cast) {
+            const aliasHexes = [];
+            for (const [h, k] of colourAlias) if (k === member.key) aliasHexes.push(h);
             const r = PresenceEngine.evaluate(masked, {
-                key: member.key, label: member.label, hex: member.colorHex,
+                key: member.key, label: member.label, hex: member.colorHex, aliasHexes,
                 nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
             }, { tables: T, hexLabel, locChanged: Boolean(locChanged) });
             verdicts.push(r);
-            const pos = member.colorHex ? scene.lower.lastIndexOf(member.colorHex.toLowerCase()) : -1;
+            let pos = member.colorHex ? scene.lower.lastIndexOf(member.colorHex.toLowerCase()) : -1;
+            for (const h of aliasHexes) pos = Math.max(pos, scene.lower.lastIndexOf(h));
             if (pos > speakerPos) { speakerPos = pos; speakerKey = member.key; }
             if (r.score || r.vetoes.length) dbg(r.detail);
             if (r.present) {
                 if (!castPresence.has(member.key)) dbg(`cast +${member.key} (${r.evidence.join(', ')})`);
-                present.push({ member, pos, strong: r.strong, evidence: r.evidence.join(', ') });
+                present.push({ member, pos, strong: r.strong, evidence: r.evidence.join(', '), phone: Boolean(r.phone) });
             } else if (r.vetoes.length) {
                 if (castPresence.has(member.key)) dbg(`cast -${member.key} (${r.vetoes[0]})`);
                 else if (r.vetoes[0].indexOf('inside') === 0) dbg(`cast ~${member.key} rejected (${r.vetoes[0]})`);
                 castPresence.delete(member.key);
             }
         }
-        return { present, speakerKey, masked, verdicts };
+        return { present, speakerKey, masked, verdicts, unknowns };
     }
 
     // v0.5.4: unknown speakers — a dialogue colour on no Cast card gets a
@@ -1950,8 +1990,12 @@
     const FONT_SPAN_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi;
     const CAPS_NAME_RE = /\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b(?![^<]*>)/g;
     const CAP_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
-    const NOT_NAMES = new Set(['The', 'She', 'He', 'They', 'Her', 'His', 'Then', 'And', 'But', 'When', 'Mood']);
+    const NOT_NAMES = new Set(['The', 'She', 'He', 'They', 'Her', 'His', 'Then', 'And', 'But', 'When', 'Mood',
+        'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Ten', 'Twenty', 'Half', 'Both', 'Nobody', 'Somebody', 'Someone', 'Everyone', 'Every', 'Outside', 'Inside', 'Down', 'Up', 'Back', 'Out', 'Now', 'Later', 'Still', 'Just', 'There', 'Here', 'That', 'This', 'What', 'Where', 'Why', 'How', 'Not', 'Yes', 'No', 'Well', 'Right', 'Left', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'January', 'February', 'March', 'April', 'June', 'July', 'August', 'September', 'October', 'November', 'December']);
     const unknownInfo = new Map(); // 'unk:#hex' -> { label, gender, hex }
+    // 0.8.3: colour drift — an unmapped dialogue colour whose narration name matches a
+    // Cast card is that member for the rest of the session (hex -> cast key).
+    const colourAlias = new Map();
 
     function silhouetteSrc(hex, gender) {
         const tint = hex || '#888888';
@@ -1986,12 +2030,17 @@
             }
             const ownName = (SillyTavern.getContext().name2 || '').split(' ')[0];
             for (const [hex, idx] of first) {
+                if (colourAlias.has(hex)) continue;
                 const key = 'unk:' + hex;
                 let info = unknownInfo.get(key);
                 if (!info) {
                     // 0.6.4: the name guess comes from NARRATION outside quotes.
                     const stop = new Set(NOT_NAMES); if (ownName) stop.add(ownName);
                     const label = PresenceEngine.nameGuess(PresenceEngine.mask(text), idx, stop);
+                    if (label) {
+                        const cm = settings.cast.find(function (c) { const re = compileRegex(c.nameRegex || ''); return re && re.test(label); });
+                        if (cm) { colourAlias.set(hex, cm.key); dbg('colour alias: ' + hex + ' -> ' + cm.key + ' ("' + label + '")'); continue; }
+                    }
                     const around = lower.slice(Math.max(0, idx - 200), Math.min(lower.length, idx + 300));
                     const f = (around.match(/\b(?:she|her|hers|herself)\b/g) || []).length;
                     const mm = (around.match(/\b(?:he|him|his|himself)\b/g) || []).length;
@@ -3667,11 +3716,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         return base + encodeURIComponent(member.key) + '.png';
     }
 
-    function buildChip(member, mood, speaking, settings, lingering) {
+    function buildChip(member, mood, speaking, settings, lingering, phone) {
         const wrap = document.createElement('div');
         wrap.className = 'scene-director-chip' + (speaking ? ' speaking' : '')
-            + (lingering ? ' lingering' : '') + (member.unknown ? ' unknown' : '');
+            + (lingering ? ' lingering' : '') + (member.unknown ? ' unknown' : '') + (phone ? ' phone' : '');
         wrap.dataset.key = member.key;
+        // 0.8.3: speaking down a phone line — in the scene, not in the room.
+        if (phone) { const ph = document.createElement('div'); ph.className = 'scene-director-chip-phone'; ph.textContent = '📞'; ph.title = 'on the phone'; wrap.appendChild(ph); }
         const baseSrc = member.unknown ? silhouetteSrc(member.unknown.hex, member.unknown.gender)
             : chipImageSrc(member, 'neutral', settings);
         const img = document.createElement('img');
@@ -3724,7 +3775,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
             wrap.addEventListener('mouseleave', hideBioCard);
         }
-        return { el: wrap, imgEl: img, bubbleEl, mood, speaking, lingering: Boolean(lingering), src: img.src };
+        return { el: wrap, imgEl: img, bubbleEl, mood, speaking, lingering: Boolean(lingering), phone: Boolean(phone), src: img.src };
     }
 
     function updateCastStrip(scene, settings) {
@@ -3747,7 +3798,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (settings.enableUnknownSpeakers) {
             let speakerPos = -1;
             for (const p of present) if (p.pos > speakerPos) speakerPos = p.pos;
-            for (const u of detectUnknownSpeakers(scene, settings)) {
+            for (const u of (analysis.unknowns || [])) {
                 if (u.pos > speakerPos) { speakerPos = u.pos; speakerKey = u.key; }
                 if (!castPresence.has(u.key)) dbg(`cast +${u.key} "${u.label}" (${u.gender}, hex ${u.hex})`);
                 present.push({ member: { key: u.key, label: u.label, colorHex: u.hex, nameRegex: null, aliasRegex: null, unknown: { hex: u.hex, gender: u.gender } }, pos: u.pos, strong: true });
@@ -3790,6 +3841,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 mood: (!p.lingering && !p.member.unknown && settings.enableMoods) ? detectMood(scene.text, p.member, settings) : 'neutral',
                 speaking: !p.lingering && p.member.key === speakerKey,
                 lingering: Boolean(p.lingering),
+                phone: Boolean(p.phone),
             };
         });
         queueDom(function () {
@@ -3800,9 +3852,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 const key = d.member.key;
                 seen.add(key);
                 let chip = castChips.get(key);
-                const needsRebuild = chip && (chip.mood !== d.mood || !chip.el.isConnected);
+                const needsRebuild = chip && (chip.mood !== d.mood || chip.phone !== d.phone || !chip.el.isConnected);
                 if (!chip || needsRebuild) {
-                    const fresh = buildChip(d.member, d.mood, d.speaking, settings, d.lingering);
+                    const fresh = buildChip(d.member, d.mood, d.speaking, settings, d.lingering, d.phone);
                     if (chip && chip.el.isConnected) chip.el.replaceWith(fresh.el);
                     fresh.moodTs = Date.now();
                     chip = fresh;
