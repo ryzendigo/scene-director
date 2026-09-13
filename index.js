@@ -523,7 +523,8 @@
             ['bites?\\s+(?:it\\s+)?off(?!\\s+(?:against|a\\s+(?:noise|sound|moan|cry|gasp|laugh)|the\\s+(?:noise|sound|moan|cry|gasp|laugh)))(?<!(?:noise|sound|moan|cry|gasp|laugh)\\s(?:she|he)\\s(?:has\\s)?to\\s)|through\\s+her\\s+teeth(?!\\s+(?:as|while|when)\\s+(?:she|he)\\s+(?:comes|moves|rides|arches))|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],  // not a moan she bites off
             // grief / shock physical tells (controlled, not angry)
             ['jaw\\s+works?|jaw\\s+working|swallows?\\s+(?:nothing|hard\\s+on\\s+nothing)|swallow(?:s|ed)\\s+nothing', 'sadness', 3, []],
-            ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes\\s+out\\s+of|leaves)|colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'sadness', 3, []],  // 'colour goes high in her cheeks' is a blush, not this
+            ['(?:goes|went|gone)\\s+white|white\\s+around\\s+the\\s+mouth|colou?r\\s+(?:drains|drained|goes\\s+out\\s+of|leaves)', 'surprise', 2, []],  // going white is shock, not grief
+            ['colou?r\\s+comes\\s+back\\s+(?:wrong|patchy|slow)', 'sadness', 2, []],  // 'colour goes high in her cheeks' is a blush, not this
             ['wet\\s+shine|shine\\s+(?:along|on|in)\\s+(?:the|her)\\s+(?:lower\\s+)?(?:lid|lids|lashes|eyes)|lower\\s+lid|not\\s+falling', 'sadness', 3, ['joy', 'amusement', 'pride']],
             ['practi[cs]ed\\s+(?:exhale|breath)|lets?\\s+(?:it|the\\s+breath)\\s+out\\s+slow(?:ly)?', 'sadness', 1.5, []],
             ['eyes\\s+come\\s+up|looks?\\s+up\\s+slowly', 'realization', 1, []],
