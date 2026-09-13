@@ -4037,11 +4037,29 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         hideBioCard();
     }
 
-    function chipImageSrc(member, mood, settings) {
+    // 0.9.0: animated portraits. Drop npc/<key>.webp (and npc/<key>-<mood>.webp) beside the stills and
+    // list their names in npc/animated.json (["june", "june-happy", ...]); chips use the loop when the
+    // list says one exists and fall back to the still if it fails to load. No per-character config needed.
+    const animatedPortraits = new Set();
+    let animatedFolderLoaded = '';
+    function loadAnimatedPortraits(settings) {
+        const folder = settings.castFolder || '';
+        if (!folder || animatedFolderLoaded === folder) return;
+        animatedFolderLoaded = folder;
+        try {
+            fetch(`/characters/${encodeURIComponent(folder)}/npc/animated.json`, { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (list) { if (Array.isArray(list)) for (const k of list) animatedPortraits.add(String(k)); })
+                .catch(function () { /* no manifest: stills only */ });
+        } catch (e) { /* ignore */ }
+    }
+
+    function chipImageSrc(member, mood, settings, still) {
         if (member.avatar && mood === 'neutral') return member.avatar;
         const base = `/characters/${encodeURIComponent(settings.castFolder)}/npc/`;
-        if (mood !== 'neutral') return base + encodeURIComponent(member.key) + '-' + mood + '.png';
-        return base + encodeURIComponent(member.key) + '.png';
+        const name = mood !== 'neutral' ? member.key + '-' + mood : member.key;
+        const ext = (!still && animatedPortraits.has(name)) ? '.webp' : '.png';
+        return base + encodeURIComponent(name) + ext;
     }
 
     function buildChip(member, mood, speaking, settings, lingering, phone) {
@@ -4049,6 +4067,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         wrap.className = 'scene-director-chip' + (speaking ? ' speaking' : '')
             + (lingering ? ' lingering' : '') + (member.unknown ? ' unknown' : '') + (phone ? ' phone' : '');
         wrap.dataset.key = member.key;
+        loadAnimatedPortraits(settings);
         // 0.8.3: speaking down a phone line — in the scene, not in the room.
         if (phone) { const ph = document.createElement('div'); ph.className = 'scene-director-chip-phone'; ph.textContent = '📞'; ph.title = 'on the phone'; wrap.appendChild(ph); }
         const baseSrc = member.unknown ? silhouetteSrc(member.unknown.hex, member.unknown.gender)
@@ -4058,13 +4077,16 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (member.unknown) {
             img.src = baseSrc;
         } else if (mood !== 'neutral') {
-            img.onerror = function () {
-                this.onerror = function () { try { wrap.remove(); } catch (e) { /* ignore */ } };
+            // animated variant -> still variant -> base portrait -> no chip
+            const stillVariant = chipImageSrc(member, mood, settings, true);
+            const toBase = function () {
+                this.onerror = function () { this.onerror = function () { try { wrap.remove(); } catch (e) { /* ignore */ } }; this.src = chipImageSrc(member, 'neutral', settings, true); };
                 this.src = baseSrc;
             };
+            img.onerror = function () { this.onerror = toBase; this.src = stillVariant; };
             img.src = chipImageSrc(member, mood, settings);
         } else {
-            img.onerror = function () { try { wrap.remove(); } catch (e) { /* ignore */ } };
+            img.onerror = function () { this.onerror = function () { try { wrap.remove(); } catch (e) { /* ignore */ } }; this.src = chipImageSrc(member, 'neutral', settings, true); };
             img.src = baseSrc;
         }
         let bubbleEl = null;
