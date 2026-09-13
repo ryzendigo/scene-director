@@ -255,6 +255,7 @@
         hudOpacity: 0.85,
         hudDate: true, hudLoc: true, hudWeather: true, hudCounters: true,
         hudWardrobe: true,          // 0.8.7: HUD row with what the character is wearing
+        poseSprites: true,          // 0.8.9: love-scene position sprites (riding / beneath / behind / kneeling) when the folder has them
         wardrobeInject: true,       // 0.8.7: [WARDROBE — …] line for the model
         wardrobeCostumeRules: [],   // 0.8.7: [{"pattern": "slip|nightgown", "costume": "pajamas"}] — tracked outfit -> costume folder
         holdCostume: false,         // freeze Auto Costumes at the current outfit
@@ -745,6 +746,8 @@
         }
 
         /** L3 — lexicon over the L0 parts. */
+        const INTIMATE_RE = /\b(?:thighs?|hips?|rid(?:es|ing)\s+(?:you|him)|grind|seated|straddl|inside\s+(?:her|me)|climax|orgasm|release|moan|arch(?:es|ing)\s+into|comes?\s+(?:hard|for|apart)|rocks\s+(?:her|against)|bed\s+before\s+coffee|against\s+his\s+mouth|breasts?|nipples?|naked|nude|on\s+her\s+knees|all\s+fours|from\s+behind|her\s+mouth\s+(?:on|around)|goes\s+down\s+on)\b/i;
+        function isIntimate(text) { return INTIMATE_RE.test(String(text || '').replace(/<[^>]+>/g, ' ')); }
         function lexicon(ext, compiled) {
             const table = compiled || compileLexicon();
             const scores = {};
@@ -767,7 +770,6 @@
             // In a love scene the body does things the dark cues also describe: thighs
             // trembling, a voice that breaks, a sound that is almost a sob, being done
             // being patient. When the part is plainly intimate, those bodily cues are desire.
-            const INTIMATE_RE = /\b(?:thighs?|hips?|rid(?:es|ing)\s+(?:you|him)|grind|seated|straddl|inside\s+(?:her|me)|climax|orgasm|release|moan|arch(?:es|ing)\s+into|comes?\s+(?:hard|for|apart)|rocks\s+(?:her|against)|bed\s+before\s+coffee|against\s+his\s+mouth|breasts?|nipples?|naked|nude)\b/i;
             const BODILY_RE = /trembl|shak|voice\s+(?:cracks|wavers|breaks|catches)|\bsob|cries?\s+out|sharply|patient|goes?\s+still|gone\s+still|hiss|eyes\s+sting|shaky/i;
             const intimate = ext.parts.some(function (p) { return INTIMATE_RE.test(p.text); });
             for (const p of ext.parts) {
@@ -946,6 +948,7 @@
         // Nearest available sprite when the folder lacks the label.
         const NEAREST = {
             orgasm: ['desire', 'joy', 'love', 'excitement'],
+            riding: ['desire', 'love'], beneath: ['desire', 'love'], behind: ['desire', 'love'], kneeling: ['desire', 'love'],
             anger: ['sadness', 'nervousness', 'disapproval', 'annoyance'], annoyance: ['sadness', 'nervousness', 'anger', 'disapproval'],
             disgust: ['sadness', 'nervousness', 'disapproval', 'anger'], disapproval: ['sadness', 'nervousness', 'anger'],
             grief: ['sadness', 'nervousness'], sadness: ['grief', 'nervousness', 'disappointment'],
@@ -982,7 +985,7 @@
                 + ' vetoes=[' + Array.from(lex ? lex.vetoes : []).join(',') + '] → ' + (out.final || 'hold') + ' (' + out.rule + ')';
         }
 
-        return { LABELS, DEFAULT_LEXICON, compileLexicon, extractOwn, classifierText, detectTag, lexicon, normaliseLocal, verdict, mapToAvailable, npcVariant, describe };
+        return { LABELS, DEFAULT_LEXICON, compileLexicon, extractOwn, classifierText, detectTag, lexicon, normaliseLocal, verdict, mapToAvailable, npcVariant, describe, isIntimate };
     })();
     // === MOOD ENGINE (pure) END ===
     // === PRESENCE ENGINE (pure) BEGIN ===
@@ -1414,6 +1417,31 @@
         return { scan, describe, norm, category, GARMENT_RE, MEMORY_RE };
     })();
     // === WARDROBE ENGINE (pure) END ===
+// === POSE ENGINE (pure) BEGIN ===
+    // Love-scene positions, seen from the user's side. detect(text) -> { pose, cue } or null.
+    // A pose is a custom sprite label in the love-scene set (riding / beneath / behind /
+    // kneeling); it sticks until another pose is named or the scene stops being intimate.
+    const PoseEngine = (function () {
+        const POSES = [
+            ['riding',   /\b(?:rid(?:es|ing)\s+(?:you|him)|on\s+top\s+of\s+(?:you|him)|straddl(?:es|ing)\s+(?:you|him|your|his)|astride\s+(?:you|him)|(?:settles?|sinks?|lowers?\s+herself|comes?)\s+down\s+onto\s+(?:you|him)|hands\s+(?:braced|flat|spread)\s+on\s+(?:your|his)\s+chest|knees\s+(?:tucked|planted)\s+either\s+side|takes?\s+(?:you|him)\s+in\s+from\s+above|grinds?\s+down\s+on\s+(?:you|him))\b/i],
+            ['beneath',  /\b(?:on\s+her\s+back\b(?!\s+(?:porch|step|foot|door))|beneath\s+(?:you|him)|under(?:neath)?\s+(?:you|him)\b|pins?\s+her\s+(?:wrists|hands|arms)|legs?\s+(?:wrapped|locked|hooked)\s+(?:around|round)\s+(?:your|his)\s+(?:waist|hips|back)|ankles\s+(?:locked|crossed)\s+behind|looks?\s+up\s+at\s+(?:you|him)\s+from\s+the\s+pillow|hair\s+(?:spread|fanned)\s+(?:out\s+)?(?:on|across|over)\s+the\s+pillow|(?:you|he)\s+(?:settle|settles|move|moves|cover|covers)\s+over\s+her|knees\s+(?:up|raised|drawn\s+up)\b)\b/i],
+            ['behind',   /\b(?:from\s+behind|on\s+(?:her\s+)?(?:all\s+)?fours|hands\s+and\s+knees|bent\s+(?:over|forward)\s+(?:the|a)?|looks?\s+back\s+(?:at\s+(?:you|him)\s+)?over\s+her\s+shoulder|over\s+her\s+shoulder\s+at\s+(?:you|him)|face\s+(?:down|turned)\s+(?:in|into|against)\s+the\s+pillow|presses?\s+her\s+(?:face|cheek)\s+(?:in|into)\s+the\s+(?:pillow|mattress|quilt)|arches?\s+her\s+back\s+(?:and\s+)?(?:pushes|presses)\s+back)\b/i],
+            ['kneeling', /\b(?:on\s+her\s+knees\s+(?:in\s+front\s+of|before|between)|kneels?\s+(?:down\s+)?(?:in\s+front\s+of|before|between)\s+(?:you|him|your)|takes?\s+(?:you|him)\s+in(?:to)?\s+her\s+mouth|her\s+mouth\s+(?:on|around|over)\s+(?:you|him)|goes\s+down\s+on\s+(?:you|him)|looks?\s+up\s+at\s+(?:you|him)\s+(?:from\s+(?:between|below|her\s+knees)|with\s+(?:you|him)\s+in\s+her\s+mouth)|wraps?\s+her\s+lips)\b/i],
+        ];
+        const LABELS = POSES.map(function (p) { return p[0]; });
+        function detect(text) {
+            const t = String(text || '').replace(/<[^>]+>/g, ' ');
+            let best = null;
+            for (const [pose, re] of POSES) {
+                re.lastIndex = 0;
+                const m = re.exec(t);
+                if (m && (!best || m.index > best.at)) best = { pose, cue: m[0], at: m.index };   // the LAST position named wins
+            }
+            return best;
+        }
+        return { detect, LABELS, POSES };
+    })();
+    // === POSE ENGINE (pure) END ===
     // === BACKGROUND ENGINE (pure) BEGIN ===
     // Layered evidence/veto verdict for the background — the same pattern as
     // moods and presence. Pure: no DOM, no ST. The caller supplies the
@@ -4373,6 +4401,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // asserted and then verified: an empty sprite src within ~6s gets it
     // re-issued. With a real classifier configured this never fires.
     let lastMoodLabel = null;
+    let lastPose = null;
     let assertSeq = 0;
     let hydrateUntil = 0; // re-asserts inside the load window are debug-level
     function spriteIsBlank() {
@@ -4615,11 +4644,29 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             dbg(MoodEngine.describe(tag, local, lex, out) + ` [L0 ${ext.dialogue} dlg/${ext.narration} narr]`);
             moodState.lastVerdict = (out.final || 'hold') + ' — ' + out.rule;
             updateMoodStatus();
-            if (!out.final || out.hold) return;
+            // 0.8.9: position sprites. Inside an intimate message the last-named position becomes the
+            // sprite (riding / beneath / behind / kneeling) and sticks; the climax still wins its own
+            // message; a message with no intimate language clears the pose and moods take over again.
+            let pose = null;
+            try {
+                if (settings.poseSprites !== false) {
+                    const intimateNow = MoodEngine.isIntimate(raw);
+                    const p = intimateNow ? PoseEngine.detect(raw) : null;
+                    if (p) { if (p.pose !== lastPose) dbg(`pose ${lastPose || 'none'} -> ${p.pose} ("${p.cue}")`); lastPose = p.pose; }
+                    else if (!intimateNow && lastPose) { dbg(`pose ${lastPose} cleared (scene no longer intimate)`); lastPose = null; }
+                    pose = lastPose;
+                }
+            } catch (e) { /* ignore */ }
+            const wantLabel = (out.final === 'orgasm') ? 'orgasm' : (pose || (out.hold ? null : out.final));
+            if (!wantLabel) return;
             const list = await spriteList(activeSpriteFolder(ctx));
             const avail = new Set(list.map(function (x) { return x.label; }));
-            const mapped = MoodEngine.mapToAvailable(out.final, avail);
-            emitMood(ctx, mapped, out.final, settings);
+            if (pose && wantLabel === pose && !avail.has(pose)) {
+                if (!out.final || out.hold) return;
+                emitMood(ctx, MoodEngine.mapToAvailable(out.final, avail), out.final, settings); return;
+            }
+            const mapped = MoodEngine.mapToAvailable(wantLabel, avail);
+            emitMood(ctx, mapped, out.final || wantLabel, settings);
         } catch (e) {
             console.error(`${LOG} mood verdict failed`, e);
         }
