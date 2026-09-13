@@ -413,7 +413,7 @@
         'disappointment', 'disapproval', 'disgust', 'embarrassment',
         'excitement', 'fear', 'gratitude', 'grief', 'joy', 'love',
         'nervousness', 'optimism', 'pride', 'realization', 'relief',
-        'remorse', 'sadness', 'surprise', 'neutral'];
+        'remorse', 'sadness', 'surprise', 'neutral', 'orgasm'];   // 0.8.8: optional custom expression for love-scene sets
     const EXPRESSION_LABEL_SET = new Set(EXPRESSION_LABELS);
     // v0.5.3 presence: the dialogue-colour hex is the only STRONG evidence;
     // a name (or kinship alias) counts only with a presence/arrival/speech
@@ -439,7 +439,7 @@
     //   L3 lexicon()       — weighted cue table with vetoes + negation
     //   verdict()          — the deterministic rules (documented inline)
     const MoodEngine = (function () {
-        const LABELS = ['admiration', 'amusement', 'anger', 'annoyance', 'approval',
+        const LABELS = ['orgasm', 'admiration', 'amusement', 'anger', 'annoyance', 'approval',
             'caring', 'confusion', 'curiosity', 'desire', 'disappointment',
             'disapproval', 'disgust', 'embarrassment', 'excitement', 'fear',
             'gratitude', 'grief', 'joy', 'love', 'nervousness', 'optimism', 'pride',
@@ -473,6 +473,7 @@
             ['wry(?:ly)?', 'amusement', 1, []],
             ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
             ['married a good man|I\'?m (?:just )?going to keep you|keep you\\b|forehead\\s+(?:into|against|to)\\s+(?:his|your)\\s+(?:chest|collarbone|neck|shoulder)|(?:hand|palm)\\s+(?:flat\\s+|pushed\\s+|slides?\\s+)?(?:up\\s+)?under\\s+(?:his|your)\\s+shirt|mouth\\s+off\\s+hers|lifts?\\s+his\\s+mouth|her\\s+(?:ear|cheek|head)\\s+(?:flat\\s+)?(?:on|against)\\s+(?:his|your)\\s+(?:chest|sternum|heart)', 'love', 2, ['fear', 'anger', 'disgust']],
+            ['(?:she|I)\\s+(?:comes?|came)\\b(?!\\s+(?:back|in|out|down|up|over|round|to|home|through|across|forward|closer|away|off|along|round|first|second|out\\s+of|into|from|with\\s+(?:a|the|her|his)\\b|and))|I\'?m\\s+(?:coming|gonna\\s+come|going\\s+to\\s+come)|comes?\\s+(?:hard|apart|undone)|climax(?:es|ing)?|orgasm|goes\\s+over\\s+the\\s+edge|(?:tips|falls|shatters|breaks)\\s+(?:over|apart)|wave\\s+after\\s+wave|her\\s+release|shudders?\\s+(?:through|toward|into)\\s+(?:it|her\\s+release|release)|(?:clench|tighten)(?:es|ing)?\\s+around\\s+(?:you|him)|cries\\s+out\\s+(?:his\\s+name|your\\s+name)|peaks?\\b(?=[^.]{0,40}(?:her|she|body|around))', 'orgasm', 5, ['fear', 'sadness', 'anger', 'annoyance', 'disgust', 'nervousness', 'embarrassment']],
             ['taking\\s+him\\s+in|settles?\\s+down\\s+onto\\s+him|rolls?\\s+her\\s+hips|rocks\\s+(?:once|again|her\\s+hips)|have\\s+you\\s+in\\s+this\\s+bed|looks\\s+down\\s+the\\s+length\\s+of\\s+him|knees\\s+(?:tucked|planted)\\s+either\\s+side|grind(?:s|ing)\\s+(?:down|against|on)|rid(?:es|ing)\\s+(?:you|him)|hot\\s+and\\s+slick|slick\\s+and|sweat\\s+(?:at|on|down)\\s+(?:the\\s+small\\s+of\\s+)?her\\s+back|breathing\\s+hard|(?:noise|moan|sound)\\s+(?:she|he)\\s+(?:has\\s+to\\s+)?bites?\\s+off|humming\\s+noises|(?:back|spine)\\s+arches|arches\\s+(?:with|into|under)|comes?\\s+down\\s+onto\\s+you|the\\s+length\\s+of\\s+you|watching\\s+you\\s+under\\s+her\\s+lashes|let\\s+me\\s+work|I\\s+want\\s+to\\s+hear\\s+you', 'desire', 2.5, ['anger', 'fear', 'sadness', 'disgust']],
             ['tenderness|tenderly|with\\s+a\\s+tenderness', 'love', 1.5, []],
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
@@ -787,6 +788,7 @@
                             continue;
                         }
                         const w = cue.w * p.w;
+                        if (cue.label === 'orgasm' && !intimate) continue;
                         if (intimate && /^(?:fear|sadness|grief|anger|annoyance|disapproval|nervousness)$/.test(cue.label) && BODILY_RE.test(m[0])) {
                             scores.desire = (scores.desire || 0) + w; hitWeight += w; hitCount++;
                             cues.push(m[0] + '→desire (intimate)'); continue;
@@ -877,7 +879,7 @@
             // "I know he'd cry") needs a clear margin: go_emotions reads cry/blood/knelt as
             // sadness even when she is saying something tender. With any lexicon cue in that
             // family the normal floor applies.
-            const WARM = new Set(['love', 'joy', 'amusement', 'gratitude', 'caring', 'admiration', 'excitement', 'optimism', 'pride', 'relief', 'approval', 'desire']);
+            const WARM = new Set(['love', 'joy', 'amusement', 'gratitude', 'caring', 'admiration', 'excitement', 'optimism', 'pride', 'relief', 'approval', 'desire', 'orgasm']);
             const DARK = { sadness: ['sadness', 'grief', 'remorse', 'disappointment'], grief: ['grief', 'sadness'], remorse: ['remorse', 'sadness'], disappointment: ['disappointment', 'sadness'],
                 fear: ['fear', 'nervousness'], anger: ['anger', 'annoyance', 'disapproval'], disgust: ['disgust', 'disapproval'] };
             // ...or when the lexicon itself is reading warm (a kiss, a smile) with no dark cue at all —
@@ -943,6 +945,7 @@
 
         // Nearest available sprite when the folder lacks the label.
         const NEAREST = {
+            orgasm: ['desire', 'joy', 'love', 'excitement'],
             anger: ['sadness', 'nervousness', 'disapproval', 'annoyance'], annoyance: ['sadness', 'nervousness', 'anger', 'disapproval'],
             disgust: ['sadness', 'nervousness', 'disapproval', 'anger'], disapproval: ['sadness', 'nervousness', 'anger'],
             grief: ['sadness', 'nervousness'], sadness: ['grief', 'nervousness', 'disappointment'],
