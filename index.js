@@ -4312,9 +4312,24 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const femaleRes = cast.filter(function (c) { return c.female; }).map(function (c) { return c.re; });
             const start = Math.max(0, chat.length - WARDROBE_LOOKBACK);
             const state = {}; const recent = [];
+            let lastDay = null; let dateRe = null;
+            try { dateRe = compileRegex(settings.dateRegex); } catch (e) { dateRe = null; }
             for (let i = start; i < chat.length; i++) {
                 const m = chat[i]; if (!m || m.is_system) continue;
                 const text = String(m.mes || '').split('<details')[0].slice(0, 20000);
+                // Day rollover: when the header moves to a new date, outerwear, accessories and shoes put on
+                // before it come off (nobody keeps the coat on across a night); tops/dresses stay until the text says.
+                try {
+                    const dm = dateRe ? dateRe.exec(text) : null;
+                    const day = dm ? String(dm[0]).toLowerCase().replace(/\s+/g, ' ') : null;
+                    if (day && lastDay && day !== lastDay) {
+                        for (const who of Object.keys(state)) for (const g of Object.keys(state[who])) {
+                            const c = WardrobeEngine.category(g);
+                            if ((c === 'outer' || c === 'acc' || c === 'feet') && state[who][g].at < i) delete state[who][g];
+                        }
+                    }
+                    if (day) lastDay = day;
+                } catch (e) { /* ignore */ }
                 const r = WardrobeEngine.scan(text, cast, state, {
                     at: i, mainRe, userRe, otherFemale: femaleRes.some(function (re) { return re.test(text); }),
                     userIsMale: settings.userIsMale !== false, speaker: m.is_user ? 'user' : 'main',
