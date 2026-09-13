@@ -6174,7 +6174,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         };
         bindSelect('sd_hudPosition', 'hudPosition');
         bindSelect('sd_hudStyle', 'hudStyle');
-        for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters', 'hudWardrobe', 'wardrobeInject']) bindCheck('sd_' + k, k);
         // 0.8.6: drag-to-position toggle + reset
         try {
             const dragCb = document.getElementById('sd_spriteDrag');
@@ -6216,6 +6215,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
             return el2;
         };
+        // HUD row toggles (bound here: bindCheck is a const, so it must be defined first)
+        for (const k of ['hudDate', 'hudLoc', 'hudWeather', 'hudCounters', 'hudWardrobe', 'wardrobeInject']) bindCheck('sd_' + k, k);
         const autoCb = bindCheck('sd_chipSizeAuto', 'chipSizeAuto');
         bindCheck('sd_holdCostume', 'holdCostume');
         bindCheck('sd_enableChatGlass', 'enableChatGlass');
