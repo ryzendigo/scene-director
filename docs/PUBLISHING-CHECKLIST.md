@@ -8,11 +8,11 @@ v0.1.2 tagged and released, announcement drafts current. What's left needs a hum
 Use a **starter-pack or generic chat**, not your own story (no private names,
 faces or text in anything public). In SillyTavern with Scene Director active:
 
-- [ ] **Cards in the drawer** — Extensions → Scene Director showing a few Cast
+- [x] **Cards in the drawer** — Extensions → Scene Director showing a few Cast
       and Place cards. Save as `docs/screenshot-cards.png`.
-- [ ] **Scan wizard** — the 🔍 Scan my chat results with proposed cards. Save as
+- [x] **Scan wizard** — the 🔍 Scan my chat results with proposed cards. Save as
       `docs/screenshot-scan-wizard.png`.
-- [ ] **Stage in action** — a message with a scene header, HUD visible, 2–3 chips
+- [x] **Stage in action** — a message with a scene header, HUD visible, 2–3 chips
       bottom-left. Save as `docs/screenshot-cast-strip.png`.
 
 Crop tight, PNG, roughly 1200 px wide. The README already references exactly
