@@ -1855,7 +1855,7 @@
     let lastBg = null;
     let lastBgGraded = false;   // last applied bg is a graded (-night/-rain/-dusk) pick
     let lastBgLoc = null;       // 0.7.0: 📍 text the current background was chosen for
-    const bgTablesCache = { key: null, tables: null };
+    let bgTablesCache = { key: null, tables: null };
     function bgTables(settings) {
         const key = JSON.stringify([settings.bgGenericLexicon, settings.bgNounLexicon]);
         if (bgTablesCache.key !== key) bgTablesCache = Object.assign(bgTablesCache, { key, tables: BackgroundEngine.compileTables({ generic: settings.bgGenericLexicon || null, nouns: settings.bgNounLexicon || null }) });
