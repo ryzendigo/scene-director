@@ -544,7 +544,7 @@
             ['(?:she|I|her\\s+back|her\\s+shoulders|her\\s+spine)\\s+stiffen(?:s|ed|ing)?|stiffens?\\s+(?:against\\s+(?:him|you|his)|under\\s+(?:his|your)|at\\s+the\\s+(?:sound|touch|word)|when\\s+(?:he|you))', 'fear', 2, []],  // not the concrete/mix stiffening
             // stillness in his arms / against him is anticipation, not fear
             // 'goes still' is fear only for the whole person; a mouth/face/smile gone still is attention.
-            ['(?<!(?:mouth|face|smile|features|expression|eyes|hands?|voice|fingers|thumb|foot|you|he|his)\\s(?:has\\s|have\\s|had\\s)?)(?:goes|went|gone)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under|beside)\\s+(?:his|your|the|you|him|me)\\b)(?!\\s+on\\s+(?:his|your)\\s+(?:arm|chest|hand))(?!,?\\s+(?:listening|watching|waiting|attentive))', 'fear', 2, []],
+            ['(?<!(?:mouth|face|smile|features|expression|eyes|hands?|voice|fingers|thumb|foot|you|he|his)\\s(?:has\\s|have\\s|had\\s)?)(?:goes|went|gone)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under|beside)\\s+(?:his|your|the|you|him|me)\\b)(?!\\s+on\\s+(?:his|your)\\s+(?:arm|chest|hand))(?![^.!?]{0,90}\\b(?:listening|watching|waiting|attentive|reading))', 'fear', 2, []],
             ['listen(?:s|ing)?\\s+with\\s+her\\s+whole\\s+(?:face|body|self)|(?:mouth|face)\\s+gone\\s+still|eyes\\s+flat\\s+on\\s+(?:him|you)|(?:whole|entire)\\s+attention', 'curiosity', 2, []],  // attentive, not afraid
             // controlled anger / resolve tells (quiet fury, not fear)
             ['quiet\\s+and\\s+level|level\\s+(?:voice|tone)|voice\\s+(?:is\\s+)?level', 'anger', 1.5, ['fear']],
@@ -1105,7 +1105,7 @@
             // Decided only from the text immediately AROUND this member's own
             // lines (±180 chars), and only by voice-through-a-phone phrasing —
             // a receiver being put down elsewhere in the message is not it.
-            const PHONE_RE = /down the (?:line|cable|wire)|over the phone|on the phone|through the (?:receiver|earpiece|phone|line)|into the (?:phone|receiver|mouthpiece)|voice (?:arrives|comes|crackles)[^.]{0,50}\b(?:line|phone|cable|receiver|earpiece)|(?:line|phone|receiver) (?:crackles|hisses|clicks)|ringback|speakerphone|hangs? up|hung up/i;
+            const PHONE_RE = /down the (?:line|cable|wire)|over the phone|on the phone|\bhandset\b|\bcradle\b|\breceiver\b|ringback|long-distance|thousand miles|the line (?:breathing|hiss|crackl|clicks|goes|picks up)|(?:picks?|picked) up on the \w+ ring|through the (?:receiver|earpiece|phone|line)|into the (?:phone|receiver|mouthpiece)|voice (?:arrives|comes|crackles)[^.]{0,50}\b(?:line|phone|cable|receiver|earpiece)|(?:line|phone|receiver) (?:crackles|hisses|clicks)|ringback|speakerphone|hangs? up|hung up/i;
             let phone = false;
             if (strong) {
                 for (const h of hexes) {
