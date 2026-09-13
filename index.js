@@ -2891,8 +2891,24 @@
     // Background crossfade
     // ------------------------------------------------------------------
 
+    // Animated backgrounds: an ambient loop saved beside a still as <name>.webp and listed in
+    // /backgrounds/animated.json is used in place of the still whenever the still would be shown.
+    const animatedBackgrounds = new Set();
+    (function loadAnimatedBackgrounds() {
+        try {
+            fetch('/backgrounds/animated.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (list) { if (Array.isArray(list)) for (const k of list) animatedBackgrounds.add(String(k)); })
+                .catch(function () { /* stills only */ });
+        } catch (e) { /* ignore */ }
+    })();
+    function animatedBackground(bg) {
+        const m = /^(.*)\.(jpe?g|png)$/i.exec(String(bg || ''));
+        return (m && animatedBackgrounds.has(m[1])) ? m[1] + '.webp' : bg;
+    }
+
     async function applyBackground(ctx, bg, settings) {
         let issued = false;
+        bg = animatedBackground(bg);
         try {
             if (!settings.enableBgCrossfade) {
                 await runCommand(ctx, `/bg ${bg}`);

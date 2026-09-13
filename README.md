@@ -155,6 +155,7 @@ One card per recurring character:
   instead of floating on the source photo's background. Batch-convert a folder
   of portraits with [`tools/cutout.py`](tools/README.md) (rembg-based, one
   command).
+- **Animated backgrounds** *(0.9.1)*: save an ambient loop beside any still as `<name>.webp` and list the names in `backgrounds/animated.json` (`["kitchen", "porch-rain"]`); whenever a Place card would show the still, the loop is used instead. Same Wan-style recipe as the portraits, just no cutout.
 - **Animated portraits** *(0.9.0)*: drop an animated `npc/<key>.webp` (and
   `npc/<key>-happy.webp` etc.) beside the still and list the names in
   `npc/animated.json` (`["june", "june-happy"]`). Chips use the loop when the
