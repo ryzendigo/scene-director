@@ -1,105 +1,85 @@
-# Announcement drafts
+# Announcement drafts (current: Scene Director v0.9.0, ChatSlim v0.1.2)
 
-Ready-to-paste posts for the v0.1.0 release. Add the two screenshots before
-posting (see PUBLISHING-CHECKLIST.md).
-
----
-
-## SillyTavern Discord — #extensions
-
-> **Scene Director** — scene-header-driven auto backgrounds, costumes and cast
->
-> If your preset makes the model start every reply with a status line like
-> `[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]`
-> (Freaky Frankenstein-style time trackers), this extension reads that header and
-> directs the scene for you:
->
-> - **Auto backgrounds** — maps the location text to a background via regexes and runs `/bg`
-> - **Seasonal swaps** — a mapped background gets a variant in a given month (Christmas lights in December)
-> - **Era swaps** — once the *story* year passes a threshold, one background permanently becomes another
-> - **Auto costumes** — `/costume` by location + time of day (pajamas in the bedroom after 8 pm)
-> - **Cast strip** — small portrait chips for the NPCs who actually *speak* in the latest message (detected by dialogue font colour, with a name-regex fallback)
->
-> Everything is independently toggleable, all regexes/maps are editable JSON with
-> inline validation, and there's a "Test last message" dry-run button. It only
-> issues the same `/bg` and `/costume` commands you could type yourself — it never
-> touches your chat.
->
-> **It does not generate scene headers** — you need a preset that emits them
-> (the README has a one-line prompt snippet). No header, no-op.
->
-> Install URL: `https://github.com/ryzendigo/scene-director`
-> (Extensions → Install extension → paste the URL)
->
-> First release (v0.1.0), MIT. Screenshots coming shortly. Feedback welcome.
+Paste-ready. Attach the three screenshots named in PUBLISHING-CHECKLIST.md;
+a visual extension with no pictures gets scrolled past.
 
 ---
 
-## r/SillyTavernAI
+## 1. SillyTavern Discord — #extensions (short)
 
-**Title:** Scene Director — an extension that turns your scene-header/time-tracker line into auto backgrounds, costumes and a speaking-cast strip
+> **Scene Director v0.9.0** — describe your story's world as a deck of cards and it runs the stage
+>
+> A UI extension for presets that write a scene header at the top of each reply
+> (`[ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]`,
+> Frankenstein-style trackers). It reads that line plus the message and does the stage-managing you'd otherwise do by hand:
+>
+> - **Backgrounds** by place, with day/night/dusk/rain/seasonal slots and era swaps, via plain `/bg`
+> - **Costumes** by place + time of day, via `/costume`, and a **👗 wardrobe tracker** that follows what the narration says she's wearing
+> - **Expressions** from a real mood engine: emotion tag → classifier → lexicon, with memory/hypothetical dampeners, happy-tears detection and swing gates so one dark word in a warm scene doesn't flip the sprite
+> - **Position sprites** for intimate scenes (custom expression names, falls back to mood if you don't have them)
+> - **Cast strip**: portrait chips for who is actually *in the room* (dialogue colour + arrival/departure evidence), 📞 badge for someone on the phone, mood bubbles, and now **animated portraits** (drop `.webp` loops beside the PNGs)
+> - Scene HUD with clock/date/weather, weather and lighting overlays, sprite crossfade, drag/scroll to place and size the sprite, photo mode, thought tooltips
+>
+> New chat setup is a minute: **🔍 Scan my chat** finds your characters' dialogue colours and your 📍 places and proposes the cards. No AI calls, no chat writes, everything toggleable, all rules editable JSON.
+>
+> Install: Extensions → Install extension → `https://github.com/ryzendigo/scene-director` (MIT)
+>
+> Companion: **ChatSlim** — warns when a chat file is getting big enough to crash the browser, strips dead swipe/scratch weight (verified lossless), and branches the last N messages into a fresh chat in one click. `https://github.com/ryzendigo/SillyTavern-ChatSlim`
+
+---
+
+## 2. r/SillyTavernAI (long)
+
+**Title:** Scene Director v0.9.0 — auto backgrounds, costumes, a wardrobe tracker, a mood engine for expressions and an animated cast strip, all driven by your scene header (plus ChatSlim for chats that crash the browser)
 
 **Body:**
 
 **What it is**
 
-A small UI extension I built for my own long-running RP and then cleaned up for
-release. If your preset makes the model begin each reply with a structured scene
-header — the "Freaky Frankenstein"-style time tracker, e.g.
+A UI extension that grew out of a long slice-of-life RP and got cleaned up for release. If your preset makes the model open every reply with a structured header, like the Frankenstein-style time tracker:
 
 ```
 [ 🕰️ 2:14 PM | ☀️ Tuesday, August 11, 2026 | 📍 the farmhouse kitchen | 🌥️ Overcast ]
 ```
 
-— then that line already knows where you are, what time it is, and what the date
-is. Scene Director parses it out of each AI message and uses it:
+then the model is already telling you where you are, what time it is, and what the weather's doing. Scene Director reads that line and the message body and keeps the stage in sync with the story. You describe the world as two small decks of cards in the settings drawer, **Cast** (who can appear) and **Places** (where scenes happen), and it does the rest deterministically. No extra API calls, and it never writes to your chat: it only issues the `/bg` and `/costume` commands you could type yourself.
 
-- **Auto backgrounds** — regex map from location text to a background file; it runs the normal `/bg` command for you
-- **Seasonal swaps** — in December (or whatever month), `living-room.jpg` becomes `living-room-christmas.jpg`
-- **Era swaps** — once the story's year reaches a threshold, a background is permanently replaced (my half-built house becomes the finished house from 2027 on)
-- **Auto costumes** — `/costume` based on location + time-of-day windows, with midnight wrap (bedroom, 8 pm–7 am → pajamas). Deliberately conservative: it never re-issues an unchanged costume, so manual `/costume` choices stick
-- **Cast strip** — circular portrait chips bottom-left for NPCs who *speak* in the latest message. Detection prefers a pinned dialogue `<font color>` per character (precise — a character merely mentioned doesn't light up), with a name-regex fallback
+**What it does**
 
-**Why**
+- **Backgrounds.** Each Place card has a matcher regex and slots for day, night, dusk, rain and seasonal variants (December lights). Era swaps replace a background permanently once the story's year passes a threshold.
+- **Costumes.** By place + time-of-day window with midnight wrap. Conservative: it never re-issues an unchanged costume, so your manual choices stick.
+- **👗 Wardrobe tracker.** Reads what the narration puts on and takes off ("she pulled the cardigan on", "shrugs out of the coat", "naked") over the last 80 messages, shows it in the HUD, and can inject a one-line `[WARDROBE — …]` note so the model stops forgetting she's in a towel. Costume rules can map tracked garments to a `/costume` folder.
+- **Expressions from a layered mood engine.** Emotion tag if your preset emits one, then the local classifier, then a lexicon pass, with the messy bits handled: past-tense and hypothetical mentions don't count ("I was so scared back then"), negated matches are vetoed, wet eyes with a smile read as joy not sadness, a single dark word in a warm scene has to earn the swing, thin evidence holds the previous face.
+- **Position sprites.** Optional custom expression folders for intimate scenes, a climax rule that wins its message, fallback to the ordinary mood if the folder isn't there.
+- **Cast strip.** Circular portrait chips for the characters actually *present*, using dialogue colour plus arrival/departure/reported-speech evidence, so someone merely mentioned doesn't light up. 📞 badge for a character speaking down a phone line. Mood bubbles with per-mood portrait variants. Unknown speakers get a tinted silhouette with a best-guess name. **New in 0.9.0:** animated portraits: drop `npc/<key>.webp` loops next to the stills, list them in `npc/animated.json`, done.
+- **Stage.** HUD with clock/date/weather and day counters, weather and lighting overlays, sprite shadow tint, background and sprite crossfades, Ken Burns drift, fire flicker, drag and scroll-wheel to place and size the sprite, photo mode, thought tooltips, tab title.
 
-Long multi-year slice-of-life RPs accumulate a lot of "housekeeping": switching
-the background every time the scene moves, remembering costumes, keeping track of
-who's in the room. The model already narrates all of that — the header makes it
-machine-readable, so the UI might as well keep up on its own.
+**Setup**
+
+**🔍 Scan my chat** reads your existing messages, finds each character's dialogue font colour and every 📍 location, and proposes the cards; you click **+ cast card** / **+ place card**. **Test last message** dry-runs the parser and shows exactly what it detected, which is the answer to almost every "nothing happens" (no header in the message, or no card matches the place).
 
 **What it is not**
 
-It does **not** generate scene headers. It's a consumer, not a producer — your
-preset/system prompt has to instruct the model to emit one per reply (one-line
-snippet in the README). With no header present, everything quietly no-ops. It
-also never modifies your chat: it only issues the same `/bg`/`/costume` slash
-commands you could type by hand.
+It doesn't generate scene headers. Your preset has to emit one per reply (one-line snippet in the README). No header, quiet no-op.
 
-**Config example** (background map — first match wins, case-insensitive regexes
-against the location text only):
+**ChatSlim** (companion, separate install)
 
-```json
-[
-  { "pattern": "farmhouse.*kitchen",        "background": "farm-kitchen.jpg" },
-  { "pattern": "kitchen",                   "background": "home-kitchen.jpg" },
-  { "pattern": "bedroom|their room|master", "background": "bedroom.jpg" },
-  { "pattern": "car\\b|driving|highway",    "background": "car-interior.jpg" }
-]
-```
+Same RP hit 2,457 messages / 18.7 MB and started crashing the browser. Only about 4 MB of that was visible text; the rest was unchosen swipes, per-swipe metadata and a summariser's scratch text. ChatSlim warns when a chat is heading that way, strips the dead weight with a verified-lossless check, and **Slim & Branch** carries the last N messages into a fresh chat in one click (uses ST's own branch code, 1.18-safe).
 
-All three header regexes are editable too, so any header format that carries a
-location, a clock time and a date can drive it — the defaults just match the
-format above. There's a **Test last message** button that dry-runs the parser on
-your chat's latest AI message and shows exactly what it detected; I used it
-constantly while building my own maps and recommend the same.
+Repos, MIT:
+- https://github.com/ryzendigo/scene-director
+- https://github.com/ryzendigo/SillyTavern-ChatSlim
 
-**FAQ:** "Nothing happens" almost always means either your messages have no
-scene header (check your preset) or your location doesn't match any map entry —
-Test last message will tell you which.
+Install either with Extensions → Install extension → paste the URL. Happy to hear about header formats it should match out of the box.
 
-Repo + README: https://github.com/ryzendigo/scene-director
-Install: Extensions → Install extension → paste the repo URL. MIT licensed.
+---
 
-Screenshots coming — I'll add them to the repo shortly. This is v0.1.0, extracted
-from a prototype that's been running in my own daily chat for a while; happy to
-hear about header formats it should support out of the box.
+## 3. ChatSlim standalone (Discord #extensions, if posted separately)
+
+> **ChatSlim** — for chats big enough to crash the browser
+>
+> ST loads and saves a chat as one unit; past a couple thousand messages that means minute-long loads, freezes after sending, and eventually "Out of Memory" / STATUS_BREAKPOINT renderer crashes. Most of the file usually isn't text: it's unchosen swipes, per-swipe metadata and extension scratch.
+>
+> ChatSlim shows the breakdown, warns at a size threshold, strips the dead weight (round-trips and diffs the visible chat before it will save), and **Slim & Branch** starts a fresh chat from the last N messages with one click.
+>
+> `https://github.com/ryzendigo/SillyTavern-ChatSlim` (MIT, v0.1.2, ST 1.18)

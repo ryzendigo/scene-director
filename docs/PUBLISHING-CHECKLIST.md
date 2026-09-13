@@ -1,30 +1,32 @@
 # Publishing checklist — remaining manual steps
 
-Everything automatable is done: repo description + topics set, v0.1.0 tagged and
-released, announcement drafts written. What's left needs a human:
+Everything automatable is done: repo description + topics set, v0.9.0 and ChatSlim
+v0.1.2 tagged and released, announcement drafts current. What's left needs a human:
 
-## 1. Take the two screenshots (blocks everything else)
+## 1. Take the three screenshots (blocks everything else)
 
-In your own SillyTavern with Scene Director active:
+Use a **starter-pack or generic chat**, not your own story (no private names,
+faces or text in anything public). In SillyTavern with Scene Director active:
 
-- [ ] **Cast strip in action** — a chat message with a scene header where 2–3 NPC
-      chips are visible bottom-left. Save as `docs/screenshot-cast-strip.png`.
-- [ ] **Settings drawer** — Extensions → Scene Director, scrolled to show the
-      toggles plus one populated JSON map (ideally with the "Test last message"
-      result visible). Save as `docs/screenshot-settings.png`.
+- [ ] **Cards in the drawer** — Extensions → Scene Director showing a few Cast
+      and Place cards. Save as `docs/screenshot-cards.png`.
+- [ ] **Scan wizard** — the 🔍 Scan my chat results with proposed cards. Save as
+      `docs/screenshot-scan-wizard.png`.
+- [ ] **Stage in action** — a message with a scene header, HUD visible, 2–3 chips
+      bottom-left. Save as `docs/screenshot-cast-strip.png`.
 
-Crop tight, PNG, roughly 1200 px wide is plenty. The README already references
-exactly those two paths, so:
+Crop tight, PNG, roughly 1200 px wide. The README already references exactly
+those paths (README line ~90), so:
 
 ```bash
 cd ~/scene-director
-git add docs/screenshot-cast-strip.png docs/screenshot-settings.png
+git add docs/screenshot-cards.png docs/screenshot-scan-wizard.png docs/screenshot-cast-strip.png
 git commit -m "Add screenshots"
 git push
 ```
 
 Then delete the "Screenshot placeholders" blockquote line from README.md (keep
-the two images), commit, push.
+the three images), commit, push.
 
 ## 2. Post the announcements
 
@@ -32,9 +34,13 @@ Texts are in [ANNOUNCEMENT.md](ANNOUNCEMENT.md) — paste as-is, but attach/embe
 the two screenshots (Discord: drag the PNGs into the message; Reddit: image links
 or a gallery).
 
-- [ ] SillyTavern Discord → **#extensions** (short version)
-- [ ] r/SillyTavernAI (long version; flair it "Discussion" or whatever
-      extension-release flair is current)
+- [ ] SillyTavern Discord → **#extensions** (draft 1). Also drop a line in
+      **#showcase** with just the stage screenshot if that channel exists.
+- [ ] r/SillyTavernAI (draft 2). Pick the extension/release flair that's current;
+      if mods route releases to the weekly megathread, post there instead.
+- [ ] ChatSlim on its own (draft 3) a few days later so it isn't buried.
+- [ ] GitHub: both repos already carry the `sillytavern-extension` topic, which
+      is how people browse extensions on GitHub itself.
 
 ## 3. (Optional, later) Submit to the SillyTavern-Content index
 
