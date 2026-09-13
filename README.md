@@ -87,11 +87,13 @@ Every feature is independently toggleable. With no scene header in a message,
 everything no-ops quietly. The extension only reads messages and issues slash
 commands — it never modifies your chat.
 
-> **Screenshot placeholders**
->
-> ![Cast & Place cards in the settings drawer](docs/screenshot-cards.png)
-> ![Scan-my-chat wizard results](docs/screenshot-scan-wizard.png)
-> ![Cast strip + HUD in action](docs/screenshot-cast-strip.png)
+![The stage: café background from the 📍 header, HUD top-right, sprite, and portrait chips for who is in the room](docs/screenshot-cast-strip.png)
+
+<p align="center">
+<img src="docs/screenshot-scan-wizard.png" width="46%" alt="Scan-my-chat wizard: dialogue colours and locations found, one-click card creation">
+&nbsp;
+<img src="docs/screenshot-cards.png" width="46%" alt="Cast cards in the settings drawer">
+</p>
 
 ## The scene header
 
