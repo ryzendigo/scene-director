@@ -871,6 +871,10 @@
             const lex = input.lex || { top: null, topScore: 0, vetoes: new Set(), hitWeight: 0, hitCount: 0, cues: [] };
             const local = normaliseLocal(input.local);
             const prev = input.prev || null;
+            // Thin evidence: she said nothing and the lexicon found nothing of hers — the classifier is
+            // then reading a scene about OTHER people (a phone call, a row across the table) and
+            // needs a clear margin before it may move her face.
+            const thin = (input.dialogue === 0) && !(lex.hitCount > 0);
             const vetoed = function (l) { return lex.vetoes.has(l); };
             const okNeutral = function (share) { return share >= 0.5 && lex.hitCount === 0; };
             // go_emotions' catch-all labels need a clearer margin.
@@ -892,7 +896,7 @@
                 if (!WARM.has(prev) && warmLex < 1.5) return false;
                 return !DARK[l].some(function (k) { return lex.scores && (lex.scores[k] || 0) > 0; });
             };
-            const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic) || darkSwing(l)) ? 0.45 : 0.35; };
+            const need = function (l) { return (l === 'confusion' || l === 'neutral' || (l === 'desire' && !romantic) || darkSwing(l) || thin) ? 0.45 : 0.35; };
             // 0: an actual climax cue beats everything, the model's tag included (it tends to tag the
             //    feeling around it — nervousness, fear — instead of the moment).
             if (lex.scores && (lex.scores.orgasm || 0) >= 5) return { final: 'orgasm', rule: '0 climax', hold: false };
@@ -937,7 +941,7 @@
                 if (c.label === 'neutral' || c.label === 'confusion' || vetoed(c.label)) continue;
                 if (c.label === 'desire' && !romantic) continue;
                 // 0.30 share of the top-5 is the floor; ~0.25 is near-uniform noise.
-                if (c.share >= (darkSwing(c.label) ? 0.45 : 0.30)) return { final: c.label, rule: '3d local top-3', hold: false };
+                if (c.share >= ((darkSwing(c.label) || thin) ? 0.45 : 0.30)) return { final: c.label, rule: '3d local top-3', hold: false };
             }
             if (lex.top === 'neutral' && lex.hitWeight >= 2 && lex.hitCount >= 2) return { final: 'neutral', rule: '3c lexicon (positive neutral)', hold: false };
             // 3c-lite: a held DARK mood does not survive a message whose only cues are warm (a kiss,
@@ -4643,7 +4647,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             });
             const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
             const local = tag ? null : await classifyLocal(MoodEngine.classifierText(ext, 1500));
-            const out = MoodEngine.verdict({ tag, local, lex, prev: lastMoodLabel });
+            const out = MoodEngine.verdict({ tag, local, lex, prev: lastMoodLabel, dialogue: ext.dialogue });
             dbg(MoodEngine.describe(tag, local, lex, out) + ` [L0 ${ext.dialogue} dlg/${ext.narration} narr]`);
             moodState.lastVerdict = (out.final || 'hold') + ' — ' + out.rule;
             updateMoodStatus();
