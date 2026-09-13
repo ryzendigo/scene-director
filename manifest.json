@@ -1,0 +1,11 @@
+{
+    "display_name": "Scene Director",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "ryzendigo",
+    "version": "0.9.0",
+    "homePage": "https://github.com/ryzendigo/scene-director"
+}
