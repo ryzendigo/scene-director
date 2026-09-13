@@ -474,6 +474,7 @@
             ['(?:she|I)\\s+snort(?:s|ed)?\\b|snorts?\\s+(?:a\\s+laugh|softly|with\\s+laughter)|snort\\s+of\\s+(?:laughter|amusement)', 'amusement', 1.5, []],  // not a horse
             ['married a good man|I\'?m (?:just )?going to keep you|keep you\\b|forehead\\s+(?:into|against|to)\\s+(?:his|your)\\s+(?:chest|collarbone|neck|shoulder)|(?:hand|palm)\\s+(?:flat\\s+|pushed\\s+|slides?\\s+)?(?:up\\s+)?under\\s+(?:his|your)\\s+shirt|mouth\\s+off\\s+hers|lifts?\\s+his\\s+mouth|her\\s+(?:ear|cheek|head)\\s+(?:flat\\s+)?(?:on|against)\\s+(?:his|your)\\s+(?:chest|sternum|heart)', 'love', 2, ['fear', 'anger', 'disgust']],
             ['taking\\s+him\\s+in|settles?\\s+down\\s+onto\\s+him|rolls?\\s+her\\s+hips|rocks\\s+(?:once|again|her\\s+hips)|have\\s+you\\s+in\\s+this\\s+bed|looks\\s+down\\s+the\\s+length\\s+of\\s+him|knees\\s+(?:tucked|planted)\\s+either\\s+side|grind(?:s|ing)\\s+(?:down|against|on)|rid(?:es|ing)\\s+(?:you|him)|hot\\s+and\\s+slick|slick\\s+and|sweat\\s+(?:at|on|down)\\s+(?:the\\s+small\\s+of\\s+)?her\\s+back|breathing\\s+hard|(?:noise|moan|sound)\\s+(?:she|he)\\s+(?:has\\s+to\\s+)?bites?\\s+off|humming\\s+noises|(?:back|spine)\\s+arches|arches\\s+(?:with|into|under)|comes?\\s+down\\s+onto\\s+you|the\\s+length\\s+of\\s+you|watching\\s+you\\s+under\\s+her\\s+lashes|let\\s+me\\s+work|I\\s+want\\s+to\\s+hear\\s+you', 'desire', 2.5, ['anger', 'fear', 'sadness', 'disgust']],
+            ['tenderness|tenderly|with\\s+a\\s+tenderness', 'love', 1.5, []],
             ['smil(?:es|ed|ing)', 'joy', 1.5, ['grief']],
             // the noun too: "a slow broad smile she cannot get off her face", "lets the smile through"
             ['(?:a|the|her)\\s+(?:slow\\s+|small\\s+|broad\\s+|wide\\s+|soft\\s+|shy\\s+|helpless\\s+|real\\s+|warm\\s+|big\\s+|proper\\s+)?smile\\b(?!\\s+(?:fad|di|drop|go|slip|fall|that\\s+does\\s+not|which\\s+does\\s+not|is\\s+gone|has\\s+gone))|lets?\\s+the\\s+smile\\s+through|cannot\\s+get\\s+off\\s+her\\s+face', 'joy', 1.5, ['grief']],  // not a smile that fades/dies/drops
@@ -492,9 +493,9 @@
             ['pink\\s+(?:across|in|on|over)\\s+(?:her|the)\\s+(?:cheeks|face)(?!\\s+(?:settles|stays|sits|holds|instead|doesn\'t|does\\s+not))', 'embarrassment', 3, []],
             // composed reproach — telling him off, not blushing
             ['I\'m\\s+cross|I\\s+am\\s+cross|cross\\s+(?:about|with|because)|that\'s\\s+the\\s+part\\s+that\\s+stings|wrong\\s+twice\\s+over|I\'m\\s+not\\s+sorry\\s+I', 'annoyance', 3, ['embarrassment']],
-            ['(?:fork|finger|knife|spoon)\\s+(?:stays\\s+)?(?:in\\s+her\\s+fist\\s+)?point(?:s|ed|ing)?\\s+at\\s+(?:him|you)|points?\\s+(?:the|her)\\s+(?:fork|finger)\\s+at', 'disapproval', 1.5, ['embarrassment']],
+            ['(?:fork|finger|knife|spoon)\\s+(?:stays\\s+)?(?:in\\s+her\\s+fist\\s+)?point(?:s|ed|ing)?\\s+at\\s+(?:him|you)|points?\\s+(?:the|her)\\s+(?:fork|finger)\\s+at', 'amusement', 1, []],  // mock-stern
             ['blush(?:es|ed|ing)?', 'embarrassment', 3, []],
-            ['flush(?:es|ed|ing)?(?!\\s+(?:the|it|a)\\b)(?!\\s+toilet)', 'embarrassment', 2, []],
+            ['flush(?:es|ed|ing)?(?!\\s+(?:the|it|a)\\b)(?!\\s+toilet)(?!\\s+(?:on\\s+her\\s+(?:skin|cheeks|chest)\\s+)?(?:from|with|after)\\s+(?:the\\s+)?(?:heat|steam|bath|shower|water|sun|cold|wind|walk|run|climb|effort|exertion|work|dancing|wine|warm|office|air|fire|stove|cooking|kitchen|morning))(?<!skin\\s(?:is\\s|was\\s)?)(?<!steam[^.]{0,30})', 'embarrassment', 2, []],  // not a bath/steam/exertion flush
             ['ducks?\\s+her\\s+head', 'embarrassment', 2, []],
             ['hides?\\s+her\\s+face', 'embarrassment', 2, []],
             ['mortif(?:ied|ying)', 'embarrassment', 3, []],
@@ -514,7 +515,7 @@
             ['(?<!\\bit\\s)(?<!\\blet\\s)\\bsnap(?:s|ped)\\b(?!\\s+(?:back|shut|closed|open|the|it|a\\b))', 'anger', 2.5, []],
             ['dryly|dr(?:y|ier)\\s+(?:voice|tone|smile|look|humou?r|little\\s+laugh)|(?:voice|tone)\\s+(?:goes|comes\\s+out|is)\\s+dr(?:y|ier)|says?\\s+(?:it\\s+)?dr(?:y|ily)', 'amusement', 1, []],  // not dry towels/clothes/hands
             // a set jaw alone is resolve; only a HARD/clenched/tight jaw reads as anger
-            ['jaw\\s+(?:set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)|clench(?:es|ed)?\\s+(?:her\\s+)?jaw', 'anger', 2.5, []],
+            ['(?<!(?:your|his|my)\\s)jaw\\s+(?:set\\s+hard|tight(?:ens)?|clench(?:es|ed)?)|clench(?:es|ed)?\\s+her\\s+jaw', 'anger', 2.5, []],  // her jaw, not his
             ['jaw\\s+sets?\\b(?!\\s+hard)', 'disapproval', 1, []],
             ['pink\\s+(?:comes|climbs|creeps|rises)\\s+up\\s+her\\s+(?:throat|neck)|colou?r\\s+(?:climbs|creeps)\\s+(?:up\\s+)?her\\s+(?:throat|neck)', 'embarrassment', 2, []],
             ['bites?\\s+(?:it\\s+)?off(?!\\s+(?:against|a\\s+(?:noise|sound|moan|cry|gasp|laugh)|the\\s+(?:noise|sound|moan|cry|gasp|laugh)))(?<!(?:noise|sound|moan|cry|gasp|laugh)\\s(?:she|he)\\s(?:has\\s)?to\\s)|through\\s+her\\s+teeth(?!\\s+(?:as|while|when)\\s+(?:she|he)\\s+(?:comes|moves|rides|arches))|spits?\\s+(?:it\\s+)?out', 'anger', 2.5, []],  // not a moan she bites off
@@ -527,10 +528,10 @@
             ['(?:she|I)\\s+glar(?:es|ed|ing)|glar(?:es|ed|ing)\\s+(?:at|across|up\\s+at|over)', 'anger', 3, []],  // not the sun glaring off the bonnet
             ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'anger', 2, []],
             ['furious|fury|rage', 'anger', 3, []],
-            ['\\btemper\\b', 'anger', 2, []],
-            ['(?:she|I)\\s+hiss(?:es|ed)?\\b|hiss(?:es|ed)\\s+(?:at|through\\s+her\\s+teeth)', 'anger', 2, []],  // not the pan/kettle
+            ['(?:los(?:es|t|ing)|keeps?)\\s+her\\s+temper|temper\\s+(?:flares|snaps|goes|frays)|in\\s+a\\s+temper|her\\s+temper\\s+(?:is\\s+)?up', 'anger', 2, []],  // not 'I found that temper in you'
+            ['(?:she|I)\\s+hiss(?:es|ed)?\\b(?!\\s+(?:softly|at\\s+the\\s+(?:heat|cold|sting|water)|through\\s+her\\s+teeth\\s+(?:when|as)))|hiss(?:es|ed)\\s+(?:at\\s+(?:him|you|me)|through\\s+her\\s+teeth(?!\\s+(?:when|as)))', 'anger', 2, []],  // not the pan/kettle, not a hiss at hot water or a sore muscle
             ['(?:she|I)\\s+slams?\\b|slams?\\s+(?:it|the\\s+\\w+)\\s+(?:down|shut)|slammed\\s+(?:it|the\\s+\\w+)\\s+(?:down|shut)', 'anger', 2, []],  // not a door slamming in the wind
-            ['sharply|voice\\s+(?:goes|is|comes\\s+out)\\s+sharp|sharp\\s+(?:voice|tone|look|edge\\s+(?:in|to)\\s+(?:her|it))|says?\\s+(?:it\\s+)?sharp', 'annoyance', 1, []],  // not 'sharp scratch', sharps bin, sharp knife
+            ['(?<!(?:cries|cry|gasps?|inhales?|breathes?|breathes?\\s+in|exhales?|looks?|glances?|turns?)\\s(?:out\\s)?)sharply|voice\\s+(?:goes|is|comes\\s+out)\\s+sharp|sharp\\s+(?:voice|tone|look|edge\\s+(?:in|to)\\s+(?:her|it))|says?\\s+(?:it\\s+)?sharp', 'annoyance', 1, []],  // not 'sharp scratch', sharps bin, sharp knife
             ['rolls?\\s+her\\s+eyes', 'annoyance', 2, []],
             ['(?:sighs?|breathes?)\\s+through\\s+her\\s+nose', 'annoyance', 1.5, []],
             ['huff(?:s|ed)?\\b(?!\\s+(?:a|of|out\\s+a)\\s+(?:laugh|breath\\s+of\\s+laughter))', 'annoyance', 2, []],
@@ -541,7 +542,7 @@
             ['(?:she|I|her\\s+back|her\\s+shoulders|her\\s+spine)\\s+stiffen(?:s|ed|ing)?|stiffens?\\s+(?:against\\s+(?:him|you|his)|under\\s+(?:his|your)|at\\s+the\\s+(?:sound|touch|word)|when\\s+(?:he|you))', 'fear', 2, []],  // not the concrete/mix stiffening
             // stillness in his arms / against him is anticipation, not fear
             // 'goes still' is fear only for the whole person; a mouth/face/smile gone still is attention.
-            ['(?<!(?:mouth|face|smile|features|expression|eyes|hands?|voice)\\s)(?:goes|went|gone)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under)\\s+(?:his|your|the)\\s+(?:arms?|hands?|chest|hold|touch|embrace))(?!,?\\s+(?:listening|watching|waiting|attentive))', 'fear', 2, []],
+            ['(?<!(?:mouth|face|smile|features|expression|eyes|hands?|voice|fingers|thumb|foot|you|he|his)\\s(?:has\\s|have\\s|had\\s)?)(?:goes|went|gone)\\s+(?:very\\s+)?still(?!\\s+and\\s+(?:bright|level|hard))(?!\\s+(?:inside|in|against|under|beside)\\s+(?:his|your|the|you|him|me)\\b)(?!\\s+on\\s+(?:his|your)\\s+(?:arm|chest|hand))(?!,?\\s+(?:listening|watching|waiting|attentive))', 'fear', 2, []],
             ['listen(?:s|ing)?\\s+with\\s+her\\s+whole\\s+(?:face|body|self)|(?:mouth|face)\\s+gone\\s+still|eyes\\s+flat\\s+on\\s+(?:him|you)|(?:whole|entire)\\s+attention', 'curiosity', 2, []],  // attentive, not afraid
             // controlled anger / resolve tells (quiet fury, not fear)
             ['quiet\\s+and\\s+level|level\\s+(?:voice|tone)|voice\\s+(?:is\\s+)?level', 'anger', 1.5, ['fear']],
@@ -556,7 +557,7 @@
             // "I'm afraid", "she looks terrified") — never as a noun ("that
             // scared"), never about someone else ("he was scared").
             ['\\b(?:she|she\'s|she\\s+is|she\\s+was|she\\s+looks|she\\s+sounds|she\\s+feels|I|I\'m|I\\s+am|I\\s+was|I\\s+feel)\\s+(?:\\w+\\s+){0,2}(?:afraid|scared|terrified|frightened|dreading)\\b', 'fear', 3, []],
-            ['(?:trembl(?:es|ed|ing)|shak(?:es|ing|y)\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+(?:it|the)\\b)(?!\\s+in\\s+(?:my|her|his)\\s+(?:shoes|boots)))', 'fear', 1.5, []],  // not 'I was shaking in my shoes' (memory/idiom)  // not 'shakes her head', not shaking with laughter
+            ['(?:(?:she|her\\s+(?:hands?|voice|body|frame|fingers|lip|chin|knees|shoulders|whole\\s+body)|I|I\'m)\\s+(?:is\\s+|are\\s+|am\\s+|was\\s+|were\\s+)?(?:trembl(?:es|ed|ing)|shak(?:es|ing|y))|(?:a|her)\\s+(?:shaky|trembling|unsteady)\\s+(?:breath|hand|hands|voice|laugh|exhale))\\b(?!\\s+(?:her|his|your|its)\\s+head)(?!\\s+with\\s+laugh)(?!\\s+hands\\s+with)(?!\\s+in\\s+(?:my|her|his)\\s+(?:shoes|boots))', 'fear', 1.5, []],  // her own body, not droplets off a leaf  // not 'I was shaking in my shoes' (memory/idiom)  // not 'shakes her head', not shaking with laughter
             ['flinch(?:es|ed)?', 'fear', 2, []],
             ['fidget(?:s|ed|ing)?', 'nervousness', 2, []],
             ['twists?\\s+her\\s+(?:fingers|ring|hands)', 'nervousness', 2, []],
@@ -762,6 +763,12 @@
                 let b = i; while (b < text.length && !/[.!?]/.test(text[b])) b++;
                 return text.slice(a, b);
             };
+            // In a love scene the body does things the dark cues also describe: thighs
+            // trembling, a voice that breaks, a sound that is almost a sob, being done
+            // being patient. When the part is plainly intimate, those bodily cues are desire.
+            const INTIMATE_RE = /\b(?:thighs?|hips?|rid(?:es|ing)\s+(?:you|him)|grind|seated|straddl|inside\s+(?:her|me)|climax|orgasm|release|moan|arch(?:es|ing)\s+into|comes?\s+(?:hard|for|apart)|rocks\s+(?:her|against)|bed\s+before\s+coffee|against\s+his\s+mouth|breasts?|nipples?|naked|nude)\b/i;
+            const BODILY_RE = /trembl|shak|voice\s+(?:cracks|wavers|breaks|catches)|\bsob|cries?\s+out|sharply|patient|goes?\s+still|gone\s+still|hiss|eyes\s+sting|shaky/i;
+            const intimate = ext.parts.some(function (p) { return INTIMATE_RE.test(p.text); });
             for (const p of ext.parts) {
                 for (const cue of table) {
                     cue.re.lastIndex = 0;
@@ -769,7 +776,7 @@
                     while ((m = cue.re.exec(p.text)) !== null) {
                         if (m.index === cue.re.lastIndex) cue.re.lastIndex++;
                         const before = p.text.slice(Math.max(0, m.index - 24), m.index);
-                        if (NEG_RE.test(before)) { vetoes.add(cue.label); cues.push('¬' + m[0]); continue; }
+                        if (NEG_RE.test(before) || /\b(?:not|never|no\s+longer|stopped\s+being|isn't|wasn't|ain't)\b/i.test(m[0])) { vetoes.add(cue.label); cues.push('¬' + m[0]); continue; }
                         const sent = sentenceAt(p.text, m.index);
                         const remembered = (p.kind === 'dialogue' ? (MEMORY_DLG_RE.test(sent) || FUTURE_DLG_RE.test(sent)) : MEMORY_NARR_RE.test(sent));
                         if (remembered) {
@@ -780,6 +787,10 @@
                             continue;
                         }
                         const w = cue.w * p.w;
+                        if (intimate && /^(?:fear|sadness|grief|anger|annoyance|disapproval|nervousness)$/.test(cue.label) && BODILY_RE.test(m[0])) {
+                            scores.desire = (scores.desire || 0) + w; hitWeight += w; hitCount++;
+                            cues.push(m[0] + '→desire (intimate)'); continue;
+                        }
                         scores[cue.label] = (scores[cue.label] || 0) + w;
                         hitWeight += w; hitCount++;
                         cues.push(m[0] + '→' + cue.label);
