@@ -3713,7 +3713,7 @@
             tip.appendChild(head);
             const bioEl = el('div', 'sd-tip-bio', '');
             tip.appendChild(bioEl);
-            if (opts.extra) tip.appendChild(el('div', 'sd-tip-extra', opts.extra));
+            if (opts.extra) { const exEl = el('div', 'sd-tip-extra', opts.extra); exEl.style.whiteSpace = 'pre-line'; tip.appendChild(exEl); }
             const t = thoughtsFor(opts.key, opts.nameRe, opts.aliasRe, settings);
             tip.appendChild(el('div', 'sd-tip-body', t || '(nothing written about their inner state in the last reply)'));
             if (opts.bio) {
@@ -3758,10 +3758,24 @@
             showThoughtTip(img, {
                 key: 'main:' + name, label: name, nameRe, aliasRe: null,
                 emoji: (settings.moodEmoji && settings.moodEmoji[lastMoodLabel]) || '',
-                extra: [lastMoodLabel ? 'mood: ' + lastMoodLabel : '', wearing('main') ? 'wearing: ' + wearing('main') : ''].filter(Boolean).join(' · ') || null, bio: null,
+                extra: spriteTipText(), bio: null,
             });
         });
         holder.addEventListener('mouseleave', hideThoughtTip);
+    }
+
+    // 0.9.2: everything the extension currently knows about the character, one line each.
+    function spriteTipText() {
+        const L = [];
+        try {
+            const rule = moodState.lastVerdict ? String(moodState.lastVerdict).split(' — ').slice(1).join(' — ') : '';
+            L.push('mood: ' + (lastMoodLabel || 'neutral') + (rule ? '  (' + rule + ')' : ''));
+            const w = wearing('main'); if (w) L.push('wearing: ' + w);
+            L.push('outfit: ' + (lastCostume || 'default') + (lastPose ? ' · pose: ' + lastPose : ''));
+            if (lastParsedLoc) L.push('📍 ' + lastParsedLoc);
+            if (typeof lastParsedDate !== 'undefined' && lastParsedDate && lastParsedDate.day) L.push(String(lastParsedDate.day).padStart(2, '0') + '/' + String(lastParsedDate.month).padStart(2, '0') + '/' + lastParsedDate.year);
+        } catch (e) { /* ignore */ }
+        return L.join('\n') || null;
     }
 
     function castStripEl(create) {
