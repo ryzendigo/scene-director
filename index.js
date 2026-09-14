@@ -1318,6 +1318,10 @@
             if (opts && opts.userRe && opts.userRe.test(sent)) return 'user';
             if (YOU_RE.test(sent) && !SHE_RE.test(sent) && !HE_RE.test(sent)) return addressee;
             if (I_RE.test(sent) && !SHE_RE.test(sent) && !HE_RE.test(sent)) return speaker;
+            // Mixed clause ("I put a clean shirt on and she noticed"): the FIRST actor named owns the garment.
+            const first = [[/\b(?:I|me|my|myself|I'm|I've|I'll)\b/, speaker], [/\b(?:you|your|yourself)\b/i, addressee], [/\b(?:she|her|hers|herself)\b/i, 'main'], [/\b(?:he|him|his|himself)\b/, 'user']]
+                .map(function (p) { const m = p[0].exec(sent); return m ? [m.index, p[1]] : null; }).filter(Boolean).sort(function (a, b) { return a[0] - b[0]; })[0];
+            if (first && (first[1] === speaker || first[1] === addressee) && first[1] !== 'main') return first[1];
             const sheN = (sent.match(/\b(?:she|her|hers|herself)\b/gi) || []).length;
             const heN = (sent.match(/\b(?:he|him|his|himself)\b/g) || []).length;
             if (sheN && !(opts && opts.otherFemale)) return 'main';
