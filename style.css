@@ -777,3 +777,16 @@ body.scene-director-hidden #scene-director-thought-tip, body.scene-director-hidd
 body.scene-director-hidden #scene-director-fire-overlay, body.scene-director-hidden #scene-director-wx-overlay,
 body.scene-director-hidden #scene-director-photo-btn, body.scene-director-hidden .scene-director-drift,
 body.scene-director-hidden .scene-director-sprite-ghost, body.scene-director-hidden #scene-director-bio-card { display: none !important; }
+
+/* 0.9.3: phones and narrow windows — the overlays get out of the chat's way.
+   Chips shrink to small circles in a tight row, the HUD drops to three quarters
+   and can't push past the edge, tooltips fit the screen. Everything else is the
+   same; /bg and /costume work wherever SillyTavern does. */
+@media (max-width: 700px) {
+    #scene-director-cast-strip { gap: 4px; --scene-director-chip-size: 56px; }
+    #scene-director-cast-strip .scene-director-chip img { width: 56px; height: 56px; max-height: none; border-radius: 50%; object-fit: cover; }
+    #scene-director-cast-strip .scene-director-chip-label { font-size: 10px; max-width: 64px; }
+    #scene-director-hud { --sd-hud-scale: 0.75; max-width: 46vw; }
+    #scene-director-hud .sd-hud-loc { max-width: 18ch; }
+    #sd-thought-tip, .scene-director-tip { max-width: 88vw; }
+}

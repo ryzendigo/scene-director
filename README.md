@@ -155,6 +155,7 @@ One card per recurring character:
   instead of floating on the source photo's background. Batch-convert a folder
   of portraits with [`tools/cutout.py`](tools/README.md) (rembg-based, one
   command).
+- **Phones** *(0.9.3)*: under 700px wide the cast strip becomes a tight row of small round chips, the HUD shrinks to three quarters and the tooltips fit the screen. Backgrounds, costumes, moods and the sprite work wherever SillyTavern does; drag-to-place uses pointer events so touch works. It's a desktop-first layout tested on a phone, not a phone design: if the overlays crowd your screen, turn the HUD or the cast strip off in the drawer.
 - **Animated backgrounds** *(0.9.1)*: save an ambient loop beside any still as `<name>.webp` and list the names in `backgrounds/animated.json` (`["kitchen", "porch-rain"]`); whenever a Place card would show the still, the loop is used instead. Same Wan-style recipe as the portraits, just no cutout.
 - **Animated portraits** *(0.9.0)*: drop an animated `npc/<key>.webp` (and
   `npc/<key>-happy.webp` etc.) beside the still and list the names in
