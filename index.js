@@ -529,7 +529,9 @@
             ['practi[cs]ed\\s+(?:exhale|breath)|lets?\\s+(?:it|the\\s+breath)\\s+out\\s+slow(?:ly)?', 'sadness', 1.5, []],
             ['eyes\\s+come\\s+up|looks?\\s+up\\s+slowly', 'realization', 1, []],
             ['(?:she|I)\\s+glar(?:es|ed|ing)|glar(?:es|ed|ing)\\s+(?:at|across|up\\s+at|over)', 'anger', 3, []],  // not the sun glaring off the bonnet
-            ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'anger', 2, []],
+            // narrowed eyes are usually suspicion or scrutiny; only 'narrow in anger / dangerously / to slits' is anger
+            ['narrow(?:s|ed)?\\s+her\\s+eyes\\s+(?:in\\s+anger|dangerously|to\\s+slits)|eyes\\s+narrow(?:s|ed)?\\s+(?:in\\s+anger|dangerously|to\\s+slits)', 'anger', 2.5, []],
+            ['narrow(?:s|ed)?\\s+her\\s+eyes|eyes\\s+narrow', 'curiosity', 1.5, []],
             ['furious|fury|rage', 'anger', 3, []],
             ['(?:los(?:es|t|ing)|keeps?)\\s+her\\s+temper|temper\\s+(?:flares|snaps|goes|frays)|in\\s+a\\s+temper|her\\s+temper\\s+(?:is\\s+)?up', 'anger', 2, []],  // not 'I found that temper in you'
             ['(?:she|I)\\s+hiss(?:es|ed)?\\b(?!\\s+(?:softly|at\\s+the\\s+(?:heat|cold|sting|water)|through\\s+her\\s+teeth\\s+(?:when|as)))|hiss(?:es|ed)\\s+(?:at\\s+(?:him|you|me)|through\\s+her\\s+teeth(?!\\s+(?:when|as)))', 'anger', 2, []],  // not the pan/kettle, not a hiss at hot water or a sore muscle
