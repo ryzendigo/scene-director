@@ -1106,7 +1106,14 @@
             // 1. Own coloured dialogue: decisive.
             const hexes = [member.hex].concat(member.aliasHexes || []).filter(Boolean).map(function (h) { return String(h).toLowerCase(); });
             for (const h of hexes) {
-                if (lower.indexOf(h) >= 0) { score += 10; strong = true; evidence.push('own dialogue ' + h + (h !== String(member.hex || '').toLowerCase() ? ' (aliased)' : '')); break; }
+                if (lower.indexOf(h) >= 0) {
+                    // A colour is not proof when the same message says the character is elsewhere
+                    // (the model reuses a card's colour for a new speaker: 'Beth's out at the sheep' in Granty's grey).
+                    const nameSrc = [member.nameRe, member.aliasRe].filter(Boolean).map(function (r) { return r.source; }).join('|');
+                    const elsewhere = nameSrc && new RegExp('(?:' + nameSrc + ")(?:'s| is| was)? (?:out|off|down|over|away|gone|not here|isn't here|been through|about somewhere|at the (?:sheep|sheds?|pens?|far end|other end))\\b", 'i').test(String(masked && masked.text || ''));
+                    if (elsewhere) { score += 3; evidence.push('own colour but described elsewhere (' + h + ') — colour reuse?'); break; }
+                    score += 10; strong = true; evidence.push('own dialogue ' + h + (h !== String(member.hex || '').toLowerCase() ? ' (aliased)' : '')); break;
+                }
             }
             // Speaking down a phone line: in the scene, but not in the room.
             // Decided only from the text immediately AROUND this member's own
