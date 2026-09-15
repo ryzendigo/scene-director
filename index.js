@@ -774,7 +774,7 @@
             // In a love scene the body does things the dark cues also describe: thighs
             // trembling, a voice that breaks, a sound that is almost a sob, being done
             // being patient. When the part is plainly intimate, those bodily cues are desire.
-            const BODILY_RE = /trembl|shak|voice\s+(?:cracks|wavers|breaks|catches)|\bsob|cries?\s+out|sharply|patient|goes?\s+still|gone\s+still|hiss|eyes\s+sting|shaky/i;
+            const BODILY_RE = /trembl|shak|voice\s+(?:cracks|wavers|breaks|catches)|\bsob|cries?\s+out|sharply|patient|goes?\s+still|gone\s+still|hiss|eyes\s+sting|shaky|flush|blush|colour\s+(?:comes|coming|rises|rising)|red\s+to\s+the|bites?\s+her\s+lip|whimper|gasp/i;
             const intimate = ext.parts.some(function (p) { return INTIMATE_RE.test(p.text); });
             for (const p of ext.parts) {
                 for (const cue of table) {
@@ -795,7 +795,7 @@
                         }
                         const w = cue.w * p.w;
                         if (cue.label === 'orgasm' && !intimate) continue;
-                        if (intimate && /^(?:fear|sadness|grief|anger|annoyance|disapproval|nervousness)$/.test(cue.label) && BODILY_RE.test(m[0])) {
+                        if (intimate && /^(?:fear|sadness|grief|anger|annoyance|disapproval|nervousness|embarrassment)$/.test(cue.label) && BODILY_RE.test(m[0])) {
                             scores.desire = (scores.desire || 0) + w; hitWeight += w; hitCount++;
                             cues.push(m[0] + '→desire (intimate)'); continue;
                         }
