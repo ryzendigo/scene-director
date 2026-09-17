@@ -790,3 +790,18 @@ body.scene-director-hidden .scene-director-sprite-ghost, body.scene-director-hid
     #scene-director-hud .sd-hud-loc { max-width: 18ch; }
     #sd-thought-tip, .scene-director-tip { max-width: 88vw; }
 }
+
+/* ---- Reduced motion: honour the OS/browser setting for every continuous effect ---- */
+@media (prefers-reduced-motion: reduce) {
+    body.scene-director-typing #expression-image,
+    body.scene-director-typing #expression-holder img:not(.scene-director-sprite-ghost),
+    .scene-director-kenburns,
+    #bg1.scene-director-kenburns,
+    #bg_custom.scene-director-kenburns,
+    .scene-director-rain,
+    .scene-director-rain::before,
+    .scene-director-rain::after {
+        animation: none !important;
+        transform: none !important;
+    }
+}

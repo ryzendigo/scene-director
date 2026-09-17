@@ -228,7 +228,8 @@
         enableSpriteTint: false,
         enableBgCrossfade: false,
         enableTypingPresence: false,
-        enableKenBurns: true,       // 0.7.0: on by default (subtle)
+        enableKenBurns: false,      // 0.9.4: OFF by default. A background that never stops moving is the first
+                                    // thing new users complain about ("shaky background"); it is opt-in now.
         enableFireFlicker: false,
         enableBioCards: false,
         enablePhotoMode: false,
@@ -1166,8 +1167,17 @@
             // A name that appears ONLY inside others' speech is a mention.
             if (anyQuotedName && !anyNarrationName && !strong) { /* veto already recorded */ }
             // 3. Named in the 📍 header ("with June").
+            let headerHit = false;
             if (masked.header) {
-                for (const re of [member.nameRe, member.aliasRe]) if (re && re.test(masked.header)) { score += 3; evidence.push('header'); break; }
+                for (const re of [member.nameRe, member.aliasRe]) if (re && re.test(masked.header)) { score += 3; headerHit = true; evidence.push('header'); break; }
+            }
+            // 3b. Colour with nothing behind it. A member who was NOT already in the scene, whose name never
+            // appears in this message's narration or header, and whose only evidence is their hex, is almost
+            // always a NEW speaker the model dressed in a borrowed colour. Own colour stays decisive for
+            // someone already present — that is the normal case.
+            if (strong && !anyNarrationName && !headerHit && opts && opts.wasPresent === false) {
+                score -= 7; strong = false;
+                evidence.push('own colour only, never named, not previously present — colour reuse');
             }
             // 4. Explicit departure after the last arrival cue.
             if (T.depart) {
@@ -2240,7 +2250,9 @@
             const r = PresenceEngine.evaluate(masked, {
                 key: member.key, label: member.label, hex: member.colorHex, aliasHexes,
                 nameRe: compileRegex(member.nameRegex || ''), aliasRe: compileRegex(member.aliasRegex || ''),
-            }, { tables: T, hexLabel, locChanged: Boolean(locChanged) });
+            }, { tables: T, hexLabel, locChanged: Boolean(locChanged),
+                 // a move always counts as "not previously present", whichever side of the strip clear this runs on
+                 wasPresent: !locChanged && castPresence.has(member.key) });
             verdicts.push(r);
             let pos = member.colorHex ? scene.lower.lastIndexOf(member.colorHex.toLowerCase()) : -1;
             for (const h of aliasHexes) pos = Math.max(pos, scene.lower.lastIndexOf(h));
@@ -3125,7 +3137,13 @@
     // ------------------------------------------------------------------
 
     function kenBurnsActive(settings) {
-        return settings.enableKenBurns && !conflicts.weatherCycle && !privacyHidden && !document.hidden;
+        // The drift is JS-driven (requestAnimationFrame), so the CSS reduced-motion rule cannot stop it: check here.
+        let reducedMotion = false;
+        try { reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* ignore */ }
+        // Phones: a scaled full-viewport background jitters as the browser bar collapses and expands
+        // while the chat scrolls. Same 700px line as the phone layout in style.css.
+        const smallScreen = (window.innerWidth || 0) < 700;
+        return settings.enableKenBurns && !reducedMotion && !smallScreen && !conflicts.weatherCycle && !privacyHidden && !document.hidden;
     }
     // v0.7.1: drift by requestAnimationFrame. /bg paints #bg1's
     // background-image (public/scripts/backgrounds.js), and #bg1 has
@@ -3142,7 +3160,12 @@
             const el = drift.el && drift.el.isConnected ? drift.el : document.getElementById('bg1');
             if (!el) { driftStop('no #bg1'); return; }
             if (el !== drift.el) driftAttach(el, st);
-            if (now - drift.last >= 33 && !generating) {
+            if (generating) {
+                // Freeze the phase while the model generates: slide t0 forward by the paused time so
+                // the sweep resumes from where it stopped. Skipping frames but not the clock made the
+                // background lurch to the "current" phase after every generation — a visible twitch.
+                drift.t0 += now - drift.last; drift.last = now;
+            } else if (now - drift.last >= 33) {
                 drift.last = now;
                 const amp = Math.max(0.5, Math.min(8, Number(st.driftIntensity) || 3)) / 100;
                 const period = (Number(st.kenBurnsSeconds) || 40) * 2000;
@@ -4751,8 +4774,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const list = await spriteList(activeSpriteFolder(ctx));
             const avail = new Set(list.map(function (x) { return x.label; }));
             if (pose && wantLabel === pose && !avail.has(pose)) {
-                if (!out.final || out.hold) return;
-                emitMood(ctx, MoodEngine.mapToAvailable(out.final, avail), out.final, settings); return;
+                // This set has no pose sprites: show a mood instead. Never return with nothing emitted —
+                // the fallback_expression ST is holding may be a pose label from an earlier set, and an
+                // un-emitted message leaves that missing file on screen (a blank sprite).
+                const held = out.final || lastMoodLabel || 'neutral';
+                emitMood(ctx, MoodEngine.mapToAvailable(held, avail), held, settings); return;
             }
             const mapped = MoodEngine.mapToAvailable(wantLabel, avail);
             emitMood(ctx, mapped, out.final || wantLabel, settings);
@@ -5553,6 +5579,19 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // ------------------------------------------------------------------
 
     const validators = {
+        // 0.8.7 added this box without a validator; applyForm then threw on every Apply click and
+        // nothing saved (0.8.7–0.9.3). Shape: [{"pattern": "slip|nightgown", "costume": "pajamas"}].
+        wardrobeCostumeRules(v) {
+            if (!Array.isArray(v)) return 'Must be a JSON array of {"pattern", "costume"} objects.';
+            for (let i = 0; i < v.length; i++) {
+                const r = v[i];
+                if (!r || typeof r !== 'object' || Array.isArray(r)) return `Row ${i + 1}: must be an object.`;
+                if (typeof r.pattern !== 'string' || !r.pattern.trim()) return `Row ${i + 1}: "pattern" must be a non-empty string.`;
+                if (!compileRegex(r.pattern)) return `Row ${i + 1}: "pattern" is not a valid regular expression.`;
+                if (typeof r.costume !== 'string') return `Row ${i + 1}: "costume" must be a string (folder name; "" = default).`;
+            }
+            return '';
+        },
         seasonalMap(value) {
             if (!Array.isArray(value)) return 'must be a JSON array';
             for (const [i, e] of value.entries()) {
@@ -6031,16 +6070,29 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     }
 
     function applyForm() {
+        // 0.9.4: a throw inside the save used to vanish — the click handler died, the status stayed
+        // blank, and nothing persisted. Since 0.8.7 a JSON box without a validator did exactly that on
+        // every Apply. Whatever goes wrong now is written where the user is looking.
+        try {
+            applyFormInner();
+        } catch (e) {
+            console.error(`${LOG} settings save failed`, e);
+            const st = document.getElementById('sd_apply_status');
+            if (st) st.textContent = 'Not saved — the save crashed: ' + (e && e.message ? e.message : e) + ' (please report this).';
+        }
+    }
+    function applyFormInner() {
         const s = getSettings();
         const status = document.getElementById('sd_apply_status');
         let ok = true;
         const pending = {};
+        const failed = [];   // 0.9.4: one bad box no longer blocks every other field from saving
 
         for (const [key] of REGEX_FIELDS) {
             const value = document.getElementById(`sd_${key}`).value.trim();
             if (value && !compileRegex(value)) {
                 setFieldError(key, 'Not a valid regular expression.');
-                ok = false;
+                ok = false; failed.push(key);
             } else {
                 setFieldError(key, '');
                 pending[key] = value;
@@ -6052,7 +6104,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const value = parseInt(raw, 10);
             if (Number.isNaN(value) || value < min || value > max) {
                 setFieldError(key, `Must be an integer between ${min} and ${max}.`);
-                ok = false;
+                ok = false; failed.push(key);
             } else {
                 setFieldError(key, '');
                 pending[key] = value;
@@ -6066,13 +6118,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 parsed = JSON.parse(raw);
             } catch (e) {
                 setFieldError(key, `Invalid JSON: ${e.message}`);
-                ok = false;
+                ok = false; failed.push(key);
                 continue;
             }
-            const error = validators[key](parsed);
+            // A box with no validator is accepted as-is rather than crashing the whole save.
+            const validate = validators[key];
+            const error = (typeof validate === 'function') ? validate(parsed) : '';
             if (error) {
                 setFieldError(key, error);
-                ok = false;
+                ok = false; failed.push(key);
             } else {
                 setFieldError(key, '');
                 pending[key] = parsed;
@@ -6080,8 +6134,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
 
         if (!ok) {
-            status.textContent = 'Not saved — fix the errors above.';
-            return;
+            // 0.9.4: do NOT return. The bad boxes keep their inline error and their OLD value; every other
+            // field — including the checkbox the user actually came here to change — saves as normal.
+            status.textContent = 'Saved, except: ' + failed.join(', ') + ' — fix the errors above.';
         }
 
         for (const [key] of TOGGLE_FIELDS) {
@@ -6102,8 +6157,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         refreshStatics(s);
         onMessage();
 
-        status.textContent = 'Saved.';
-        sdTimeout(() => { if (status.textContent === 'Saved.') status.textContent = ''; }, 3000);
+        if (ok) {
+            status.textContent = 'Saved.';
+            sdTimeout(() => { if (status.textContent === 'Saved.') status.textContent = ''; }, 3000);
+        }
     }
 
     /** Dry-run the parser on the current chat's last AI message. */
@@ -6467,6 +6524,24 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             dbg(`settings drawer registered in #${panel.id}: ${content ? content.querySelectorAll('input, select, textarea').length : 0} controls`);
         } catch (e) { /* ignore */ }
         document.getElementById('sd_apply').addEventListener('click', applyForm);
+        // 0.9.4: toggles save the moment they are clicked. Until now nothing persisted unless the user
+        // found the Apply button — the first thing people did was untick a motion effect, close the
+        // drawer, reload, and find it back on. Regex/number/JSON boxes still go through Apply (they
+        // need validating); a checkbox does not.
+        for (const [key] of TOGGLE_FIELDS) {
+            const box = document.getElementById(`sd_${key}`);
+            if (!box) continue;
+            box.addEventListener('change', function () {
+                const s = getSettings();
+                s[key] = box.checked;
+                saveSettings();
+                try { applyPrivacy('setting'); updateMoodTagInjection(s); } catch (e) { /* ignore */ }
+                lastBg = null; lastBgGraded = false; lastCostume = null;
+                try { refreshStatics(s); updateKenBurns(s); onMessage(); } catch (e) { /* ignore */ }
+                const st = document.getElementById('sd_apply_status');
+                if (st) { st.textContent = 'Saved.'; sdTimeout(() => { if (st.textContent === 'Saved.') st.textContent = ''; }, 3000); }
+            });
+        }
         document.getElementById('sd_test').addEventListener('click', testLastMessage);
         wireCardUi();
     }

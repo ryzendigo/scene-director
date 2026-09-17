@@ -3,6 +3,27 @@
 Everything automatable is done: repo description + topics set, v0.9.0 and ChatSlim
 v0.1.2 tagged and released, announcement drafts current. What's left needs a human:
 
+## 0. Release smoke test — every release, no exceptions
+
+Run against a throwaway SillyTavern (the `st-demo` container: ST 1.18, no auth,
+demo character only) with the release candidate installed in
+`data/default-user/extensions/scene-director/`. All three must pass:
+
+- [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
+      third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
+- [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
+      survives a reload without Apply; Apply with a broken regex elsewhere
+      still saves the box).
+- [ ] `node tools/demo/apply.js` — no `PAGEERROR`, Apply status is not blank,
+      both checks print **PASS**.
+
+Why this exists: 0.8.7–0.9.3 shipped with an Apply button that threw on every
+click (a JSON box with no validator) and saved nothing, with a blank status.
+The stage screenshot passed on all seven. Loading is not the test; saving is.
+
+Driver invocation (Playwright in Docker, host network, from the st-demo dir):
+`docker run --rm --network host -v $PWD/<script>:/w/<script>:ro mcr.microsoft.com/playwright:v1.55.0-noble sh -c 'cd /w && npm i -s playwright@1.55.0 >/dev/null 2>&1; node <script>'`
+
 ## 1. Take the three screenshots (blocks everything else)
 
 Use a **starter-pack or generic chat**, not your own story (no private names,
