@@ -120,8 +120,14 @@ one-click-copy snippet for presets that don't emit headers yet:
 3. Click **Install for all users** (or just yourself), then find **Scene Director**
    in the Extensions settings panel.
 
-Manual install: clone this repo into
+Manual install: **clone** (not copy) this repo into
 `data/<user>/extensions/scene-director/` and reload the page.
+
+> **Updating.** SillyTavern's *Update* button runs `git pull` inside the extension
+> folder, so it only works for a folder that was installed from the URL above or
+> `git clone`d. A folder you copied in by hand has no `.git`: *Update* fails with a
+> server error and *Install* refuses with "Directory already exists". Fix once:
+> delete the folder, install from the URL, and Update works from then on.
 
 ## The 60-second setup
 

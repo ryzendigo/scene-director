@@ -16,6 +16,14 @@ demo character only) with the release candidate installed in
       still saves the box).
 - [ ] `node tools/demo/apply.js` — no `PAGEERROR`, Apply status is not blank,
       both checks print **PASS**.
+- [ ] **Install-from-URL and Update through ST's own API** (the demo's copy is a git
+      install now, so this is testable): with a session cookie jar and the `/csrf-token`,
+      `POST /api/extensions/update {"extensionName":"scene-director","global":false}` must
+      return 200 with `isUpToDate`, and on a clean folder
+      `POST /api/extensions/install {"url":"https://github.com/ryzendigo/scene-director","global":false}`
+      must return 200 with the new version. Without the cookie every call is `Forbidden`.
+      Known: a manually copied folder gives Update **500** and Install **409** — that is
+      SillyTavern, not us; the README tells users to install from URL.
 
 Why this exists: 0.8.7–0.9.3 shipped with an Apply button that threw on every
 click (a JSON box with no validator) and saved nothing, with a blank status.
