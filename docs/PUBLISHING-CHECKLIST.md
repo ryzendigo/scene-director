@@ -16,6 +16,12 @@ demo character only) with the release candidate installed in
       still saves the box).
 - [ ] `node tools/demo/apply.js` — no `PAGEERROR`, Apply status is not blank,
       both checks print **PASS**.
+- [ ] `node tools/demo/errcheck.js` — toggles every checkbox twice and clicks the
+      scan/self-test buttons; must report **no `PAGEERROR`** and no JS exceptions.
+      Expected-and-harmless: 404s for `backgrounds/animated.json`,
+      `npc/animated.json` and any `npc/<key>-<mood>.png` a character does not
+      have — these are optional files, fetched with an `r.ok` guard.
+
 - [ ] **Install-from-URL and Update through ST's own API** (the demo's copy is a git
       install now, so this is testable): with a session cookie jar and the `/csrf-token`,
       `POST /api/extensions/update {"extensionName":"scene-director","global":false}` must
@@ -24,6 +30,11 @@ demo character only) with the release candidate installed in
       must return 200 with the new version. Without the cookie every call is `Forbidden`.
       Known: a manually copied folder gives Update **500** and Install **409** — that is
       SillyTavern, not us; the README tells users to install from URL.
+
+Demo container: if it is missing, recreate with
+`docker run -d --name st-demo --network host -e SILLYTAVERN_SECURITYOVERRIDE=true -v /mnt/pool/config/st-demo/data:/home/node/app/data -v /mnt/pool/config/st-demo/config:/home/node/app/config ghcr.io/sillytavern/sillytavern:1.18.0`
+— its `config/config.yaml` must have `port: 8327`, `listen: true`,
+`whitelistMode: false`, or it collides with the real instance on 8000 and exits.
 
 Why this exists: 0.8.7–0.9.3 shipped with an Apply button that threw on every
 click (a JSON box with no validator) and saved nothing, with a blank status.

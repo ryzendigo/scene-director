@@ -301,6 +301,10 @@
         // v0.6.2 character sprite size.
         spriteAuto: true,           // match ST's size for the static sprites
         spriteVh: null,             // height in vh when auto is off (30-100)
+        stripDx: 0,                 // cast strip drag nudge, vw
+        stripDy: 0,                 // cast strip drag nudge, vh
+        hudDx: 0,                   // HUD drag nudge, vw
+        hudDy: 0,                   // HUD drag nudge, vh
         spriteDx: 0,                // horizontal offset, vw (-20..20)
         spriteDy: 0,                // vertical offset, vh (-60..60)
         spriteDrag: true,           // 0.8.6: drag the sprite with the mouse to position it
@@ -1972,6 +1976,7 @@
                     if (m.avatar === undefined) m.avatar = '';
                     if (m.moodVariants === undefined) m.moodVariants = false;
                     if (m.aliasRegex === undefined) m.aliasRegex = '';
+                    if (m.contextRegex === undefined) m.contextRegex = '';
                 }
             }
         } catch (e) {
@@ -2245,6 +2250,12 @@
         // Cast card is treated as that member's (colour alias) instead of a stranger.
         const unknowns = settings.enableUnknownSpeakers ? detectUnknownSpeakers(scene, settings) : [];
         for (const member of settings.cast) {
+            // 0.9.5 "Only here when": an optional per-member regex describing the member's world
+            // (e.g. "phone|farm|virginia"). When set and NOT matched, the member cannot be present —
+            // this stops someone who lives elsewhere being summoned by a message that merely mentions
+            // them ("Martha made that dress" putting her chip in a room 9,000 miles away).
+            const ctxRe = compileRegex(member.contextRegex || '');
+            if (ctxRe && !ctxRe.test(scene.text || '')) { castPresence.delete(member.key); continue; }
             const aliasHexes = [];
             for (const [h, k] of colourAlias) if (k === member.key) aliasHexes.push(h);
             const r = PresenceEngine.evaluate(masked, {
@@ -3835,6 +3846,11 @@
 
     function applyStripAppearance(settings, elArg) {
         try {
+            const _el = elArg || document.getElementById('scene-director-cast-strip');
+            const _dx = Number(settings.stripDx) || 0, _dy = Number(settings.stripDy) || 0;
+            if (_el) _el.style.transform = (_dx || _dy) ? `translate(${_dx}vw, ${_dy}vh)` : '';
+        } catch (e) { /* ignore */ }
+        try {
             const el = elArg || document.getElementById('scene-director-cast-strip');
             if (!el) return;
             const pos = settings.castPosition || 'top-right';
@@ -3988,10 +4004,18 @@
         const isSprite = function (el) {
             return el && el.tagName === 'IMG' && el.closest && el.closest('#expression-holder') && !el.classList.contains('scene-director-sprite-ghost');
         };
+        // 0.9.5: the cast strip and the HUD drag the same way the sprite does, and the wheel over the
+        // strip resizes its chips. Each remembers its own offset.
+        const isStrip = function (el) { return el && el.closest && Boolean(el.closest('#scene-director-cast-strip')); };
+        const isHud = function (el) { return el && el.closest && Boolean(el.closest('#scene-director-hud')); };
         document.addEventListener('pointerdown', function (ev) {
             const st = getSettings();
-            if (st.spriteDrag === false || ev.button !== 0 || !isSprite(ev.target)) return;
-            drag = { x: ev.clientX, y: ev.clientY, dx: Number(st.spriteDx) || 0, dy: Number(st.spriteDy) || 0, moved: false };
+            if (st.spriteDrag === false || ev.button !== 0) return;
+            const onStrip = isStrip(ev.target), onHud = isHud(ev.target);
+            if (!onStrip && !onHud && !isSprite(ev.target)) return;
+            const pre = onHud ? 'hud' : onStrip ? 'strip' : 'sprite';
+            drag = { x: ev.clientX, y: ev.clientY, strip: onStrip, hud: onHud,
+                     dx: Number(st[pre + 'Dx']) || 0, dy: Number(st[pre + 'Dy']) || 0, moved: false };
             try { ev.target.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
             document.body.classList.add('scene-director-sprite-dragging');
             ev.preventDefault();
@@ -4003,6 +4027,16 @@
             const nx = Math.max(-80, Math.min(80, drag.dx + (ev.clientX - drag.x) / vw));
             const ny = Math.max(-60, Math.min(60, drag.dy + (ev.clientY - drag.y) / vh));
             if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 3) drag.moved = true;
+            if (drag.hud) {
+                st.hudDx = Math.round(nx * 10) / 10; st.hudDy = Math.round(ny * 10) / 10;
+                try { applyHudAppearance(st); } catch (e) { /* ignore */ }
+                return;
+            }
+            if (drag.strip) {
+                st.stripDx = Math.round(nx * 10) / 10; st.stripDy = Math.round(ny * 10) / 10;
+                try { applyStripAppearance(st); } catch (e) { /* ignore */ }
+                return;
+            }
             st.spriteDx = Math.round(nx * 10) / 10; st.spriteDy = Math.round(ny * 10) / 10;
             const root = document.documentElement.style;
             root.setProperty('--scene-director-sprite-dx', st.spriteDx + 'vw');
@@ -4020,7 +4054,22 @@
         let wheelSave = null;
         document.addEventListener('wheel', function (ev) {
             const st = getSettings();
-            if (st.spriteDrag === false || !isSprite(ev.target)) return;
+            if (st.spriteDrag === false) return;
+            if (isStrip(ev.target)) {
+                ev.preventDefault();
+                const curc = Number(st.chipSize) || 28;
+                const stepc = ev.shiftKey ? 0.5 : 2;
+                st.chipSizeAuto = false;
+                st.chipSize = Math.max(10, Math.min(40, Math.round((curc + (ev.deltaY < 0 ? stepc : -stepc)) * 2) / 2));
+                try { applyStripAppearance(st); } catch (e) { /* ignore */ }
+                try {
+                    const cb = document.getElementById('sd_chipSizeAuto'); if (cb) cb.checked = false;
+                    const sl = document.getElementById('sd_chipSize'); if (sl) sl.value = String(st.chipSize);
+                } catch (e) { /* ignore */ }
+                clearTimeout(wheelSave); wheelSave = setTimeout(function () { saveSettings(); }, 400);
+                return;
+            }
+            if (!isSprite(ev.target)) return;
             ev.preventDefault();
             const vh = window.innerHeight / 100;
             const curPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scene-director-sprite-h')) || (62 * vh);
@@ -4047,6 +4096,8 @@
             hud.style.right = pos.endsWith('right') ? '12px' : 'auto';
             hud.style.top = pos.startsWith('top') ? '10px' : 'auto';
             hud.style.bottom = pos.startsWith('bottom') ? '12px' : 'auto';
+            const hdx = Number(settings.hudDx) || 0, hdy = Number(settings.hudDy) || 0;
+            hud.style.transform = (hdx || hdy) ? `translate(${hdx}vw, ${hdy}vh)` : '';
         } catch (e) { /* ignore */ }
     }
 
@@ -5214,6 +5265,20 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         });
         rowAlias.appendChild(aliasIn);
         main.appendChild(rowAlias);
+
+        // 0.9.5 "Only here when": the member's world. Blank = always eligible (unchanged behaviour).
+        const rowCtx = el('div', 'scene-director-card-row');
+        const ctxIn = input('sd-card-regex', member.contextRegex || '', 'only here when… (optional, e.g. phone|farm|london)',
+            'If set, this character can only be present in a message that matches — stops someone who lives elsewhere appearing when they are merely mentioned');
+        ctxIn.addEventListener('change', function () {
+            const v = ctxIn.value.trim();
+            if (v && !compileRegex(v)) { ctxIn.classList.add('sd-invalid'); return; }
+            ctxIn.classList.remove('sd-invalid');
+            member.contextRegex = v;
+            commitCards();
+        });
+        rowCtx.appendChild(ctxIn);
+        main.appendChild(rowCtx);
 
         const row3 = el('div', 'scene-director-card-row');
         const bioIn = input('sd-card-bio', member.bio || '', 'one-line bio (hover card)',
