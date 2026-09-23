@@ -173,6 +173,24 @@ for (const [seg, hour, want, why] of VARIANT_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(20)} want ${want.padEnd(20)} ${why}`);
 }
-const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length + VARIANT_CASES.length;
+// withVariant must preserve whatever extension the Place card used. 15 of the private
+// build's installed backgrounds are .webp, and a .jpg-only assumption there is what made
+// the night tint double-darken them in 0.9.62.
+const EXT_CASES = [
+  ['kitchen.webp', 22, new Set(['kitchen.webp', 'kitchen-night.webp']), 'kitchen-night.webp'],
+  ['kitchen.png', 22, new Set(['kitchen.png', 'kitchen-night.png']), 'kitchen-night.png'],
+  ['kitchen.JPG', 22, new Set(['kitchen.JPG', 'kitchen-night.JPG']), 'kitchen-night.JPG'],
+  // No variant installed: keep the base file rather than inventing one.
+  ['kitchen.webp', 22, new Set(['kitchen.webp']), 'kitchen.webp'],
+  // No extension at all falls back to .jpg, which is the documented starter-pack naming.
+  ['kitchen', 22, new Set(['kitchen-night.jpg']), 'kitchen-night.jpg'],
+];
+for (const [file, hour, have, want] of EXT_CASES) {
+  const got = BackgroundEngine.withVariant(file, hour, '', have);
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(22)} want ${want.padEnd(22)} withVariant(${JSON.stringify(file)})`);
+}
+const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length + VARIANT_CASES.length + EXT_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
