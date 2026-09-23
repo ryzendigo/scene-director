@@ -2774,7 +2774,7 @@
         if (!scene.headerLine) return null;
         const out = { time: null, ampm: '', date: null, loc: null, weather: null, wxIcon: '', any: false };
         if (scene.timeMatch) {
-            const tm = /(\d{1,2}:\d{2})\s*(AM|PM)?/i.exec(scene.timeMatch[0]);
+            const tm = /(\d{1,2}[:.]\d{2})\s*(AM|PM)?/i.exec(scene.timeMatch[0]);   // dot separator, as timeRegex
             if (tm) { out.time = tm[1]; out.ampm = (tm[2] || '').toUpperCase(); }
             else out.time = scene.timeMatch[0].replace(WS_RE, ' ').trim();
             out.any = true;
@@ -2782,8 +2782,17 @@
         const date = scene.date;
         if (date) {
             if (date.day) {
+                // 23 Sep: new Date(2026, 1, 31) is NOT invalid — it rolls to 3 March — so a header
+                // reading "February 31" produced the label "Tue Feb 31 2026", pairing a weekday
+                // borrowed from a different date with a day that does not exist. parseDateFromText
+                // only range-checks 1..31, not whether the day exists in that month. AtlasEngine
+                // already guards this the same way; the HUD did not. Drop the weekday rather than
+                // print a contradiction.
                 const js = new Date(date.year, date.month - 1, date.day);
-                out.date = `${DAY_NAMES[js.getDay()]} ${MON_NAMES[date.month - 1]} ${date.day} ${date.year}`;
+                const real = !isNaN(js.getTime()) && js.getMonth() === date.month - 1 && js.getDate() === date.day;
+                out.date = real
+                    ? `${DAY_NAMES[js.getDay()]} ${MON_NAMES[date.month - 1]} ${date.day} ${date.year}`
+                    : `${MON_NAMES[date.month - 1]} ${date.day} ${date.year}`;
             } else out.date = `${MON_NAMES[date.month - 1]} ${date.year}`;
             out.any = true;
         }

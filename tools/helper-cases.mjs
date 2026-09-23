@@ -16,6 +16,14 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = readFileSync(process.argv[2] || join(root, 'index.js'), 'utf8');
 
+// Some helpers close over module-level constants. Pull those in first so a lifted function can see
+// them, the same way it does in the running extension.
+let CONSTS = '';
+for (const c of ['DAY_NAMES', 'MON_NAMES', 'MONTHS', 'WS_RE', 'WX_ICON_RE']) {
+  const m = new RegExp('^\\s+const ' + c + ' = ([\\s\\S]*?);$', 'm').exec(src);
+  if (m) CONSTS += `const ${c} = ${m[1]};\n`;
+}
+
 function lift(name, args) {
   const re = new RegExp('function\\s+' + name + '\\s*\\(' + args + '\\)\\s*\\{');
   const m = re.exec(src);
@@ -27,11 +35,12 @@ function lift(name, args) {
     else if (c === '}') { depth--; body += c; if (depth === 0) break; continue; }
     body += c;
   }
-  return eval(`(function (${args}) ${body})`);
+  return eval(`(function(){${CONSTS} return function (${args}) ${body};})()`);
 }
 
 const spriteFolderAndExt = lift('spriteFolderAndExt', 'src');
 const parseHourFromMatch = lift('parseHourFromMatch', 'm');
+const buildHudParts = lift('buildHudParts', 'scene');
 const slugify = lift('slugify', 'name');
 const uniqueCastKey = lift('uniqueCastKey', 'base, cast');
 
@@ -85,6 +94,19 @@ eq('24-hour, no meridiem', hourOf('\u{1F570}\uFE0F 14:05'), 14);
 eq('hour out of range', hourOf('\u{1F570}\uFE0F 25:00'), null);
 eq('13 PM is not a time', hourOf('\u{1F570}\uFE0F 13:00 PM'), null);
 eq('no clock at all', hourOf('no time here'), null);
+
+// The HUD date label. 23 Sep: new Date(2026, 1, 31) is NOT invalid — it rolls to 3 March — so a
+// header reading "February 31" produced "Tue Feb 31 2026", a weekday borrowed from a different
+// date printed beside a day that does not exist. parseDateFromText only range-checks 1..31, not
+// whether the day exists in that month. The weekday is dropped now rather than invented.
+const hudFor = scene => buildHudParts({ headerLine: '[ hdr ]', ...scene });
+const dateLabel = (year, month, day) => hudFor({ date: { year, month, day } }).date;
+eq('real date keeps its weekday', dateLabel(2026, 1, 15), 'Thu Jan 15 2026');
+eq('real leap day keeps it', dateLabel(2024, 2, 29), 'Thu Feb 29 2024');
+eq('31 Feb loses the weekday', dateLabel(2026, 2, 31), 'Feb 31 2026');
+eq('31 Apr loses the weekday', dateLabel(2026, 4, 31), 'Apr 31 2026');
+eq('29 Feb in a common year', dateLabel(2026, 2, 29), 'Feb 29 2026');
+eq('month only, no day', hudFor({ date: { year: 2026, month: 8, day: null } }).date, 'Aug 2026');
 
 let fails = 0;
 for (const [label, got, want] of CASES) {
