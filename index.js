@@ -1026,7 +1026,7 @@
         // Physical arrival / position cues (narration only). No speech verbs.
         const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:in|over|up)|com(?:es|ing) (?:in|over|up)|came (?:in|over|up)|step(?:s|ped)? (?:in|inside|closer|forward|up)|appear(?:s|ed)(?! to)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
         // Physical action verbs (narration only, weaker evidence).
-        const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|frowns?|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|sets? down|picks? up|waves?|shakes? (?:her|his) head|folds? (?:her|his) arms|pats?|squeez(?:es|ed)|hugs?|kiss(?:es|ed)|touch(?:es|ed)|points?|gestur(?:es|ed)|snorts?|sighs?';
+        const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|shrugged|frowns?|frowned|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|poured|sets? down|set down|picks? up|picked up|waves?|waved|shakes? (?:her|his) head|shook (?:her|his) head|folds? (?:her|his) arms|folded (?:her|his) arms|pats?|patted|squeez(?:es|ed)|hugs?|hugged|kiss(?:es|ed)|touch(?:es|ed)|points?|pointed|gestur(?:es|ed)|snorts?|snorted|sighs?|sighed';
         // Reported speech / phone / absence — any of these in the sentence
         // that names the character vetoes them for this message.
         const DEFAULT_ABSENCE = 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?(?! (?:out|across|over|up the stairs))|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|said|says?|would say|tell(?:s|ing)?|told|remember(?:s|ed|ing)?|miss(?:es|ed|ing)? (?:her|him|you|them|it|the|my|his)|wonder(?:s|ed|ing)?|promised?|about(?! to\b)|mention(?:s|ed)?|th(?:ink|ought)s? (?:of|about)|wish(?:es|ed)?|later|tomorrow|yesterday|last (?:night|week|time)|wrote|reckon(?:s|ed)?|thinks?|used to|back (?:home|at)|(?:is|was|\'s) (?:out|off|down|over|up) (?:at|by|with|in|the)\\b|about somewhere|been through|somewhere (?:about|round|around)|the way (?:her|his|my|your|their|our) \\w+(?: \\w+)? (?:does|did|do|would|used to|always)|(?:like|as|how) (?:her|his|my|your|their) (?:mother|father|mama|papa|mum|mom|dad|daddy|grandmother|granny|oma|opa)\\b|(?:mother|father|mama|papa|mum|mom|dad|daddy|grandmother|oma)\'s (?:way|hands|kitchen|voice|words|rule|recipe|habit)';
@@ -1165,8 +1165,28 @@
                     const win = narr.slice(Math.max(0, m.index - 40), Math.min(narr.length, m.index + m[0].length + 40));
                     const cue = T.arrival ? T.arrival.exec(win) : null;
                     if (cue) { score += 4; evidence.push('cue "' + cue[0] + '"'); lastArrivalIdx = Math.max(lastArrivalIdx, m.index); continue; }
-                    const act = T.action ? T.action.exec(sent.text) : null;
-                    if (act) { score += 2; evidence.push('action "' + act[0] + '"'); }
+                    // 23 Sep: one action scores 2 and the bar is 4, so a character could act repeatedly
+                    // in narration and still be hidden ("Beth smiled at him. 'It has been a while,'
+                    // she said." left Beth absent). exec() only ever found the FIRST verb, so a
+                    // sentence with several counted the same as a single nod. Count DISTINCT action
+                    // verbs instead: two independent actions are real corroboration, which is exactly
+                    // what the bar of 4 is asking for. Capped at 4 so one dense sentence cannot
+                    // outvote the absence/dialogue vetoes.
+                    if (T.action) {
+                        const seen = new Set();
+                        const ar = new RegExp(T.action.source, 'gi');
+                        let am2;
+                        while ((am2 = ar.exec(sent.text)) !== null) {
+                            if (am2.index === ar.lastIndex) ar.lastIndex++;
+                            seen.add(am2[0].toLowerCase());
+                            if (seen.size >= 2) break;
+                        }
+                        if (seen.size) {
+                            const add = Math.min(4, 2 * seen.size);
+                            score += add;
+                            evidence.push('action ' + [...seen].map(function (a) { return '"' + a + '"'; }).join(' + '));
+                        }
+                    }
                 }
             }
             // A name that appears ONLY inside others' speech is a mention.
