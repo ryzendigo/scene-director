@@ -1,6 +1,6 @@
 // Exercise the 0.9.15 story atlas: seed two days of trail into chat metadata, confirm the HUD
 // becomes clickable, open the modal and read it back. Fails loudly if the modal never appears.
-const { chromium } = require('playwright');
+const { chromium } = require('./browser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const b = await chromium.launch();

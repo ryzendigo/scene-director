@@ -1,5 +1,5 @@
 // Screenshot driver for the Scene Director demo instance. node shot.js <scan|stage>
-const { chromium } = require('playwright');
+const { chromium } = require('./browser');
 const URL = 'http://127.0.0.1:8327/';
 // 23 Sep: say which mode ran. With no argument this quietly does 'scan', which prints key
 // diagnostics rather than the chip count the release checklist asks for, so a log could show
@@ -60,7 +60,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => { const c = SillyTavern.getContext(); c.extensionSettings.scene_director.castFolder = 'Elise'; Object.assign(c.extensionSettings.scene_director, { enableHud: true, enableCast: true, enableMoods: true, enableBioCards: true, enableWeatherFx: true, enableCrossfade: true }); c.extensionSettings.expressions = Object.assign(c.extensionSettings.expressions || {}, { fallback_expression: 'neutral' }); c.saveSettingsDebounced(); });
     await sleep(4000); await page.reload({ waitUntil: 'load' }); await sleep(8000);
     await page.evaluate(async () => { const c = SillyTavern.getContext(); await c.selectCharacterById(0); }); await sleep(9000);
-    console.log('hud', await page.locator('.scene-director-hud, [class*=scene-director-hud]').count(), 'sprite', await page.locator('#expression-image').getAttribute('src'));
+    console.log('hud', await page.locator('#scene-director-hud').count(), 'sprite', await page.locator('#expression-image').getAttribute('src'));
     const chips = await page.locator('.scene-director-chip').count(); console.log('chips', chips);
     await page.screenshot({ path: '/shots/screenshot-cast-strip.png' });
   }

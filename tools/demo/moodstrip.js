@@ -3,11 +3,7 @@
 // few characters — an open <details> snaps shut, images reload, and any listener inside
 // the message is lost. This runs the shipped stripMoodTagFromDom logic against real DOM
 // in the demo container and checks the tag goes while the subtree survives.
-// playwright locally, playwright-core inside the mcr.microsoft.com/playwright image
-// (which ships the browsers at /ms-playwright but not the wrapper package).
-const { chromium } = (() => {
-  try { return require('playwright'); } catch (e) { return require('playwright-core'); }
-})();
+const { chromium } = require('./browser');
 const { readFileSync } = require('fs');
 const { join } = require('path');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

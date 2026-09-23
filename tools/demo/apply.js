@@ -1,5 +1,5 @@
 // Does applyForm survive a bad regex and report per-field? Captures page errors around one Apply click.
-const { chromium } = require('playwright');
+const { chromium } = require('./browser');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await chromium.launch(); const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });

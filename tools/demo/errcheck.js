@@ -1,5 +1,5 @@
 // Load the public extension in the demo, exercise the drawer + a message, report console errors.
-const { chromium } = require('playwright');
+const { chromium } = require('./browser');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1600, height: 900 } });

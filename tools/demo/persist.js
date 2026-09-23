@@ -2,7 +2,7 @@
 // 1) untick Ken Burns with NO Apply click -> reload -> must be false (0.9.4 autosave)
 // 2) tick it back, put a broken regex in a regex box, untick again, click Apply -> reload -> must be false
 //    (0.9.4 per-field save; before the fix the whole save was refused)
-const { chromium } = require('playwright');
+const { chromium } = require('./browser');
 const URL = 'http://127.0.0.1:8327/';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const MOD = 'scene_director';

@@ -104,7 +104,11 @@ demo character only) with the release candidate installed in
       `preAttachedSurvived` are the load-bearing assertions: they are the only two
       that fail on the pre-0.9.58 innerHTML rewrite.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
-      third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
+      third-party/scene-director`, no `[scene-director]` errors, `chips > 0`
+      **and `hud 1`**. That hud figure was `0` on every run until 2026-09-24
+      because the probe matched a `.scene-director-hud` CLASS that does not
+      exist — the HUD carries an id. A number that can only ever be zero is not
+      a check, so it is asserted now.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
       survives a reload without Apply; Apply with a broken regex elsewhere
       still saves the box).
