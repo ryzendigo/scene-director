@@ -2682,7 +2682,11 @@
         try {
             const meta = chatMeta(true);
             if (!meta) return;
-            const obj = {};
+            // Null prototype: cast keys are user-typed, and `obj['__proto__'] = v` on a plain
+            // object literal is a silent no-op — that member's presence would simply vanish from
+            // the saved metadata. Same family as the wardrobe bucket() fix in 0.9.50, without the
+            // pollution (assigning to __proto__ on a literal does not write through).
+            const obj = Object.create(null);
             for (const [k, v] of castPresence) obj[k] = (typeof v === 'object' && v) ? { miss: v.miss, strong: Boolean(v.strong) } : { miss: v, strong: true };
             meta.presence = obj;
             meta.presenceLoc = presenceLoc;

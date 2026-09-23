@@ -624,6 +624,38 @@ const bucket = eval('(function (state, key) {' + bucketSrc + '\n})');
   eq('proto: other names safe',    bucket(state, 'constructor') === Object.prototype, false);
 }
 
+// ---------------------------------------------------------------------------
+// meta.presence is built by iterating castPresence into an object keyed by cast key.
+// Those keys are user-typed, and `obj['__proto__'] = v` on a plain object literal is a
+// silent no-op — so that member's presence vanished from the saved metadata entirely
+// and came back absent on every reload. No pollution (assigning to __proto__ on a
+// literal does not write through), which is why this is the quieter half of the 0.9.50
+// family. JSON.stringify/parse handle a null-prototype object and a "__proto__" own
+// key correctly, so the restore path needs no change.
+function buildPresence(makeContainer, entries) {
+  const obj = makeContainer();
+  for (const [k, v] of entries) obj[k] = { miss: v.miss, strong: Boolean(v.strong) };
+  return obj;
+}
+const PRES = [['__proto__', { miss: 1, strong: true }], ['bob', { miss: 0, strong: false }]];
+{
+  const nul = buildPresence(() => Object.create(null), PRES);
+  eq('presence: both keys stored',  Object.keys(nul).length, 2);
+  eq('presence: proto key present', Object.keys(nul).includes('__proto__'), true);
+  const back = JSON.parse(JSON.stringify(nul));
+  eq('presence: survives JSON',     back['__proto__'].miss, 1);
+  eq('presence: own property',      Object.prototype.hasOwnProperty.call(back, '__proto__'), true);
+  eq('presence: normal key too',    back.bob.miss, 0);
+}
+{
+  // The pre-fix container silently drops it.
+  const plain = buildPresence(() => ({}), PRES);
+  eq('presence: plain drops proto',  Object.keys(plain).length, 1);
+  eq('presence: plain keeps normal', Object.keys(plain)[0], 'bob');
+}
+// The shipped code must use the null-prototype container.
+eq('presence: uses null proto', /function persistPresence\(\)[\s\S]{0,800}?const obj = Object\.create\(null\)/.test(src), true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
