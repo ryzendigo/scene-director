@@ -31,6 +31,7 @@ const CONSTRUCTS = [
   { find: 'MAX_SENT', why: null, note: 'wardrobe sentence cap (0.9.52)' },
   { find: 'TRAIL_MAX', why: null, note: 'day-trail cap (0.9.47)' },
   { find: 'unknownInfo.clear()', why: null, note: 'colour caches cleared on chat change (0.9.48)' },
+  { find: 'initDone', why: null, note: 'init() re-entry guard (0.9.60)' },
   // Counted, not compared: the private build legitimately has MORE (an extra guard in its
   // fire-and-forget runMoodVerdict, which the public build has no equivalent of). What
   // matters is that neither drops to zero, which chat-gen-guard.mjs already enforces

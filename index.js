@@ -5554,6 +5554,14 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (wait > 0) moodState.pending = setTimeout(go, wait); else go();
     }
 
+    // Reads .mes, never extra.display_text, and that is deliberate. SillyTavern renders
+    // `extra.display_text ?? mes`, and the translate extension sets display_text to the
+    // TRANSLATION while leaving mes in the original language — so parsing mes is what
+    // keeps these English regexes working for a user reading the chat in another
+    // language. Its reverse path (mes becomes the translation) applies only to OUTGOING
+    // user messages, which this never reads. Checked against SillyTavern's source
+    // 24 Sep; the other two writers are reasoning.js and tts, neither of which affects
+    // what this parses.
     function getLastAiMessage(ctx) {
         const chat = ctx.chat;
         if (!chat || !chat.length) return null;
@@ -7391,7 +7399,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // Init
     // ------------------------------------------------------------------
 
+    // Nothing in init() is idempotent: addSettingsUi appends a fresh drawer and every
+    // eventSource.on below registers another handler, so a second call would mount two
+    // settings panels and run onMessage twice per message — doubling a rebuild that
+    // already costs ~46ms at p90. The two entry points below are mutually exclusive
+    // today, so this is insurance rather than a fix, but it is one line.
+    let initDone = false;
     function init() {
+        if (initDone) { dbg('init() called twice; ignoring the second'); return; }
+        initDone = true;
         try {
             const ctx = SillyTavern.getContext();
             const settings = getSettings();
