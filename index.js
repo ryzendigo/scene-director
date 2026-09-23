@@ -2174,6 +2174,7 @@
     let genHooksAttached = false;
     let mapPreloaded = false;
     let biosPromise = null;
+    let biosFolder = null;   // which castFolder biosPromise belongs to
     const neutralVariantCache = {};
     let trailDateKey = null;
     let trailLocs = [];
@@ -3713,12 +3714,34 @@
     // ------------------------------------------------------------------
 
     function fetchBios(settings) {
-        if (!biosPromise) {
-            const url = `/characters/${encodeURIComponent(settings.castFolder)}/npc/bios.json`;
-            biosPromise = fetch(url)
-                .then(function (r) { return r.ok ? r.json() : null; })
-                .catch(function () { return null; });
-        }
+        // The promise itself was the cache, so ONE transient failure (server restarting,
+        // a blip during load) cached a null-resolving promise for good: bio cards then
+        // silently never appeared again, and hovering could not retry. Only re-opening
+        // settings and pressing Apply cleared it, which nobody would connect to missing
+        // bios. Key the cache on the folder, and drop it when the fetch yields nothing so
+        // the next hover tries again.
+        const folder = String((settings && settings.castFolder) || '');
+        if (biosPromise && biosFolder === folder) return biosPromise;
+        biosFolder = folder;
+        const url = `/characters/${encodeURIComponent(folder)}/npc/bios.json`;
+        // A 404/403 is a real answer — there is no bios.json — so cache it; bioLineFor
+        // runs per chip per render and re-fetching a known-missing file on every message
+        // would be a steady stream of 404s. A thrown fetch or a 5xx is NOT an answer, so
+        // drop the cache and let the next render retry.
+        let transient = false;
+        biosPromise = fetch(url)
+            .then(function (r) {
+                if (r.ok) return r.json().catch(function () { transient = false; return null; });
+                if (r.status >= 500) transient = true;
+                return null;
+            })
+            .catch(function () { transient = true; return null; })
+            .then(function (bios) {
+                // A later folder switch may have won the race; do not clobber its cache.
+                if (biosFolder !== folder) return bios;
+                if (transient) biosPromise = null;
+                return (bios && typeof bios === 'object') ? bios : null;
+            });
         return biosPromise;
     }
 

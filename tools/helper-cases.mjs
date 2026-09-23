@@ -299,6 +299,75 @@ function makeLoader() {
   eq('no-op keeps the names',     L.portraits.has('bob'), true);
 }
 
+// ---------------------------------------------------------------------------
+// fetchBios cached the PROMISE, so one transient failure cached a null-resolving
+// promise for good — bio cards silently never came back and hovering could not
+// retry. Only a settings Apply cleared it. Modelled over the same sequence: cache
+// on success, drop on failure, and key on the folder so a switch refetches.
+function makeBios() {
+  let biosPromise = null, biosFolder = null, fetches = 0;
+  return {
+    get fetches() { return fetches; },
+    // resp: {ok, status, body} — models the real fetch outcomes.
+    load(folder, resp) {
+      folder = String(folder || '');
+      if (biosPromise && biosFolder === folder) return biosPromise;
+      biosFolder = folder;
+      fetches++;
+      let transient = false;
+      biosPromise = Promise.resolve(resp)
+        .then(function (r) {
+          if (r === 'throw') { const e = new Error('net'); throw e; }
+          if (r.ok) return r.body;
+          if (r.status >= 500) transient = true;
+          return null;
+        })
+        .catch(function () { transient = true; return null; })
+        .then(function (bios) {
+          if (biosFolder !== folder) return bios;
+          if (transient) biosPromise = null;
+          return (bios && typeof bios === 'object') ? bios : null;
+        });
+      return biosPromise;
+    },
+  };
+}
+const BIOS = { bob: 'a baker' };
+const OK = { ok: true, status: 200, body: BIOS };
+const MISSING = { ok: false, status: 404 };
+const SERVERERR = { ok: false, status: 503 };
+ASYNC.push(['bios: success resolves', async () => {
+  const B = makeBios(); const r = await B.load('alice', OK); return r && r.bob;
+}, 'a baker']);
+ASYNC.push(['bios: success is cached', async () => {
+  const B = makeBios(); await B.load('alice', OK); await B.load('alice', OK); return B.fetches;
+}, 1]);
+// A 404 is a real answer: there is no bios.json. bioLineFor runs per chip per render,
+// so re-asking every message would be a steady stream of 404s. Stay cached.
+ASYNC.push(['bios: a 404 stays cached', async () => {
+  const B = makeBios(); await B.load('alice', MISSING); await B.load('alice', MISSING); return B.fetches;
+}, 1]);
+ASYNC.push(['bios: a 404 resolves null', async () => {
+  const B = makeBios(); return await B.load('alice', MISSING);
+}, null]);
+// A 5xx or a thrown fetch is NOT an answer — the file may well be there.
+ASYNC.push(['bios: a 5xx retries', async () => {
+  const B = makeBios(); await B.load('alice', SERVERERR); await B.load('alice', OK); return B.fetches;
+}, 2]);
+ASYNC.push(['bios: a throw retries', async () => {
+  const B = makeBios(); await B.load('alice', 'throw'); await B.load('alice', OK); return B.fetches;
+}, 2]);
+ASYNC.push(['bios: recovers after a blip', async () => {
+  const B = makeBios(); await B.load('alice', 'throw');
+  const r = await B.load('alice', OK); return r && r.bob;
+}, 'a baker']);
+ASYNC.push(['bios: folder switch refetches', async () => {
+  const B = makeBios(); await B.load('alice', OK); await B.load('carol', OK); return B.fetches;
+}, 2]);
+ASYNC.push(['bios: a non-object is null', async () => {
+  const B = makeBios(); return await B.load('alice', { ok: true, status: 200, body: 'oops' });
+}, null]);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
