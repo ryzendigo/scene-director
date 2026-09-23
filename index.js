@@ -5590,6 +5590,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         lastParsedDate = null;
         lastParsedLoc = null;
         lastOverlayState = null;
+        // Both are keyed by DIALOGUE COLOUR, which means something different in every
+        // chat. unknownInfo caches a guessed name and gender per hex and is only ever
+        // filled on a miss, so a colour first seen in one chat kept that chat's name on
+        // the chip in the next one; colourAlias binds a hex to a CAST KEY, so presence
+        // detection credited the wrong character outright. Neither was cleared anywhere.
+        unknownInfo.clear();
+        colourAlias.clear();
         clearAllTimeouts();
         teardownSpriteCrossfade();
         try {

@@ -494,6 +494,50 @@ eq('trail: dated rotates daily', trailRun(many, many.map((_, i) => ({ year: 2026
 eq('trail: short run untouched', trailRun(['kitchen', 'garden', 'kitchen'], null).join(','), 'kitchen,garden');
 eq('trail: one place stays one', trailRun(['kitchen', 'kitchen'], null).length, 1);
 
+// ---------------------------------------------------------------------------
+// unknownInfo and colourAlias are keyed by DIALOGUE COLOUR, which means a different
+// person in every chat. unknownInfo caches a guessed name/gender per hex and is only
+// written on a miss (`if (!info)`), so once a colour was seen its label was never
+// re-derived — switching chats kept the previous chat's name on the chip. colourAlias
+// binds a hex straight to a cast key, so presence credited the wrong character.
+// Neither was cleared anywhere, including onChatChanged.
+function makeColourCaches(clearOnSwitch) {
+  const unknownInfo = new Map(), colourAlias = new Map();
+  return {
+    switchChat() { if (clearOnSwitch) { unknownInfo.clear(); colourAlias.clear(); } },
+    // Returns the label shown for this hex in the current chat.
+    see(hex, guessedLabel) {
+      const key = 'unk:' + hex;
+      let info = unknownInfo.get(key);
+      if (!info) { info = { label: guessedLabel || 'Unknown', hex }; unknownInfo.set(key, info); }
+      return info.label;
+    },
+    alias(hex, castKey) { if (!colourAlias.has(hex)) colourAlias.set(hex, castKey); return colourAlias.get(hex); },
+  };
+}
+{
+  const C = makeColourCaches(true);
+  eq('colour: first guess sticks',   C.see('#a33', 'Baker'), 'Baker');
+  eq('colour: same chat reuses',     C.see('#a33', 'Someone Else'), 'Baker');
+  C.switchChat();
+  eq('colour: new chat re-guesses',  C.see('#a33', 'Sister'), 'Sister');
+}
+{
+  const C = makeColourCaches(true);
+  C.alias('#a33', 'baker');
+  C.switchChat();
+  eq('alias: new chat rebinds',      C.alias('#a33', 'sister'), 'sister');
+}
+// Without the clear, both carry the previous chat's answer across.
+{
+  const C = makeColourCaches(false);
+  C.see('#a33', 'Baker'); C.switchChat();
+  eq('colour: uncleared carries',    C.see('#a33', 'Sister'), 'Baker');
+  const D = makeColourCaches(false);
+  D.alias('#a33', 'baker'); D.switchChat();
+  eq('alias: uncleared carries',     D.alias('#a33', 'sister'), 'baker');
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
