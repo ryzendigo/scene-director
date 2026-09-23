@@ -38,7 +38,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     return JSON.stringify(Object.keys(m.atlas));
   });
   console.log('seeded atlas days:', seeded);
-  await sleep(1500);
+  // The HUD element is only CREATED inside updateSceneHud(), which runs on a message render — so
+  // setting enableHud is not enough on a fresh profile, there has to be a render afterwards. The
+  // driver used to rely on one having happened already, which is why it passed on a container whose
+  // settings an earlier run had left switched on and failed from defaults.
+  await p.evaluate(async () => {
+    const c = SillyTavern.getContext();
+    const et = c.eventTypes || c.event_types || {};
+    if (c.eventSource && et.MESSAGE_RECEIVED) await c.eventSource.emit(et.MESSAGE_RECEIVED, c.chat.length - 1);
+  });
+  await sleep(2500);
   // Open the modal directly through the same entry point the click uses.
   const opened = await p.evaluate(() => {
     const before = !!document.getElementById('scene-director-atlas');

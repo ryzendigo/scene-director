@@ -94,6 +94,22 @@ The stage screenshot passed on all seven. Loading is not the test; saving is.
 Driver invocation (Playwright in Docker, host network, from the st-demo dir):
 `docker run --rm --network host -v $PWD/<script>:/w/<script>:ro mcr.microsoft.com/playwright:v1.55.0-noble sh -c 'cd /w && npm i -s playwright@1.55.0 >/dev/null 2>&1; node <script>'`
 
+⚠️ **Reset the demo's settings first, or a driver can pass on state an earlier run
+left behind.** The container accumulates `extension_settings.scene_director`
+across runs: on 23 Sep it had `enableHud: true` stored while the extension
+defaults it to false, and `atlas.js` had been passing on that leftover rather
+than on anything it established itself.
+
+```bash
+ssh root@10.14.88.171 "python3 -c \"import json
+p='/mnt/pool/config/st-demo/data/default-user/settings.json'
+d=json.load(open(p)); d.get('extension_settings',{}).pop('scene_director',None)
+json.dump(d,open(p,'w'))\"; docker restart st-demo"
+```
+
+A release check that only passes on a dirty profile is not a release check. Every
+driver must pass from defaults, which is what a new user has.
+
 ⚠️ **Wait for the demo to answer before launching a driver.** `docker start st-demo`
 returns as soon as the container exists, not when SillyTavern is serving, and a
 driver that starts too early dies with `ERR_CONNECTION_REFUSED`. On 23 Sep that
