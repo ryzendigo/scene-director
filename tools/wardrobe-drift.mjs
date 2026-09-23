@@ -47,6 +47,12 @@ const OPTS = {
   userRe: new RegExp('\\b' + userName + '\\b', 'i'),
   otherFemale: true, userIsMale: true,
 };
+// The extension does NOT carry state forever: it rebuilds the wardrobe from scratch over the last
+// WARDROBE_LOOKBACK messages on every message, edit and swipe. A probe that accumulates across the
+// whole chat reports durations the extension never actually holds — the first version of this tool
+// claimed a 1,484-message towel, which is 18x the window. Read it from index.js so the two cannot
+// drift apart.
+const LOOKBACK = Number((/const WARDROBE_LOOKBACK = (\d+)/.exec(src) || [])[1]) || 80;
 const state = {};
 let lastDay = null, maxWorn = 0, maxAt = 0, contradictions = 0, dupes = 0;
 const firstContradiction = [];
@@ -64,6 +70,12 @@ msgs.forEach((o, i) => {
     }
   }
   if (day) lastDay = day;
+  // Expire anything the rebuild window would no longer see. Rebuilding the whole window on every
+  // message is what the extension does, but that is O(n^2) over a 7,000-message chat; dropping
+  // entries older than the window has the same effect on what can be "currently worn".
+  for (const who of Object.keys(state)) for (const g of Object.keys(state[who])) {
+    if ((state[who][g].at || 0) < i - LOOKBACK) delete state[who][g];
+  }
   W.scan(text, [], state, { ...OPTS, at: i, speaker: o.is_user ? 'user' : 'main' });
 
   for (const who of Object.keys(state)) {

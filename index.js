@@ -1044,8 +1044,16 @@
             if (!label) return null;
             if (!available || !available.size || available.has(label)) return label;
             for (const alt of (NEAREST[label] || [])) if (available.has(alt)) return alt;
-            // Never neutral for a non-neutral verdict: nearest broad fallback.
-            for (const alt of ['caring', 'curiosity', 'joy', 'sadness', 'nervousness']) if (available.has(alt)) return alt;
+            // Never neutral for a non-neutral verdict: nearest broad fallback. 23 Sep: but the
+            // broad list was warm-first for EVERY label, so with only warm sprites installed an
+            // angry or grieving character showed a CARING face — the opposite of what was written.
+            // Try same-valence options first; neutral is a better last resort than a contradiction.
+            const DARKISH = new Set(['anger', 'annoyance', 'disgust', 'disapproval', 'grief', 'sadness',
+                'remorse', 'disappointment', 'fear', 'nervousness', 'embarrassment', 'confusion']);
+            const broad = DARKISH.has(label)
+                ? ['sadness', 'nervousness', 'curiosity', 'neutral', 'caring', 'joy']
+                : ['caring', 'curiosity', 'joy', 'sadness', 'nervousness'];
+            for (const alt of broad) if (available.has(alt)) return alt;
             return label;
         }
 

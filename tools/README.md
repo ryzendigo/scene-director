@@ -113,10 +113,16 @@ true.
   once** are always bugs. The engine's own rules say they cannot happen. A hat,
   cap, scarf or gloves beside "(nothing)" is legal, because those genuinely
   survive undressing.
-- **Longest worn** is the useful signal. A garment on for hundreds of messages
-  means either the text that should have removed it was never matched, or
-  something recorded a garment nobody put on. "He pulls his cap lower" once
-  recorded a cap worn for 2,515 messages.
+- **Longest worn** is the useful signal. A garment on for much longer than the
+  rebuild window means either the text that should have removed it was never
+  matched, or something recorded a garment nobody put on. "He pulls his cap
+  lower" once recorded a cap worn for 2,515 messages.
+
+  The extension rebuilds the wardrobe from the last `WARDROBE_LOOKBACK`
+  messages, so nothing can be "worn" for longer than that window unless the
+  prose keeps re-establishing it. This tool models that; an earlier version did
+  not, and reported a 1,484-message towel, which is 18x the window and was an
+  artefact of the tool rather than a bug in the engine.
 
 Exits non-zero when it finds an impossible state.
 

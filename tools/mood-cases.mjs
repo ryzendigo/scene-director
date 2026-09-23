@@ -75,6 +75,27 @@ const CASES = [
   { t: '*I duck my head, but I am smiling too hard to hide it.*', want: 'none', solo: false },
 ];
 
+// mapToAvailable picks the sprite when the folder has no file for the verdict. 23 Sep: the broad
+// fallback list was warm-first for EVERY label, so with only warm sprites installed an angry or
+// grieving character showed a CARING face — the opposite of what the prose said. Neutral is a
+// better last resort than a contradiction.
+const NEAR_CASES = [
+  // Full set: NEAREST handles these before the broad list ever runs.
+  { label: 'anger', have: ['neutral', 'caring', 'curiosity', 'joy', 'sadness', 'nervousness'], want: 'sadness' },
+  { label: 'fear', have: ['neutral', 'caring', 'curiosity', 'joy', 'sadness', 'nervousness'], want: 'nervousness' },
+  { label: 'love', have: ['neutral', 'caring', 'curiosity', 'joy', 'sadness', 'nervousness'], want: 'caring' },
+  // Warm-only folder: a dark mood must NOT become caring while neutral is on the shelf.
+  { label: 'anger', have: ['neutral', 'caring', 'joy'], want: 'neutral' },
+  { label: 'grief', have: ['neutral', 'caring', 'joy'], want: 'neutral' },
+  { label: 'disgust', have: ['neutral', 'caring', 'joy'], want: 'neutral' },
+  // ...while a warm mood still takes the warm sprite rather than neutral.
+  { label: 'love', have: ['neutral', 'caring', 'joy'], want: 'caring' },
+  { label: 'orgasm', have: ['neutral', 'caring', 'joy'], want: 'joy' },
+  // An exact file always wins, and an empty set means "install everything", so pass through.
+  { label: 'anger', have: ['anger', 'caring'], want: 'anger' },
+  { label: 'anger', have: [], want: 'anger' },
+];
+
 // npcVariant picks which portrait file a cast chip shows. Added 0.9.14: an exact per-mood file
 // wins over the bucket map, so npc/bob-curiosity.png is used instead of collapsing to neutral.
 // The last two cases are the ones that matter for existing users: with no per-mood files the
@@ -100,12 +121,18 @@ for (const c of CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} ${c.t}`);
 }
+for (const c of NEAR_CASES) {
+  const got = M.mapToAvailable(c.label, new Set(c.have));
+  const ok = got === c.want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(14)} want ${c.want.padEnd(14)} mapToAvailable(${c.label}, [${c.have.join(',')}])`);
+}
 for (const c of VARIANT_CASES) {
   const got = M.npcVariant(c.label, c.have ? new Set(c.have) : null);
   const ok = got === c.want;
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} npcVariant(${c.label}, ${c.have ? '[' + c.have.join(',') + ']' : 'none'})`);
 }
-const total = CASES.length + VARIANT_CASES.length;
+const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
