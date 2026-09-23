@@ -52,6 +52,12 @@ demo character only) with the release candidate installed in
 
       node tools/mood-cases.mjs --src=../docs/rachel-images/rachel-autobg-index.js
 
+   A full mutation sweep (slow, a few minutes) sabotages every engine function in
+   turn and reports any that NO suite reacts to. SURVIVED must stay at zero; the
+   "only crashed" list is a weak signal, not a coverage hole:
+
+      node tools/mutation.mjs
+
       node tools/regex-safety.mjs && node tools/settings-repair.mjs \
         && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs \
         && node tools/settings-fuzz.mjs && node tools/text-fuzz.mjs
