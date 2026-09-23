@@ -39,7 +39,23 @@ if (guards.size && !/chatGen\+\+/.test(src)) problems.push('chatGen is never inc
 // `await` must not be followed by a write to per-chat state without a guard in
 // between. getContext()/chatMeta() resolve live, so such a write lands on whatever
 // chat is open when the handler resumes.
-const PER_CHAT_WRITE = /^\s*(lastBg|lastBgLoc|lastBgGraded|lastCostume|trailDateKey|trailLocs)\s*=[^=]|^\s*meta\.(lastCostume|trailDateKey|trailLocs)\s*=/;
+// Every variable onChatChanged resets IS per-chat state, by definition. Derive the
+// list from that handler rather than hardcoding it: a hardcoded copy silently drifts
+// the moment someone adds a reset, which is the same class of bug these guards exist
+// to prevent.
+const ocStart = lines.findIndex((l) => /^\s{4}function onChatChanged\s*\(/.test(l));
+const PER_CHAT = [];
+if (ocStart >= 0) {
+    const ocEnd = starts.find((x) => x > ocStart) ?? lines.length;
+    for (let i = ocStart; i < ocEnd; i++) {
+        const m = /^\s{8}([a-zA-Z_][\w]*)\s*=\s*(null|\[\]|false|'')\s*;/.exec(lines[i]);
+        if (m && !PER_CHAT.includes(m[1])) PER_CHAT.push(m[1]);
+    }
+}
+if (!PER_CHAT.length) problems.push('could not derive the per-chat variable list from onChatChanged');
+if (process.env.SD_SHOW_PERCHAT) console.log('derived per-chat:', PER_CHAT.join(', '));
+const PER_CHAT_WRITE = new RegExp(
+    `^\\s*(${PER_CHAT.join('|')})\\s*=[^=]|^\\s*meta\\.(${PER_CHAT.join('|')})\\s*=`);
 for (const fnStart of captures) {
     // Walk this function's body to its end (next function start, or EOF).
     const next = starts.find((x) => x > fnStart);
