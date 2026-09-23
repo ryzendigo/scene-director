@@ -2761,8 +2761,16 @@
             if (chip.moodTs && Date.now() - chip.moodTs < 8000) return;
             dbg(`npc ${member.key}: ` + MoodEngine.describe(null, local, lex, out) + ` -> ${variant}`);
             queueDom(function () {
+                // classifyLocal above is async and this body is queued again, so the strip
+                // may have been cleared in between. The replace was already guarded on
+                // isConnected, but the Map was written either way — leaving an entry whose
+                // element is in no document. castChips.size divides the available height in
+                // applyStripAppearance, so one phantom made every VISIBLE chip smaller, and
+                // the prune only drops a key once it stops being seen. Store the fresh chip
+                // only when it actually went into the page.
+                if (!chip.el.isConnected) return;
                 const fresh = buildChip(member, variant, chip.speaking, settings, chip.lingering);
-                if (chip.el.isConnected) chip.el.replaceWith(fresh.el);
+                chip.el.replaceWith(fresh.el);
                 fresh.moodTs = Date.now();
                 castChips.set(member.key, fresh);
             });

@@ -368,6 +368,51 @@ ASYNC.push(['bios: a non-object is null', async () => {
   const B = makeBios(); return await B.load('alice', { ok: true, status: 200, body: 'oops' });
 }, null]);
 
+// ---------------------------------------------------------------------------
+// Phantom chips. refineNpcMood awaits a classifier, then queues a DOM callback, so
+// the strip can be cleared in between. The replace was guarded on isConnected but
+// the castChips Map was written either way — leaving an entry whose element is in
+// no document. applyStripAppearance divides the available height by castChips.size,
+// so one phantom makes every VISIBLE chip smaller, and the prune only drops a key
+// once it stops being seen.
+// `fresh` is tagged so the test can tell a NEW never-inserted element from the
+// stale one that was already there — that distinction is the whole bug.
+function refine(chips, key, stillConnected, guarded) {
+  const chip = chips.get(key);
+  if (!chip) return;
+  if (guarded && !stillConnected) return;          // the fix: bail before building
+  const fresh = { el: { isConnected: stillConnected, fresh: true }, mood: 'happy' };
+  if (stillConnected) chip.el.isConnected = false; // replaceWith detaches the old one
+  chips.set(key, fresh);
+}
+// Did a refine leave the Map holding a new element that never entered the document?
+const phantoms = chips => [...chips.values()].filter(c => c.el.fresh && !c.el.isConnected).length;
+
+// The real sizing expression, lifted so the test cannot drift from it.
+const sizeSrc = src.slice(src.indexOf('if (!compact && castChips.size > 1)'));
+const perExpr = /const per = ([^;]*);/.exec(sizeSrc)[1];
+function chipCap(size, avail) {
+  const castChips = { size };
+  return eval(perExpr);
+}
+{
+  const chips = new Map([['ann', { el: { isConnected: true } }], ['bob', { el: { isConnected: true } }]]);
+  refine(chips, 'ann', true, true);
+  eq('normal refine keeps size',    chips.size, 2);
+  eq('refined chip is connected',   chips.get('ann').el.isConnected, true);
+  eq('normal refine: no phantom',   phantoms(chips), 0);
+}
+{
+  // Strip cleared while the classifier was awaiting: the old chip is already detached.
+  const chips = new Map([['ann', { el: { isConnected: false } }], ['bob', { el: { isConnected: true } }]]);
+  refine(chips, 'ann', false, true);
+  eq('cleared strip: no phantom',   phantoms(chips), 0);
+  eq('cleared strip: entry kept',   chips.get('ann').el.fresh, undefined);
+}
+// The sizing consequence: a phantom inflates the divisor, shrinking real chips.
+eq('two real chips size',    Math.round(chipCap(2, 800)), 374);
+eq('a phantom shrinks them', chipCap(3, 800) < chipCap(2, 800), true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
