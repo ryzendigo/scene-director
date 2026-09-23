@@ -2929,6 +2929,9 @@
     // Day trail & life counters — shown as the HUD hover tooltip
     // ------------------------------------------------------------------
 
+    // One day's worth of places. A dated chat never approaches this; it exists for chats
+    // that use 📍 headers without dates, where nothing else would ever empty the trail.
+    const TRAIL_MAX = 40;
     function updateDayTrail(date, location, settings) {
         try {
             if (!settings.enableDayTrail || !location) return;
@@ -2943,6 +2946,13 @@
             }
             if (!trailLocs.includes(location)) {
                 trailLocs.push(location);
+                // A dated chat bounds this implicitly: the day rollover above empties the trail.
+                // A chat that writes 📍 headers but no date never rotates, so the trail became
+                // "every location ever" — the HUD tooltip joins it with " → " and the preloader
+                // walks it, so a long chat got an unreadable wall of text and a prefetch queue
+                // covering the whole story. The atlas store next door is capped at 60 days for
+                // the same reason; this one was simply missed. Keep the most recent.
+                if (trailLocs.length > TRAIL_MAX) trailLocs = trailLocs.slice(-TRAIL_MAX);
                 // v0.5.0: the trail travels with the chat file.
                 const meta = chatMeta(true);
                 if (meta) {

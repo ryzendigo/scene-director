@@ -464,6 +464,36 @@ ASYNC.push(['gen: a later message is fine', async () => {
   await C.message('sundress', true, null); return C.meta.B.lastCostume;
 }, 'sundress']);
 
+// ---------------------------------------------------------------------------
+// The day trail is "today's places". A dated chat empties it on the day rollover,
+// so it never grows. A chat that writes a location header but NO date never rotates
+// — key falls back to trailDateKey, which equals itself — so the trail silently
+// became "every location ever": an unreadable HUD tooltip (joined with " → ") and a
+// prefetch queue covering the whole story. The atlas store beside it is capped at 60
+// days for the same reason; this one was missed.
+const TRAIL_MAX = Number(/const TRAIL_MAX = (\d+);/.exec(src)[1]);
+function trailRun(locations, dates) {
+  let key0 = null, locs = [];
+  locations.forEach((loc, i) => {
+    const date = dates ? dates[i] : null;
+    const key = date ? `${date.year}-${date.month}-${date.day}` : key0;
+    if (key !== key0) { key0 = key; locs = []; }
+    if (!locs.includes(loc)) {
+      locs.push(loc);
+      if (locs.length > TRAIL_MAX) locs = locs.slice(-TRAIL_MAX);
+    }
+  });
+  return locs;
+}
+const many = Array.from({ length: 500 }, (_, i) => 'room ' + i);
+eq('trail: cap is sane',         TRAIL_MAX >= 10 && TRAIL_MAX <= 200, true);
+eq('trail: undated is capped',   trailRun(many, null).length, TRAIL_MAX);
+eq('trail: keeps the recent',    trailRun(many, null).at(-1), 'room 499');
+eq('trail: drops the oldest',    trailRun(many, null).includes('room 0'), false);
+eq('trail: dated rotates daily', trailRun(many, many.map((_, i) => ({ year: 2026, month: 8, day: 1 + (i % 28) }))).length, 1);
+eq('trail: short run untouched', trailRun(['kitchen', 'garden', 'kitchen'], null).join(','), 'kitchen,garden');
+eq('trail: one place stays one', trailRun(['kitchen', 'kitchen'], null).length, 1);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
