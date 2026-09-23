@@ -2682,6 +2682,16 @@
                     hud.id = 'scene-director-hud';
                     document.body.appendChild(hud);
                     applyHudAppearance(settings);
+                    // 0.9.15: open the story atlas. Bound once here rather than in the tooltip
+                    // updater, which only runs on a render; the setting is read at click time so
+                    // toggling the day trail takes effect immediately.
+                    hud.addEventListener('click', function (ev) {
+                        if (sdSuppressClick) return;            // the click that ends a drag
+                        const st = getSettings();
+                        if (!st.enableDayTrail || atlasDays().length < 2) return;
+                        ev.stopPropagation();
+                        toggleAtlasModal();
+                    });
                     try {
                         if (typeof ResizeObserver === 'function') {
                             hudResizeObserver = new ResizeObserver(function () { queueDom(function () { applyStripAppearance(getSettings()); }); });
@@ -2722,6 +2732,10 @@
             if (!settings.enableDayTrail || !location) return;
             const key = date ? `${date.year}-${date.month}-${date.day}` : trailDateKey;
             if (key !== trailDateKey) {
+                // 0.9.15: the finished day is filed in the atlas rather than thrown away, so the HUD
+                // can show where the story has been, not just where it is today. Same metadata store
+                // as the trail, so it travels with the chat file and needs no new setting.
+                archiveTrailDay();
                 trailDateKey = key;
                 trailLocs = [];
             }
@@ -2736,6 +2750,57 @@
                 }
             }
         } catch (e) { /* ignore */ }
+    }
+
+    /** File the day that is ending into meta.atlas. No-op for an empty or unnamed day. */
+    let sdSuppressClick = false;
+
+    function archiveTrailDay() {
+        try {
+            if (!trailDateKey || !trailLocs.length) return;
+            const meta = chatMeta(true);
+            if (!meta) return;
+            if (!meta.atlas || typeof meta.atlas !== 'object') meta.atlas = {};
+            meta.atlas[trailDateKey] = trailLocs.slice();
+            // Keep the store bounded: the most recent 60 dated days, oldest dropped first.
+            const keys = Object.keys(meta.atlas).sort(function (a, b) { return atlasKeyOrder(a) - atlasKeyOrder(b); });
+            while (keys.length > 60) { delete meta.atlas[keys.shift()]; }
+            saveMeta();
+        } catch (e) { /* ignore */ }
+    }
+
+    /** Numeric ordering for "YYYY-M-D" keys: a string sort gets month 10 and month 9 backwards. */
+    function atlasKeyOrder(k) {
+        const p = String(k).split('-').map(Number);
+        return (p[0] || 0) * 10000 + (p[1] || 0) * 100 + (p[2] || 0);
+    }
+
+    /** Every day the chat has recorded, today included, oldest first. */
+    function atlasDays() {
+        const out = [];
+        try {
+            const meta = chatMeta(false);
+            const stored = (meta && meta.atlas && typeof meta.atlas === 'object') ? meta.atlas : {};
+            for (const k of Object.keys(stored).sort(function (a, b) { return atlasKeyOrder(a) - atlasKeyOrder(b); })) {
+                if (k !== trailDateKey && Array.isArray(stored[k]) && stored[k].length) out.push([k, stored[k]]);
+            }
+        } catch (e) { /* ignore */ }
+        if (trailDateKey && trailLocs.length) out.push([trailDateKey, trailLocs.slice()]);
+        out.sort(function (a, b) { return atlasKeyOrder(a[0]) - atlasKeyOrder(b[0]); });
+        return out;
+    }
+
+    /** "2026-9-23" -> "Wed Sep 23 2026"; anything unparseable is shown as-is. */
+    function prettyAtlasDate(k) {
+        const p = String(k).split('-').map(Number);
+        if (p.length === 3 && p[0] > 0 && p[1] >= 1 && p[1] <= 12 && p[2] >= 1 && p[2] <= 31) {
+            const js = new Date(p[0], p[1] - 1, p[2]);
+            // Reject a rolled-over date (31 Feb becomes 3 Mar) so the label never contradicts the key.
+            if (!isNaN(js.getTime()) && js.getMonth() === p[1] - 1 && js.getDate() === p[2]) {
+                return `${DAY_NAMES[js.getDay()]} ${MON_NAMES[p[1] - 1]} ${p[2]} ${p[0]}`;
+            }
+        }
+        return String(k);
     }
 
     // v0.5.0: restore the day trail on chat open — metadata first, else a
@@ -2797,12 +2862,67 @@
             if (settings.enableDayTrail && trailLocs.length) lines.push(trailLocs.join(' → '));
             const counters = buildCounters(date, settings);
             if (counters) lines.push(counters);
+            if (settings.enableDayTrail && atlasDays().length > 1) lines.push('(click for the atlas)');
             const title = lines.join('\n');
             queueDom(function () {
                 const hud = document.getElementById('scene-director-hud');
-                if (hud && hud.title !== title) hud.title = title;
+                if (!hud) return;
+                if (hud.title !== title) hud.title = title;
+                const clickable = settings.enableDayTrail && atlasDays().length > 1;
+                const want = clickable ? 'pointer' : '';
+                if (hud.style.cursor !== want) hud.style.cursor = want;
             });
         } catch (e) { /* ignore */ }
+    }
+
+    // 0.9.15: the story atlas — every dated day the chat has recorded and where it went. Built from
+    // the same trail the HUD tooltip shows, so there is nothing extra to switch on: if the day trail
+    // is enabled and more than one day exists, the HUD becomes clickable.
+    function toggleAtlasModal() {
+        try {
+            const existing = document.getElementById('scene-director-atlas');
+            if (existing) { existing.remove(); return; }
+            const days = atlasDays();
+            if (!days.length) return;
+            const back = document.createElement('div');
+            back.id = 'scene-director-atlas';
+            back.setAttribute('role', 'dialog');
+            back.setAttribute('aria-modal', 'true');
+            back.setAttribute('aria-label', 'Story atlas');
+            back.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.55);'
+                + 'display:flex;align-items:center;justify-content:center;padding:16px;';
+            const box = document.createElement('div');
+            box.style.cssText = 'max-width:520px;max-height:75vh;overflow:auto;border-radius:10px;'
+                + 'background:var(--SmartThemeBlurTintColor,#1b1b1b);color:var(--SmartThemeBodyColor,#eee);'
+                + 'box-shadow:0 10px 40px rgba(0,0,0,.5);padding:18px 20px;font-size:14px;line-height:1.5;';
+            const h = document.createElement('div');
+            h.textContent = 'Story atlas';
+            h.style.cssText = 'font-size:16px;font-weight:600;margin:0 0 12px;';
+            box.appendChild(h);
+            // Newest first: the recent days are the ones being looked for.
+            for (const [key, locs] of days.slice().reverse()) {
+                const row = document.createElement('div');
+                row.style.cssText = 'margin:0 0 10px;';
+                const d = document.createElement('div');
+                d.textContent = prettyAtlasDate(key);
+                d.style.cssText = 'opacity:.7;font-size:12px;';
+                const t = document.createElement('div');
+                t.textContent = locs.join(' → ');
+                row.appendChild(d); row.appendChild(t); box.appendChild(row);
+            }
+            const hint = document.createElement('div');
+            hint.textContent = days.length + (days.length === 1 ? ' day recorded' : ' days recorded')
+                + ' — click anywhere to close';
+            hint.style.cssText = 'opacity:.55;font-size:12px;margin-top:14px;';
+            box.appendChild(hint);
+            back.appendChild(box);
+            back.addEventListener('click', function () { back.remove(); });
+            const onKey = function (ev) {
+                if (ev.key === 'Escape') { back.remove(); document.removeEventListener('keydown', onKey); }
+            };
+            document.addEventListener('keydown', onKey);
+            document.body.appendChild(back);
+        } catch (e) { dbg('atlas modal failed: ' + e); }
     }
 
     // ------------------------------------------------------------------
@@ -4136,6 +4256,9 @@
             if (!drag) return;
             const moved = drag.moved; drag = null;
             document.body.classList.remove('scene-director-sprite-dragging');
+            // A drag ends with a click event. Suppress the next one so dragging the HUD does not
+            // also open the atlas; cleared on a timer because a plain click fires no drag at all.
+            if (moved) { sdSuppressClick = true; setTimeout(function () { sdSuppressClick = false; }, 0); }
             if (moved) { saveSettings(); syncSpriteSliders(); try { applyStripAppearance(getSettings()); } catch (e) { /* ignore */ } }
         };
         document.addEventListener('pointerup', end, true);
