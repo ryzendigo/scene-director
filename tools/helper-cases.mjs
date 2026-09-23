@@ -31,6 +31,7 @@ function lift(name, args) {
 }
 
 const spriteFolderAndExt = lift('spriteFolderAndExt', 'src');
+const parseHourFromMatch = lift('parseHourFromMatch', 'm');
 const slugify = lift('slugify', 'name');
 const uniqueCastKey = lift('uniqueCastKey', 'base, cast');
 
@@ -65,6 +66,25 @@ eq('keys are unique', cast.map(m => m.key), ['new-member', 'new-member-2', 'new-
 eq('first keeps its key', cast[0].key, 'new-member');   // sprite folders are named after it
 eq('empty cast', uniqueCastKey('bob', []), 'bob');
 eq('non-array cast', uniqueCastKey('bob', null), 'bob');
+
+// The header clock. 23 Sep: the default timeRegex required a literal ':' and a mandatory AM/PM.
+// Measured against 1,548 real headers, 2 used a DOT ("10.05 PM") and produced no time at all.
+// parseHourFromMatch already treats a missing meridiem as a 24-hour clock, so the suffix is
+// optional now too. These cases drive the SHIPPED default pattern, not a copy of it.
+const timeSrc = (/^\s+timeRegex: '((?:[^'\\]|\\.)*)'/m.exec(src) || [])[1];
+if (!timeSrc) { console.error('timeRegex default not found'); process.exit(2); }
+const timeRe = new RegExp(timeSrc.replace(/\\\\/g, '\\'), 'i');
+const hourOf = t => parseHourFromMatch(timeRe.exec(t));
+eq('12-hour PM', hourOf('\u{1F570}\uFE0F 10:05 PM'), 22);
+eq('12-hour AM', hourOf('\u{1F570}\uFE0F 8:15 AM'), 8);
+eq('noon', hourOf('\u{1F570}\uFE0F 12:05 PM'), 12);
+eq('midnight', hourOf('\u{1F570}\uFE0F 12:30 AM'), 0);
+eq('dot separator', hourOf('\u{1F570}\uFE0F 10.05 PM'), 22);
+eq('dot, no space before AM', hourOf('\u{1F570}\uFE0F 6.01AM'), 6);
+eq('24-hour, no meridiem', hourOf('\u{1F570}\uFE0F 14:05'), 14);
+eq('hour out of range', hourOf('\u{1F570}\uFE0F 25:00'), null);
+eq('13 PM is not a time', hourOf('\u{1F570}\uFE0F 13:00 PM'), null);
+eq('no clock at all', hourOf('no time here'), null);
 
 let fails = 0;
 for (const [label, got, want] of CASES) {

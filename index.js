@@ -327,7 +327,11 @@
 
         // Header parsing (regex sources, compiled with the 'i' flag).
         locationRegex: '📍([^|\\]]+)',
-        timeRegex: '🕰️?\\s*(\\d{1,2}):(\\d{2})\\s*(AM|PM)',
+        // 23 Sep: separator was a literal ':' and AM/PM was required. Measured against 1,548
+        // real headers: 2 used a DOT ("10.05 PM") and parsed as no time at all.
+        // parseHourFromMatch already treats a missing meridiem as a 24-hour clock, so making
+        // the suffix optional costs nothing and covers models that write "14:05".
+        timeRegex: '🕰️?\\s*(\\d{1,2})[:.](\\d{2})\\s*(AM|PM)?',
         dateRegex: '(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{1,2}),?\\s+(\\d{4})',
         weatherRegex: '\\|\\s*([^|\\[\\]]+)\\]\\s*$',
         rainRegex: 'rain|storm|shower|drizzl',
