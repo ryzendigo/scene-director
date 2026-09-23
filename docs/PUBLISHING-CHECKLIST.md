@@ -46,7 +46,8 @@ demo character only) with the release candidate installed in
 - [ ] **The standalone checks pass**, none of which is a case suite:
 
       ```bash
-      node tools/regex-safety.mjs && node tools/settings-repair.mjs
+      node tools/regex-safety.mjs && node tools/settings-repair.mjs \
+        && node tools/timer-tracking.mjs
       ```
 
       The first confirms a pasted regex that backtracks exponentially is

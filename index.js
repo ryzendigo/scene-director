@@ -3253,8 +3253,9 @@
                     ghost.style.opacity = '1';
                     ghost.dataset.born = String(Date.now());
                     document.body.appendChild(ghost);
-                    // 0.7.2: hard-remove on an UNTRACKED timeout (the tracked
-                    // registry is cleared on chat change / page hide).
+                    // 0.7.2: Untracked on purpose — the tracked registry is cleared on
+                    // chat change / page hide, and this removal must still run or the
+                    // ghost is orphaned in the DOM.
                     setTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 3700);
                     spriteChangeCount++;
                     scheduleReconcile();
@@ -3268,6 +3269,8 @@
                             return;
                         }
                         requestAnimationFrame(function () { ghost.style.opacity = '0'; });
+                        // Untracked on purpose, as above: this removal must still run
+                        // after a chat change or the faded ghost is orphaned in the DOM.
                         setTimeout(function () { try { ghost.remove(); } catch (e) { /* ignore */ } }, 1300);
                     };
                     startFade();
@@ -4513,7 +4516,9 @@
             document.body.classList.remove('scene-director-sprite-dragging');
             // A drag ends with a click event. Suppress the next one so dragging the HUD does not
             // also open the atlas; cleared on a timer because a plain click fires no drag at all.
-            if (moved) { sdSuppressClick = true; setTimeout(function () { sdSuppressClick = false; }, 0); }
+            // Untracked on purpose: if this reset were cancelled the flag would stay true
+        // and silently swallow the next click on the sprite.
+        if (moved) { sdSuppressClick = true; setTimeout(function () { sdSuppressClick = false; }, 0); }
             if (moved) { saveSettings(); syncSpriteSliders(); try { applyStripAppearance(getSettings()); } catch (e) { /* ignore */ } }
         };
         document.addEventListener('pointerup', end, true);
@@ -5498,7 +5503,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function onChatChanged() {
         // New chat: forget dedupe state, clear pending timers, re-attach the
         // sprite observer fresh, and clear the previous chat's UI (item 5).
-        try { setTimeout(rebuildWardrobe, 100); } catch (e) { /* ignore */ }
         lastBg = null;
         lastBgGraded = false;
         lastBgLoc = null;
@@ -5530,6 +5534,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             applyStripAppearance(settings);
             lastMoodLabel = null;
             replayExpression(SillyTavern.getContext(), settings, 1500);
+            // Wardrobe rebuild goes LAST and tracked: scheduled before the restore
+            // block it could race the trail/costume/presence seeding above, and
+            // scheduled untracked it survived this handler's own clearAllTimeouts().
+            sdTimeout(rebuildWardrobe, 100);
         } catch (e) { /* ignore */ }
         onMessage();
     }
@@ -7158,8 +7166,8 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const et = ctx.eventTypes || ctx.event_types;
             ctx.eventSource.on(et.MESSAGE_RECEIVED, onMessage);
             ctx.eventSource.on(et.MESSAGE_SWIPED, onMessage);
-            if (et.MESSAGE_SENT) ctx.eventSource.on(et.MESSAGE_SENT, function () { setTimeout(rebuildWardrobe, 50); });
-            if (et.MESSAGE_EDITED) ctx.eventSource.on(et.MESSAGE_EDITED, function () { setTimeout(rebuildWardrobe, 50); });
+            if (et.MESSAGE_SENT) ctx.eventSource.on(et.MESSAGE_SENT, function () { sdTimeout(rebuildWardrobe, 50); });
+            if (et.MESSAGE_EDITED) ctx.eventSource.on(et.MESSAGE_EDITED, function () { sdTimeout(rebuildWardrobe, 50); });
             if (et.CHAT_CHANGED) ctx.eventSource.on(et.CHAT_CHANGED, onChatChanged);
             // Generation hooks are lazy — only when a feature needs them.
             if (settings.enableTypingPresence || settings.enableIdlePresence) {
