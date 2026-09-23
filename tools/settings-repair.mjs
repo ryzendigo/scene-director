@@ -36,6 +36,13 @@ const CASES = [
   ['places holds a null', { cast: [], places: [null, { pattern: 'p' }] }],
   ['both hold scalars', { cast: [1, 'two', { key: 'a' }], places: ['x', { pattern: 'p' }] }],
   ['already clean', { cast: [{ key: 'a' }], places: [{ pattern: 'p' }] }],
+  // 23 Sep: keys were a bare slugify(label) with no uniqueness check, so two members added without
+  // renaming the first both got 'new-member'. Every lookup is cast.find(m => m.key === k), so the
+  // second was unreachable and the presence Map merged them into one chip. The FIRST keeps its key
+  // — sprite folders and per-member settings are named after it.
+  ['duplicate keys', { cast: [{ key: 'new-member', label: 'A' }, { key: 'new-member', label: 'B' }], places: [] }],
+  ['triple duplicate', { cast: [{ key: 'm' }, { key: 'm' }, { key: 'm' }], places: [] }],
+  ['missing key', { cast: [{ label: 'no key' }, { label: 'also none' }], places: [] }],
 ];
 let fails = 0;
 for (const [name, s] of CASES) {
@@ -45,6 +52,11 @@ for (const [name, s] of CASES) {
   if (!Array.isArray(s.places)) problems.push('places is not an array');
   if (Array.isArray(s.cast) && s.cast.some(x => !x || typeof x !== 'object')) problems.push('cast holds a non-object');
   if (Array.isArray(s.places) && s.places.some(x => !x || typeof x !== 'object')) problems.push('places holds a non-object');
+  if (Array.isArray(s.cast)) {
+    const keys = s.cast.map(x => x && x.key);
+    if (new Set(keys).size !== keys.length) problems.push('cast has duplicate keys: ' + JSON.stringify(keys));
+    if (keys.some(k => !k)) problems.push('cast has an empty key');
+  }
   // The real test: can the call sites actually run?
   try { s.cast.find(x => x.key === 'z'); s.cast.map(x => x.colorHex); s.places.forEach(p => p.slots); }
   catch (e) { problems.push('a call site THREW: ' + String(e).slice(0, 44)); }

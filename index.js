@@ -2252,6 +2252,20 @@
             if (s.cast.some(function (m) { return !m || typeof m !== 'object'; })) {
                 s.cast = s.cast.filter(function (m) { return m && typeof m === 'object'; });
             }
+            // 23 Sep: keys used to be a bare slugify(label) with no uniqueness check, so anyone who
+            // added two members without renaming the first has two "new-member" rows saved. Every
+            // lookup is cast.find(m => m.key === k), so the second was unreachable and the presence
+            // Map merged them. Renumber the later duplicates; the FIRST keeps its key, because
+            // sprite folders and per-member settings are named after it.
+            const seenKeys = new Set();
+            for (const m of s.cast) {
+                if (!m.key) m.key = 'member';
+                if (!seenKeys.has(m.key)) { seenKeys.add(m.key); continue; }
+                let n = 2;
+                while (seenKeys.has(`${m.key}-${n}`)) n++;
+                m.key = `${m.key}-${n}`;
+                seenKeys.add(m.key);
+            }
             for (const m of s.cast) {
                 if (m.bio === undefined) m.bio = '';
                 if (m.avatar === undefined) m.avatar = '';
@@ -5607,6 +5621,21 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'member';
     }
 
+    /**
+     * A cast key must be unique: every lookup is `cast.find(m => m.key === k)`, and presence is a
+     * Map keyed by it. 23 Sep: the key was a bare slugify(label) with no uniqueness check, so two
+     * members added without renaming the first both got "new-member" — the second was unreachable
+     * for ever, and the presence map silently merged them into one chip. Slug collisions are easy:
+     * "Anne-Marie"/"Anne Marie", "Kate"/"kate", and any two names with no a-z0-9 at all both fall
+     * back to "member".
+     */
+    function uniqueCastKey(base, cast) {
+        const taken = new Set((Array.isArray(cast) ? cast : []).map(function (m) { return m && m.key; }));
+        if (!taken.has(base)) return base;
+        for (let n = 2; n < 1000; n++) { const k = `${base}-${n}`; if (!taken.has(k)) return k; }
+        return `${base}-${Date.now()}`;
+    }
+
     function el(tag, cls, text) {
         const e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -5780,7 +5809,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         const s = getSettings();
         const label = partial.label || 'New member';
         const member = {
-            key: partial.key || slugify(label),
+            key: uniqueCastKey(partial.key || slugify(label), s.cast),
             label,
             colorHex: partial.colorHex || null,
             nameRegex: partial.nameRegex !== undefined ? partial.nameRegex
