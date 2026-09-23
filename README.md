@@ -161,7 +161,7 @@ One card per recurring character:
   instead of floating on the source photo's background. Batch-convert a folder
   of portraits with [`tools/cutout.py`](tools/README.md) (rembg-based, one
   command).
-- **A busy day stays readable** *(0.9.17)*: the atlas listed every place exactly as the scene header wrote it, so a day spent in one venue repeated its name a dozen times — one real show day ran to 2,000 characters of "Rushton Park, Kelmscott - …" before you could see where it went. Places are now grouped by venue, named once with their sub-locations after it, keeping the order they happened in. That day now reads in three lines instead of thirty-five.
+- **A busy day stays readable** *(0.9.17)*: the atlas listed every place exactly as the scene header wrote it, so a day spent in one venue repeated its name a dozen times — one real show day ran to 2,000 characters of "<the showground> - …" before you could see where it went. Places are now grouped by venue, named once with their sub-locations after it, keeping the order they happened in. That day now reads in three lines instead of thirty-five.
 - **The story atlas** *(0.9.15)*: the day trail showed where the story had been *today* and threw yesterday away. Now each finished day is kept, and clicking the scene HUD opens an atlas of every dated day the chat has recorded and the places it went, newest first. It rides in the chat file like the trail does, so it travels with your chat and needs no new setting — turn on **Day trail** and the HUD becomes clickable once there is more than one day to show. The store is capped at the 60 most recent days.
 - **Per-mood portraits for cast chips** *(0.9.14)*: a cast chip used to collapse every mood into one of four buckets — happy, angry, sad, neutral — so a `npc/bob-curiosity.png` you had made could never appear. Now an exact per-mood file wins: name it `npc/<key>-<mood>.png` using any of the engine's mood labels and it is used directly. A few near neighbours fill gaps (`desire` → `flirty`, `embarrassment`/`nervousness`/`excitement` → `flushed`) when that file exists instead. Discovery is the `npc/animated.json` manifest you may already have, so there is nothing new to configure — **and with no per-mood files, behaviour is exactly what it was.**
 - **Backgrounds know more rooms** *(0.9.13)*: the noun list the background engine reads had no entry for a dozen ordinary furnishings — `tv`, `lounge room`, `cushions`, `microwave`, `dishwasher`, `cupboard`, `wardrobe`, `dresser`, `duvet`, `toilet` — so a room described with those words scored too low to pick a background. Words that belong to every room (window, lamp, rug, curtains, door, chair) were deliberately left out: they would make the noun layer noise instead of evidence. The threshold is unchanged — with no 📍 header the engine still wants three distinct nouns before it moves the background, and falling back to the previous one is the intended behaviour, not a failure.
@@ -198,8 +198,8 @@ One card per recurring character:
 > header, and the first matching card wins — so `kitchen` alone will claim
 > *every* kitchen in the story. Write `granny.*kitchen` / `farmhouse.*kitchen`
 > for house-specific rooms, order specific cards above generic ones, and never
-> use a street-address word (`road`, `street`, `avenue`) as a matcher: "40
-> Roberts Road, lounge room" is a lounge. Anything a card doesn't claim falls
+> use a street-address word (`road`, `street`, `avenue`) as a matcher: "12
+> Mill Road, lounge room" is a lounge. Anything a card doesn't claim falls
 > through to the generic pack.
 
 

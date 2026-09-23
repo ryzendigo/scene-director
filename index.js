@@ -2776,7 +2776,7 @@
             return String(k);
         }
 
-        // A busy day records the same venue a dozen ways ("Rushton Park - Main Gate", "...- Show
+        // A busy day records the same venue a dozen ways ("The showground - Main Gate", "...- Show
         // Gate", "...- Sheep Pens"), and the raw join runs past 2,000 characters of repeated prefix.
         // Group by the part before the dash, keeping first-seen order, so the venue is named once and
         // its sub-locations are listed after it. A real show day folds 35 entries into 3.
