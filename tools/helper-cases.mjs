@@ -244,6 +244,61 @@ eq('skips an existing -2',        rename([bob, ann, ann2], bob, 'ann'), 'ann-3')
 eq('other card keeps its key',    ann.key, 'ann');
 eq('collision is never silent',   rename([bob, ann], bob, 'ann') !== 'ann', true);
 
+// ---------------------------------------------------------------------------
+// loadAnimatedPortraits: the animated manifest decides .webp vs .png in spriteUrl,
+// so a name left over from a previous cast folder requests a file that is not there.
+// The Set was add-only and the "already loaded" guard was claimed BEFORE the fetch
+// resolved, so a failed fetch latched it for good. Modelled here as a state machine
+// over the same sequence the real function performs.
+function makeLoader() {
+  const portraits = new Set();
+  let loaded = '';
+  return {
+    portraits,
+    get loaded() { return loaded; },
+    // returns a settle(ok, list) for the pending fetch, or null when the guard skipped
+    load(folder) {
+      if (!folder || loaded === folder) return null;
+      loaded = folder;
+      portraits.clear();
+      return function settle(ok, list) {
+        if (ok) { if (loaded !== folder) return; for (const k of list) portraits.add(String(k)); }
+        else if (loaded === folder) loaded = '';
+      };
+    },
+  };
+}
+{
+  const L = makeLoader();
+  L.load('alice')(true, ['bob', 'bob-happy']);
+  eq('manifest loads',            L.portraits.has('bob'), true);
+  const s2 = L.load('carol');
+  eq('switch clears old names',   L.portraits.has('bob'), false);
+  s2(true, ['dave']);
+  eq('new folder names land',     L.portraits.has('dave'), true);
+  eq('old name still gone',       L.portraits.has('bob'), false);
+}
+{
+  const L = makeLoader();
+  L.load('alice')(false, null);
+  eq('failed fetch frees guard',  L.loaded, '');
+  eq('retry is not skipped',      L.load('alice') !== null, true);
+}
+{
+  const L = makeLoader();
+  const slow = L.load('alice');
+  L.load('carol');                       // user switches mid-flight
+  slow(true, ['bob']);                   // the alice manifest lands late
+  eq('stale manifest ignored',    L.portraits.has('bob'), false);
+  eq('guard still on new folder', L.loaded, 'carol');
+}
+{
+  const L = makeLoader();
+  L.load('alice')(true, ['bob']);
+  eq('same folder is a no-op',    L.load('alice'), null);
+  eq('no-op keeps the names',     L.portraits.has('bob'), true);
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

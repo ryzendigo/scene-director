@@ -4642,13 +4642,30 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function loadAnimatedPortraits(settings) {
         const folder = settings.castFolder || '';
         if (!folder || animatedFolderLoaded === folder) return;
+        // The Set used to be add-only and the guard above was claimed BEFORE the fetch
+        // resolved. Two bugs fell out: switching cast folder kept the old folder's names,
+        // and spriteUrl picks .webp over .png for any name in here — so a name that only
+        // exists in the previous folder requested a .webp that is not there. And a failed
+        // fetch (offline, 500) latched the guard for good, so the manifest never loaded
+        // again for that folder. Clear on switch, and only claim the folder once the
+        // manifest is actually in hand.
         animatedFolderLoaded = folder;
+        animatedPortraits.clear();
+        npcExtraCache.clear();
         try {
             fetch(`/characters/${encodeURIComponent(folder)}/npc/animated.json`, { cache: 'no-store' })
                 .then(function (r) { return r.ok ? r.json() : null; })
-                .then(function (list) { if (Array.isArray(list)) for (const k of list) animatedPortraits.add(String(k)); })
-                .catch(function () { /* no manifest: stills only */ });
-        } catch (e) { /* ignore */ }
+                .then(function (list) {
+                    // A later switch may have won the race; do not apply a stale manifest.
+                    if (animatedFolderLoaded !== folder) return;
+                    if (Array.isArray(list)) for (const k of list) animatedPortraits.add(String(k));
+                })
+                .catch(function () {
+                    // No manifest: stills only. Release the guard so a later render retries
+                    // rather than leaving the folder permanently marked as loaded.
+                    if (animatedFolderLoaded === folder) animatedFolderLoaded = '';
+                });
+        } catch (e) { animatedFolderLoaded = ''; }
     }
 
     // The animated manifest already lists every portrait name ("bob", "bob-curiosity", ...), so the
