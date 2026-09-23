@@ -149,3 +149,33 @@ gh pr create --repo SillyTavern/SillyTavern-Content --base main \
 
 `id` = the folder name ST will clone into, so it must stay `scene-director`
 (matches the repo name).
+
+## 4. Candidate port: the story atlas (assessed 23 Sep 2026, not started)
+
+The private sibling extension has an **atlas**: it records the places visited on
+each in-story date and shows them in a modal from the scene HUD. It is generic —
+the data model is just `{dateKey: [locations]}` persisted in chat metadata — and
+would be a real addition here, where the trail currently lives only in a
+tooltip.
+
+Sized before starting, so it is not begun blind:
+
+- **7 functions, ~154 lines**: `atlasKey`, `loadAtlas`, `persistAtlas`,
+  `prettyAtlasDate`, `rebuildAtlasFromMessages`, `restoreTrailFromAtlas`,
+  `toggleAtlasModal`.
+- **4 missing dependencies** this repo would need first: `injectStyles`,
+  `extractDate`, `sortableDateKey`, `currentChatId`.
+- Plus a CSS block for the modal and a click handler on the HUD.
+- Realistically ~250 lines, not a drop-in.
+
+**The one thing to be careful about.** The atlas code carries ~10 references
+matching the author's story, but on inspection they are almost entirely DOM ids
+namespaced `rachel-atlas-*`, not story data — rename the prefix and they go.
+That still has to be checked line by line rather than assumed: this repo must
+never carry another person's characters or places. Scan the result with
+
+```bash
+grep -icE 'rachel|martha|joseph|kelmscott|granty|heidi|rufus|virginia|armadale' index.js README.md
+```
+
+which must print 0 before anything is committed.
