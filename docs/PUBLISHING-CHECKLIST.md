@@ -47,7 +47,8 @@ demo character only) with the release candidate installed in
 
       ```bash
       node tools/regex-safety.mjs && node tools/settings-repair.mjs \
-        && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs
+        && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs \
+        && node tools/settings-fuzz.mjs
       ```
 
       The first confirms a pasted regex that backtracks exponentially is
