@@ -49,6 +49,11 @@ demo character only) with the release candidate installed in
       node tools/regex-safety.mjs && node tools/settings-repair.mjs \
         && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs \
         && node tools/settings-fuzz.mjs && node tools/text-fuzz.mjs
+
+   Then, against whatever chat .jsonl files are to hand (the cap is justified by
+   real prose, so it has to be rechecked against real prose):
+
+      node tools/cap-equivalence.mjs <chat.jsonl> [more.jsonl ...]
       ```
 
       The first confirms a pasted regex that backtracks exponentially is
