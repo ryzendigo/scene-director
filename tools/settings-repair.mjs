@@ -77,5 +77,37 @@ for (const [name, s] of CASES) {
   if (problems.length) fails++;
   console.log(`${problems.length ? 'FAIL' : 'PASS'}  ${name.padEnd(20)} cast=${JSON.stringify(s.cast).slice(0, 26)} places=${JSON.stringify(s.places).slice(0, 22)}${problems.length ? '  <- ' + problems.join('; ') : ''}`);
 }
+// applyForm's empty-box fallback hardcodes which JSON fields default to {} and which to
+// null, everything else falling through to []. That list has no connection to
+// defaultSettings, so adding a JSON field silently gives it [] — wrong for an object or a
+// null-means-built-in field, and the box would then save a value of the wrong shape.
+{
+  const jfBlock = /const JSON_FIELDS = \[([\s\S]*?)\n    \];/.exec(src);
+  // Anchor on the sd_${key} lookup, which is unique to this line. A looser
+  // `value.trim() ||` matched the cast rename handler instead and the check then
+  // compared against `member.key`, fabricating five failures.
+  const fbLine = /const raw = document\.getElementById\(`sd_\$\{key\}`\)\.value\.trim\(\) \|\|([^\n]*)/.exec(src);
+  if (!jfBlock || !fbLine) {
+    console.log('FAIL  could not locate JSON_FIELDS or the applyForm empty-box fallback');
+    fails++;
+  } else {
+    const fields = [...jfBlock[1].matchAll(/^\s*\['([a-zA-Z]+)'/gm)].map((m) => m[1]);
+    // Split the fallback into its two named groups, in source order: the '{}' arm first,
+    // then the 'null' arm. Anything named in neither falls through to '[]'.
+    const braceArm = fbLine[1].slice(0, fbLine[1].indexOf("'{}'"));
+    const nullArm = fbLine[1].slice(fbLine[1].indexOf("'{}'"), fbLine[1].indexOf("'null'"));
+    for (const f of fields) {
+      const d = new RegExp('^\\s+' + f + ':\\s*(\\[\\]|null|\\{)', 'm').exec(src);
+      if (!d) { console.log(`FAIL  ${f} is a JSON_FIELD with no defaultSettings entry`); fails++; continue; }
+      const want = d[1] === '{' ? '{}' : d[1];
+      const named = (arm) => new RegExp("key === '" + f + "'").test(arm);
+      const got = named(braceArm) ? '{}' : (named(nullArm) ? 'null' : '[]');
+      const ok = got === want;
+      if (!ok) fails++;
+      console.log(`${ok ? 'PASS' : 'FAIL'}  empty ${f.padEnd(22)} applies ${got.padEnd(6)} default ${want}`);
+    }
+  }
+}
+
 console.log(fails ? `\n${fails} failing` : '\nall pass');
 process.exit(fails ? 1 : 0);
