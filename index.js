@@ -3953,9 +3953,15 @@
             const rawName = folder.replace(/^\/characters\//, '').replace(/\/$/, '');
             let apiName;
             try { apiName = decodeURIComponent(rawName); } catch (e) { apiName = rawName; }
+            // Same rule as spriteList itself: do not cache an empty result. Fixing the fetch cache
+            // alone is not enough — this DERIVED cache would keep the empty array and the retry
+            // would never be reached.
             neutralVariantCache[cacheKey] = spriteList(apiName).then(function (list) {
-                return list.filter(function (x) { return x.label === 'neutral'; })
-                    .map(function (x) { return x.path.split('?')[0]; });
+                const out = (Array.isArray(list) ? list : [])
+                    .filter(function (x) { return x && x.label === 'neutral' && x.path; })
+                    .map(function (x) { return String(x.path).split('?')[0]; });
+                if (!out.length) delete neutralVariantCache[cacheKey];
+                return out;
             });
         }
         return neutralVariantCache[cacheKey];
@@ -5045,9 +5051,18 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         if (!folder) return Promise.resolve([]);
         let pr = spriteListCache.get(folder);
         if (!pr) {
+            // 23 Sep: an empty result used to be cached for ever. One transient fetch failure at
+            // startup therefore left the sprite list empty for the whole session — and the mood
+            // path reads this to decide which expression exists, so it concluded the character had
+            // no sprites and kept falling back. Only cache a list that actually has something in
+            // it; an empty one is dropped so the next caller retries.
             pr = fetch('/api/sprites/get?name=' + encodeURIComponent(folder))
                 .then(function (r) { return r.ok ? r.json() : []; })
-                .catch(function () { return []; });
+                .catch(function () { return []; })
+                .then(function (list) {
+                    if (!Array.isArray(list) || !list.length) spriteListCache.delete(folder);
+                    return Array.isArray(list) ? list : [];
+                });
             spriteListCache.set(folder, pr);
         }
         return pr;

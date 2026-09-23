@@ -151,11 +151,50 @@ eq('bare percent does not throw', apiNameFor('/characters/50% Human/'), '50% Hum
 eq('malformed escape does not throw', apiNameFor('/characters/a%zz/'), 'a%zz');
 eq('encoded CJK decodes', apiNameFor('/characters/%E4%B8%AD/'), '\u4e2d');
 
+// spriteList's cache. 23 Sep: an empty result was cached for ever, so ONE transient fetch failure
+// at startup left the list empty for the whole session — and the mood path reads it to decide which
+// expression sprites exist, so it concluded the character had none. The derived neutralVariantCache
+// had the same shape, and fixing only the fetch cache would not have helped: the empty derived
+// array would still be held. Both drop an empty result so the next caller retries.
+// The function is lifted and driven with a stubbed fetch, so this is the shipped logic.
+const spriteListSrc = (/function spriteList\(folder\) \{[\s\S]*?\n    \}/.exec(src) || [])[0];
+if (!spriteListSrc) { console.error('spriteList not found'); process.exit(2); }
+const ASYNC = [];
+{
+  let calls = 0;
+  const cache = new Map();
+  const fetchStub = () => (++calls === 1
+    ? Promise.reject(new Error('transient'))
+    : Promise.resolve({ ok: true, json: () => Promise.resolve([{ label: 'neutral', path: 'a.png' }]) }));
+  const spriteList = eval(`(function(){
+    const spriteListCache = cache; const fetch = fetchStub; const encodeURIComponent = globalThis.encodeURIComponent;
+    ${spriteListSrc}; return spriteList; })()`);
+  ASYNC.push(['empty result is not cached', async () => {
+    const first = await spriteList('E');
+    const cachedAfterFail = cache.has('E');
+    const second = await spriteList('E');
+    return JSON.stringify({ first, cachedAfterFail, secondLen: second.length, calls });
+  }, JSON.stringify({ first: [], cachedAfterFail: false, secondLen: 1, calls: 2 })]);
+  ASYNC.push(['a good result IS cached', async () => {
+    const before = calls;
+    await spriteList('E');
+    return JSON.stringify({ extraFetches: calls - before });
+  }, JSON.stringify({ extraFetches: 0 })]);
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label.padEnd(28)}${ok ? '' : ` got ${got} want ${want}`}`);
 }
-console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length} pass`);
+for (const [label, fn, want] of ASYNC) {
+  let got;
+  try { got = await fn(); } catch (e) { got = 'THREW ' + String(e).slice(0, 60); }
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label.padEnd(28)}${ok ? '' : ` got ${got} want ${want}`}`);
+}
+const total = CASES.length + ASYNC.length;
+console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
