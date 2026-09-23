@@ -2239,6 +2239,17 @@
             // 16 places that call .find() on it — a dead settings panel with no way back. The import
             // type check added the same day stops new ones arriving, but settings corrupted before
             // it existed still load, and migrateSettings is the only thing that runs every time.
+            // 23 Sep: the same treatment for the RULE lists. Their settings-panel validators are
+            // thorough, but settings IMPORT only checks the top-level type — an array of garbage
+            // passes as "array" and never sees a validator. applyVariants then reads .minYear /
+            // .month straight off each entry, and it is called inside the background try block, so
+            // one null entry silently disables backgrounds on every message with no error shown.
+            for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules']) {
+                if (!Array.isArray(s[list])) { s[list] = []; continue; }
+                if (s[list].some(function (e) { return !e || typeof e !== 'object'; })) {
+                    s[list] = s[list].filter(function (e) { return e && typeof e === 'object'; });
+                }
+            }
             if (!Array.isArray(s.cast)) s.cast = [];
             // Same as places: eight call sites read properties straight off each member, so one
             // stray null in the list breaks all of them. Drop them here rather than guard eight

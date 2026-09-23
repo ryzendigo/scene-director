@@ -43,6 +43,14 @@ const CASES = [
   ['duplicate keys', { cast: [{ key: 'new-member', label: 'A' }, { key: 'new-member', label: 'B' }], places: [] }],
   ['triple duplicate', { cast: [{ key: 'm' }, { key: 'm' }, { key: 'm' }], places: [] }],
   ['missing key', { cast: [{ label: 'no key' }, { label: 'also none' }], places: [] }],
+  // 23 Sep: the RULE lists have thorough settings-panel validators, but settings IMPORT only checks
+  // the top-level type — an array of garbage passes as "array" and never reaches a validator.
+  // applyVariants reads .minYear/.month straight off each entry and runs inside the background try
+  // block, so one null entry silently disables backgrounds on every message with no error shown.
+  ['eraRules holds junk', { cast: [], places: [], eraRules: [null, 42, { minYear: 2000, from: 'a', to: 'b' }] }],
+  ['seasonalMap holds junk', { cast: [], places: [], seasonalMap: ['nope', { month: 8, from: 'a', to: 'b' }] }],
+  ['costumeRules holds null', { cast: [], places: [], costumeRules: [null] }],
+  ['rule list is not an array', { cast: [], places: [], wardrobeCostumeRules: 'nope' }],
 ];
 let fails = 0;
 for (const [name, s] of CASES) {
@@ -52,6 +60,11 @@ for (const [name, s] of CASES) {
   if (!Array.isArray(s.places)) problems.push('places is not an array');
   if (Array.isArray(s.cast) && s.cast.some(x => !x || typeof x !== 'object')) problems.push('cast holds a non-object');
   if (Array.isArray(s.places) && s.places.some(x => !x || typeof x !== 'object')) problems.push('places holds a non-object');
+  for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules']) {
+    if (s[list] === undefined) continue;
+    if (!Array.isArray(s[list])) { problems.push(`${list} is not an array`); continue; }
+    if (s[list].some(x => !x || typeof x !== 'object')) problems.push(`${list} holds a non-object`);
+  }
   if (Array.isArray(s.cast)) {
     const keys = s.cast.map(x => x && x.key);
     if (new Set(keys).size !== keys.length) problems.push('cast has duplicate keys: ' + JSON.stringify(keys));
