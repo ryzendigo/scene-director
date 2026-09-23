@@ -1,7 +1,11 @@
 // Screenshot driver for the Scene Director demo instance. node shot.js <scan|stage>
 const { chromium } = require('playwright');
 const URL = 'http://127.0.0.1:8327/';
+// 23 Sep: say which mode ran. With no argument this quietly does 'scan', which prints key
+// diagnostics rather than the chip count the release checklist asks for, so a log could show
+// shot.js "passing" while the stage check had never run.
 const phase = process.argv[2] || 'scan';
+console.log(`shot.js phase: ${phase}${process.argv[2] ? '' : '  (no argument given — defaulted)'}`);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await chromium.launch();

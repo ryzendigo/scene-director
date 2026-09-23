@@ -22,7 +22,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const seeded = await p.evaluate(() => {
     const c = SillyTavern.getContext();
     const s = c.extensionSettings && c.extensionSettings['scene_director'];
-    if (s) s.enableDayTrail = true;
+    // 23 Sep: enableDayTrail alone is not enough. The trail is rendered INTO the HUD, and
+    // enableHud defaults to false, so with it off there is no #scene-director-hud to click and
+    // this driver reports a failure that is its own. It passed for a long time only because an
+    // earlier run had left the setting on; running it after errcheck.js (which toggles every
+    // checkbox) exposed the order dependence. Set both, so the driver stands alone.
+    if (s) { s.enableDayTrail = true; s.enableHud = true; }
     const meta = c.chatMetadata || (c.chat_metadata) || null;
     if (!meta) return 'no metadata';
     meta['scene_director'] = meta['scene_director'] || {};

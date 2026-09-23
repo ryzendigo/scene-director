@@ -20,22 +20,38 @@ demo character only) with the release candidate installed in
       Must print nothing. Check string and regex literals, not just comments:
       a name inside an alternation (the `QUAL` garment list once hardcoded two
       real people) is easy to miss when skimming.
-- [ ] **All six engine suites pass.** They lift the pure engine blocks straight
+- [ ] **Every engine suite passes.** They lift the pure engine blocks straight
       out of `index.js`, so they test what ships, and they run in milliseconds
       with no container. Run these FIRST — a failure here is quicker to read
       than any browser driver:
 
       ```bash
-      for t in wardrobe-harness mood-cases presence-cases pose-cases background-cases atlas-cases; do
-        printf '%-20s ' "$t"; node tools/$t.mjs | tail -1
+      for t in tools/*-cases.mjs tools/wardrobe-harness.mjs; do
+        printf '%-26s ' "$(basename $t)"; node "$t" | tail -1
       done
       ```
 
-      Expected: wardrobe 36, mood 26, presence 16, pose 13, background 11,
-      atlas 10 — 112 cases, all pass. Several assert deliberate NON-detections (a mention
-      inside someone else's speech, a negated garment, a dog on all fours, a
-      room named by too few nouns). A change that makes an engine fire more
-      eagerly shows up here as a failure, which is the point.
+      Discover them rather than listing them: a hand-written list goes stale and
+      silently stops running whatever was added since. Do NOT hard-code the
+      expected counts here either — they changed on every release for thirteen
+      releases straight, and a stale number is worse than none because it makes
+      a real regression look like an out-of-date document. Every suite must
+      print "all N pass" and exit 0; that is the check.
+
+      Many cases assert deliberate NON-detections: a mention inside someone
+      else's speech, a negated garment, a dog on all fours, a room named by too
+      few nouns. A change that makes an engine fire more eagerly shows up here
+      as a failure, which is the point.
+- [ ] **The two standalone checks pass**, neither of which is a case suite:
+
+      ```bash
+      node tools/regex-safety.mjs && node tools/settings-repair.mjs
+      ```
+
+      The first confirms a pasted regex that backtracks exponentially is
+      rejected while every regex the extension ships still compiles. The second
+      confirms a corrupted settings object is repaired rather than left to throw
+      on the 24 call sites that read `cast` and `places`.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
       third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
@@ -87,6 +103,26 @@ executed. Gate the drivers on the port:
 ```bash
 until curl -sf -m 3 -o /dev/null http://127.0.0.1:8327/; do sleep 2; done
 ```
+
+**Run all five with one command**, so a driver cannot be left out. It discovers
+whatever is in `tools/demo/`, prints a banner per driver and reports the count,
+which is the check that catches an omission:
+
+```bash
+ssh root@10.14.88.171 "docker start st-demo >/dev/null 2>&1
+  until curl -sf -m 3 -o /dev/null http://127.0.0.1:8327/; do sleep 2; done
+  timeout 1800 docker run --rm --network host -v /tmp/sd-demo-drivers:/w:ro \
+    mcr.microsoft.com/playwright:v1.55.0-noble sh -c 'cp /w/*.js /tmp/ && cd /tmp
+      npm i -s playwright@1.55.0 >/dev/null 2>&1
+      # shot.js needs an argument: with none it runs its \"scan\" mode, not the \"stage\" mode
+      # the checklist asks for, and prints key diagnostics instead of the chip count.
+      n=0; for f in *.js; do a=\"\"; [ \"\$f\" = shot.js ] && a=stage
+        echo \"=== \$f \$a ===\"; node \"\$f\" \$a || echo \"DRIVER FAILED: \$f\"; n=\$((n+1)); done
+      echo \"drivers run: \$n\"'"
+```
+
+On 23 Sep I ran a hand-written command listing four drivers by name and missed
+`atlas.js` in thirteen consecutive releases. Listing them by hand is the bug.
 
 And check each driver actually produced its own output line, rather than
 grepping the combined log for PASS — a missing section is the failure mode a
