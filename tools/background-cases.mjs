@@ -191,6 +191,34 @@ for (const [file, hour, have, want] of EXT_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(22)} want ${want.padEnd(22)} withVariant(${JSON.stringify(file)})`);
 }
-const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length + VARIANT_CASES.length + EXT_CASES.length;
+// --- declining beats guessing --------------------------------------------------------
+// The documented rule is "highest score >= 4 (>= 3 when the header offers nothing);
+// below that keep the previous background". Measured on the real corpus: headers like
+// "Carter Farmhouse - House Site" match no key at all, and the narration scores only 1-2
+// from incidental words ("porch", "park", "bathroom") — so the engine returns no verdict
+// and holds. Without that floor an empty building site would be shown as a bathroom.
+const DECLINE_CASES = [
+  ['Carter Farmhouse - House Site', 'he sets the stump on the footing by the porch', null,
+    'weak narration on an unmatched header declines'],
+  ['Carter Farmhouse - House Site', 'the wet grass and the park beyond', null,
+    'one incidental noun is not enough'],
+  // A header that DOES name a scene wins outright.
+  ['the kitchen', '', 'generic-kitchen.jpg', 'a header keyword decides'],
+  // Narration alone can decide, but the noun layer matches OBJECTS, not room names —
+  // the room name belongs in the header. "the kitchen counter" scores nothing; a stove
+  // and a kettle and a sink do.
+  ['somewhere vague', 'she put the kettle on the stove and rinsed the pan in the sink',
+    'generic-kitchen.jpg', 'object nouns clear the no-header floor'],
+  ['somewhere vague', 'the kitchen, the kitchen, the kitchen', null,
+    'the room NAME is not a noun-layer cue'],
+];
+for (const [header, narr, want, why] of DECLINE_CASES) {
+  const v = BackgroundEngine.evaluate({ tables: TABLES, header, narr, available: null });
+  const got = (v && v.file) || null;
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(22)} want ${String(want).padEnd(22)} ${why}`);
+}
+const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length + VARIANT_CASES.length + EXT_CASES.length + DECLINE_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
