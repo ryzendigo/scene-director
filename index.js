@@ -2776,7 +2776,35 @@
             return String(k);
         }
 
-        return { keyOrder, prettyDate };
+        // A busy day records the same venue a dozen ways ("Rushton Park - Main Gate", "...- Show
+        // Gate", "...- Sheep Pens"), and the raw join runs past 2,000 characters of repeated prefix.
+        // Group by the part before the dash, keeping first-seen order, so the venue is named once and
+        // its sub-locations are listed after it. A real show day folds 35 entries into 3.
+        const VENUE_SEP = /\s[-\u2013\u2014]\s/;
+        function foldTrail(list, maxSubs) {
+            const cap = maxSubs || 3;
+            const order = [];
+            const byVenue = new Map();
+            for (const raw of (list || [])) {
+                const l = String(raw).trim();
+                if (!l) continue;
+                const m = VENUE_SEP.exec(l);
+                const venue = (m ? l.slice(0, m.index) : l).trim();
+                const sub = m ? l.slice(m.index + m[0].length).trim() : '';
+                if (!byVenue.has(venue)) { byVenue.set(venue, []); order.push(venue); }
+                const subs = byVenue.get(venue);
+                if (sub && subs.indexOf(sub) < 0) subs.push(sub);
+            }
+            return order.map(function (venue) {
+                const subs = byVenue.get(venue);
+                if (!subs.length) return venue;
+                const shown = subs.slice(0, cap);
+                const more = subs.length - shown.length;
+                return venue + ' (' + shown.join(', ') + (more > 0 ? ', +' + more + ' more' : '') + ')';
+            });
+        }
+
+        return { keyOrder, prettyDate, foldTrail };
     })();
     // === ATLAS ENGINE (pure) END ===
 
@@ -2921,7 +2949,7 @@
                 d.textContent = prettyAtlasDate(key);
                 d.style.cssText = 'opacity:.7;font-size:12px;';
                 const t = document.createElement('div');
-                t.textContent = locs.join(' → ');
+                t.textContent = AtlasEngine.foldTrail(locs, 3).join(' → ');
                 row.appendChild(d); row.appendChild(t); box.appendChild(row);
             }
             const hint = document.createElement('div');

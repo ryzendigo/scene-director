@@ -45,6 +45,30 @@ const SORT_CASES = [
     want: ['2026-1-1', '2026-1-2', '2026-1-10'] },
 ];
 
+// foldTrail groups a day's places by venue so a busy day stays readable. Measured against two real
+// days from a live chat: a show day folded 35 entries (2,008 chars) to 3 (295), and a day out folded
+// 24 to 9. The separator set matters — real data uses hyphen, en dash AND em dash.
+const FOLD_CASES = [
+  { name: 'repeated venue collapses',
+    in: ['Rushton Park - Main Gate', 'Rushton Park - Show Gate', 'Rushton Park - Sheep Pens'],
+    want: ['Rushton Park (Main Gate, Show Gate, Sheep Pens)'] },
+  { name: 'em dash separator', in: ['Kelmscott \u2014 Medical Centre', 'Kelmscott \u2014 Pharmacy'],
+    want: ['Kelmscott (Medical Centre, Pharmacy)'] },
+  { name: 'en dash separator', in: ['Kelmscott \u2013 Cafe', 'Kelmscott \u2013 Bakery'],
+    want: ['Kelmscott (Cafe, Bakery)'] },
+  { name: 'revisited venue merges, first-seen order kept',
+    in: ['Home - kitchen', 'Park - gate', 'Home - bedroom'],
+    want: ['Home (kitchen, bedroom)', 'Park (gate)'] },
+  { name: 'duplicate sub-location dropped',
+    in: ['Home - kitchen', 'Home - kitchen'], want: ['Home (kitchen)'] },
+  { name: 'overflow counted, not listed',
+    in: ['P - a', 'P - b', 'P - c', 'P - d', 'P - e'], want: ['P (a, b, c, +2 more)'] },
+  { name: 'no dash passes through', in: ['The kitchen', 'The porch'], want: ['The kitchen', 'The porch'] },
+  { name: 'empty list', in: [], want: [] },
+  // A hyphen with no spaces is part of a name, not a separator.
+  { name: 'hyphenated name is not split', in: ['Jean-Paul Street'], want: ['Jean-Paul Street'] },
+];
+
 const one = process.argv[2];
 if (one) { console.log(pretty(one)); process.exit(0); }
 
@@ -61,6 +85,12 @@ for (const c of SORT_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  sort ${got.join(' ')}`);
 }
-const total = DATE_CASES.length + SORT_CASES.length;
+for (const c of FOLD_CASES) {
+  const got = A.foldTrail(c.in, 3);
+  const ok = JSON.stringify(got) === JSON.stringify(c.want);
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  fold  ${c.name}${ok ? '' : ' -> ' + JSON.stringify(got)}`);
+}
+const total = DATE_CASES.length + SORT_CASES.length + FOLD_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
