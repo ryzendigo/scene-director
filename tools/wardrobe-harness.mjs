@@ -64,7 +64,22 @@ const CASES = [
   // any name and for a relationship word, and must not swallow non-garment nouns.
   { t: "She puts on Sarah's old coat.", want: ["sarah's old coat"] },
   { t: "She wears her mother's dress.", want: ["mother's dress"] },
+  // Negation and contemplation: these used to record the OPPOSITE of what happened.
+  { t: 'She did not put her coat on.', want: [] },
+  { t: "She didn't put her coat on.", want: [] },
+  { t: 'She thought about wearing the blue dress.', want: [] },
+  { t: 'She should have worn her coat.', want: [] },
+  { t: 'She went out without her coat.', want: [] },
+  // An instruction to dress is not a description of dressing.
+  { t: '"Put your coat on," she said.', want: [] },
+  { t: 'She told him to put his coat on.', want: [] },
+  // ...but a character stating what they have on is real and must survive the guard above:
+  { t: '"I\'m wearing the green dress," she said.', want: ['green dress'] },
+  { t: 'She pulled her coat on. "Ready," she said.', want: ['coat'] },
   // Known limits, asserted so they are visible rather than forgotten:
+  // An instruction followed by narration of it being obeyed is suppressed with the instruction.
+  // Recording clothing nobody put on is the worse error, so this stays a deliberate false negative.
+  { t: '"Put your coat on," she said, and he pulled it on.', want: [] },
   // A bare pronoun + non-possessive article ("a clean shirt", not "his") has no traceable owner,
   // so ownerOf drops it. With a possessive or a name it resolves — see the three cases above.
   { t: 'He pulls a clean shirt on.', want: [] },

@@ -1315,7 +1315,14 @@
         const ON_RE = new RegExp("\\b(?:puts?|put|pulls?|pulled|slips?|slipped|tugs?|tugged|shrugs?|shrugged|steps?|stepped|gets?|got|throws?|threw|buttons?|buttoned|zips?|zipped|wriggles?|wriggled|draws?|drew|hooks?|hooked|wraps?|wrapped|drapes?|draped|climbs?|climbed|goes|went|gets?|got)\\s+(?:the|a|an|into|on|back|it)?\\s*(?:herself|himself|myself)?\\s*(?:on|into|up|over|round|around|back on|back into)?\\s*(?:the\\s+|a\\s+|an\\s+|her\\s+|his\\s+|my\\s+|their\\s+|your\\s+)?(" + QUAL + NOUN + ")\\b|\\b(?:wearing|wears|wore|dressed\\s+in|has\\s+on|had\\s+on|still\\s+in|back\\s+in|changes?\\s+into|changed\\s+into|buttoned\\s+into|zipped\\s+into|in)\\s+(?:a\\s+|the\\s+)?(" + QUAL + NOUN + ")\\b|\\b(" + QUAL + NOUN + ")\\s+(?:goes|went|comes|came)\\s+(?:back\\s+)?on\\b|(?:\\band\\b|,)\\s*(?:back\\s+)?into\\s+(?:her\\s+|his\\s+|my\\s+|your\\s+|their\\s+|the\\s+|a\\s+|an\\s+)?(" + QUAL + NOUN + ")\\b", 'gi');
         const OFF_RE = new RegExp("\\b(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\\s+(?:the|a|off|out of|down)?\\s*(?:off|out\\s+of|down|away)?\\s*(?:the|a)?\\s*(" + QUAL + NOUN + ")\\s*(?:off|down|away|over\\s+her\\s+head|to\\s+the\\s+floor|onto\\s+the\\s+floor)?\\b|\\b(" + QUAL + NOUN + ")\\s+(?:comes|came|falls|fell|slides|slid|drops|dropped|goes|went|is|was)\\s+(?:off|down|to\\s+the\\s+floor|onto\\s+the\\s+floor|over\\s+(?:her|his)\\s+head|gone|discarded|in\\s+a\\s+heap)\\b|\\bout\\s+of\\s+(" + QUAL + NOUN + ")\\b", 'gi');
         const NAKED_RE = /\bnaked\b|\bnude\b|\b(?:with|wearing|has|had|got|in)\s+nothing\s+on\b|\bnothing\s+on\s+(?:at\s+all|but|under|beneath|except)\b|\bnot\s+a\s+stitch\b|\bbare\s+(?:from|to)\b|\bin\s+nothing\s+(?:at\s+all|but)\b|\bstripped\s+bare\b|\bwithout\s+a\s+thread\b|\bwearing\s+nothing\b/i;
-        const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|on the plane|at the wedding|in Rome|in Virginia|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put))\b/i;
+        // A command to get dressed, quoted or reported. Anchored at a quote/sentence start so it
+        // cannot fire on ordinary narration like 'She put her coat on'.
+        // Cheap gate: IMPERATIVE_RE only ever matches at a quote or after a speech verb, and its
+        // bounded scan is not free, so skip it entirely for the ordinary narration that is most
+        // sentences. Measured: 80-msg rebuild 1.07ms -> see bench in the commit message.
+        const SPEECH_HINT_RE = /["'\u201c\u2018]|\b(?:said|told|asked|tells?|asks?|says?)\b/i;
+        const IMPERATIVE_RE = /(?:^|["'\u201c\u2018]\s*)(?:put|pull|get|take|wear|try)\b[^"'\u201d\u2019]{0,40}\b(?:on|off)\b|\b(?:said|told|asked|tells?|asks?|says?)\s+(?:\w+\s+){0,2}to\s+(?:put|pull|wear|take|get)\b/i;
+        const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put)|did(?:n'?t| not)|does(?:n'?t| not)|do(?:n'?t| not)|was(?:n'?t| not)|were(?:n'?t| not)|never|without (?:her|his|a|the)|instead of|should have (?:worn|put)|meant to (?:wear|put)|about to (?:wear|put)|thought about|thinking of|considered|wondered|decided against)\b/i;
         // Verbs that appear in BOTH ON_RE and OFF_RE, so the verb alone says nothing about direction:
         // "pulls a shirt on" vs "pulls her shirt off". For these, OFF must show a removal particle or
         // it is not a removal at all. Unambiguous verbs (unbuttons, sheds, peels, strips...) are absent
@@ -1436,6 +1443,12 @@
             while ((sm = SENT_RE.exec(src)) !== null) {
                 const sent = sm[0].replace(/\s+/g, ' ').trim();
                 if (sent.length < 6 || MEMORY_RE.test(sent)) continue;
+                // 23 Sep: an INSTRUCTION to dress is not a description of dressing. '"Put your
+                // coat on," she said' used to record the coat as worn. Only the imperative and
+                // reported-speech forms are dropped: a character stating what they have on
+                // ("I'm wearing the green dress," she said) is real and must still count, so
+                // this deliberately does NOT strip quoted text wholesale.
+                if (SPEECH_HINT_RE.test(sent) && IMPERATIVE_RE.test(sent)) continue;
                 const subj = whose(sent, cast, opts);
                 if (NAKED_RE.test(sent) && subj) { strip(state, subj, at, true); changes.push(subj + ': (nothing)'); }
                 OFF_RE.lastIndex = 0; let m;
@@ -2282,7 +2295,7 @@
         const unknowns = settings.enableUnknownSpeakers ? detectUnknownSpeakers(scene, settings) : [];
         for (const member of settings.cast) {
             // 0.9.5 "Only here when": an optional per-member regex describing the member's world
-            // (e.g. "phone|farm|virginia"). When set and NOT matched, the member cannot be present —
+            // (e.g. "phone|office|kitchen"). When set and NOT matched, the member cannot be present —
             // this stops someone who lives elsewhere being summoned by a message that merely mentions
             // them ("Gran made that dress" putting her chip in a room 9,000 miles away).
             const ctxRe = compileRegex(member.contextRegex || '');
