@@ -1574,8 +1574,19 @@
             if (I_RE.test(sent)) return speaker;
             return null;
         }
+        // A wearer key comes from cast[].key, which the settings drawer lets the user type
+        // verbatim. `state['__proto__'] = {}` on a plain object is a silent no-op, so the
+        // read below returned Object.prototype — and the delete/assign that follow then
+        // stripped and wrote garment names onto it, polluting EVERY plain object in the
+        // page, not just this extension's. Null-prototype buckets make the whole class
+        // impossible without special-casing any one key name.
+        function bucket(state, key) {
+            let s = state[key];
+            if (!s || s === Object.prototype || typeof s !== 'object') { s = Object.create(null); state[key] = s; }
+            return s;
+        }
         function put(state, key, desc, at) {
-            const s = state[key] || (state[key] = {});
+            const s = bucket(state, key);
             const n = norm(desc); const cat = category(n);
             // a new dress replaces the old dress; a new top replaces the old top, etc.
             for (const k of Object.keys(s)) { if (category(k) === cat && cat !== 'acc' && cat !== 'other') delete s[k]; }
@@ -1598,7 +1609,7 @@
         // the live chat, and an apron stayed on for 6,909 messages because nothing ever removed it.
         const KEEP_WHEN_BARE = /\b(?:hat|beanie|cap|scarf|gloves)$/i;
         function strip(state, key, at, keepAcc) {
-            const s = state[key] || (state[key] = {});
+            const s = bucket(state, key);
             for (const k of Object.keys(s)) { if (keepAcc && s[k].cat === 'acc' && KEEP_WHEN_BARE.test(k)) continue; delete s[k]; }
             s['(nothing)'] = { at, cat: 'none' };
         }
@@ -4985,7 +4996,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const cast = wardrobeCast(settings);
             const femaleRes = cast.filter(function (c) { return c.female; }).map(function (c) { return c.re; });
             const start = Math.max(0, chat.length - WARDROBE_LOOKBACK);
-            const state = {}; const recent = [];
+            // Null prototype: wearer keys are user-typed cast keys, and a plain {} silently
+            // discards a "__proto__" bucket (the assignment is a no-op), so that wearer's
+            // wardrobe would never track. See bucket() in the wardrobe engine.
+            const state = Object.create(null); const recent = [];
             let lastDay = null; let dateRe = null;
             try { dateRe = compileRegex(settings.dateRegex); } catch (e) { dateRe = null; }
             for (let i = start; i < chat.length; i++) {

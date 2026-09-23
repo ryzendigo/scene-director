@@ -588,6 +588,42 @@ ASYNC.push(['bglist: force refetches', async () => {
   const B = makeBgList(); await B.load(BG_OK); await B.load(BG_OK, true); return B.fetches;
 }, 2]);
 
+// ---------------------------------------------------------------------------
+// Prototype pollution through a cast key. Wearer keys come from cast[].key, which the
+// settings drawer lets the user type verbatim — "__proto__" included. On a plain
+// object `state['__proto__'] = {}` is a SILENT NO-OP, so the read gave back
+// Object.prototype, and the delete/assign in put()/strip() then stripped and wrote
+// garment names onto it — every plain object in the page gained a "blue shirt". Lifts
+// the shipped bucket() so the test cannot drift from it.
+const bucketSrc = /function bucket\(state, key\) \{([\s\S]*?)\n        \}/.exec(src)[1];
+const bucket = eval('(function (state, key) {' + bucketSrc + '\n})');
+{
+  const canary = {};
+  const state = Object.create(null);
+  const s1 = bucket(state, '__proto__');
+  s1['blue shirt'] = { at: 1 };
+  eq('proto: no pollution',        canary['blue shirt'], undefined);
+  eq('proto: bucket persists',     bucket(state, '__proto__')['blue shirt'] !== undefined, true);
+  eq('proto: not Object.prototype', s1 === Object.prototype, false);
+  eq('proto: bucket has no proto', Object.getPrototypeOf(s1), null);
+}
+{
+  // The same on a PLAIN state object: pollution must still be impossible, even though
+  // such a container cannot persist the bucket (which is why the caller uses null-proto).
+  const canary = {};
+  bucket({}, '__proto__')['hat'] = { at: 1 };
+  eq('proto: plain state safe',    canary['hat'], undefined);
+}
+{
+  // Ordinary keys must behave exactly as before.
+  const state = Object.create(null);
+  const s = bucket(state, 'main');
+  s['apron'] = { at: 2 };
+  eq('proto: normal key works',    bucket(state, 'main')['apron'].at, 2);
+  eq('proto: reuses the bucket',   bucket(state, 'main') === s, true);
+  eq('proto: other names safe',    bucket(state, 'constructor') === Object.prototype, false);
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
