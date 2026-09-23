@@ -13,7 +13,8 @@
 //   presence rate per name, against how often the name appears. A main character scoring present in
 //                 a tenth of their scenes is a bug; a dead or absent character scoring HIGH is the
 //                 opposite bug. Both matter: widening a matcher trades one for the other.
-//   slow          the wardrobe rebuild runs on every message, edit and swipe, so a >60ms message is
+//   slow          per-message engine cost (ONE scan per message), against the 60ms budget
+//   full rebuild  what rebuildWardrobe actually costs: WARDROBE_LOOKBACK messages re-scanned
 //                 worth a look.
 //
 // Verdict counts are not assertions — no chat is labelled. Read them as rates and compare before
@@ -123,6 +124,33 @@ console.log('mood:', JSON.stringify(Object.fromEntries(Object.entries(moods).sor
 console.log('exceptions:', errs.length);
 for (const e of errs.slice(0, 8)) console.log(`  #${e.i} ${e.err}\n     ${JSON.stringify(e.msg)}`);
 console.log('slow (>60ms):', slow.length);
+// The per-message numbers above time ONE scan per message. The extension does not do that:
+// rebuildWardrobe re-scans the last WARDROBE_LOOKBACK messages from scratch on every message,
+// edit and swipe, and that is the dominant cost. This header used to claim the soak measured
+// the rebuild; it did not, so a 240-message window could have been raised on latency figures
+// that never included it.
+if (Wardrobe) {
+  const LOOK = Number((/const WARDROBE_LOOKBACK = (\d+);/.exec(src) || [])[1]) || 80;
+  const rebuildAt = (end) => {
+    const st = Object.create(null);
+    for (let i = Math.max(0, end - LOOK); i < end; i++) {
+      Wardrobe.scan(msgs[i], [], st, { at: i, otherFemale: true, userIsMale: true, speaker: 'main' });
+    }
+  };
+  for (let w = 0; w < 2 && msgs.length > LOOK; w++) rebuildAt(msgs.length);
+  const times = [];
+  for (let end = Math.min(msgs.length, LOOK); end <= msgs.length; end += Math.max(1, Math.floor(msgs.length / 20))) {
+    const t0 = process.hrtime.bigint();
+    rebuildAt(end);
+    times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  if (times.length) {
+    times.sort((a, b) => a - b);
+    const med = times[Math.floor(times.length / 2)].toFixed(1);
+    const max = times[times.length - 1].toFixed(1);
+    console.log(`full rebuild (window ${LOOK}, runs per message): median ${med}ms  max ${max}ms  budget 60ms`);
+  }
+}
 // A pass/fail threshold hides whether there is headroom or we are sitting just under it.
 if (lat.length) {
   const xs = lat.slice().sort(function (a, b) { return a - b; });

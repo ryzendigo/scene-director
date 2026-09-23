@@ -4993,7 +4993,15 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // --- 0.8.7: wardrobe — what everyone is wearing ---------------------------
     // Rebuilt deterministically from the last WARDROBE_LOOKBACK messages on every
     // message (user and AI), so swipes and edits never leave stale garments behind.
-    const WARDROBE_LOOKBACK = 80;
+    // Raised from 80 on 24 Sep after measuring what 80 actually cost. Sampling four live
+    // chats every 20 messages, the outfit was KNOWN at 59% of positions with a window of
+    // 80, 75% at 160 and 79% at 240, then flat — so recovery plateaus around 240.
+    // Budget decided it instead. This whole rebuild runs on every message, edit and swipe
+    // against a 60ms budget, and on the worst chat measured the MAX rebuild is 36.8ms at
+    // 120, 52.1ms at 160, 56.4ms at 200 and 70.4ms at 240 — so 240 busts it and 200 sits
+    // too close to the line for a worst case taken from three chats. 160 buys +16 points
+    // of known outfit and still leaves headroom.
+    const WARDROBE_LOOKBACK = 160;
     const WARDROBE_INJECT_KEY = 'scene-director-wardrobe';
     let wardrobe = {};
     function wardrobeCast(settings) {
