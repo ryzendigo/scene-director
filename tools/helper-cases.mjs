@@ -225,6 +225,25 @@ eq('scroll-resize: clamps low',        resize(20, false, 620, 1), 20);
 eq('scroll-resize: clamps high',       resize(160, false, 620, -1), 160);
 eq('scroll-resize: object is finite',  Number.isFinite(resize({}, false, 620, -1)), true);
 
+// ---------------------------------------------------------------------------
+// RENAMING a cast key, not just creating one. Creation ran through uniqueCastKey;
+// the rename handler wrote member.key straight from the input, so typing an existing
+// key made the second card unreachable (lookups are cast.find(m => m.key === k)) and
+// merged its presence into the first — until the next reload, when migrateSettings
+// renumbered it. The handler excludes the member being renamed, so re-typing a card's
+// own key is a no-op rather than bumping it to "-2".
+function rename(cast, member, typed) {
+  const others = cast.filter(m => m !== member);
+  return uniqueCastKey(typed, others);
+}
+const bob = { key: 'bob' }, ann = { key: 'ann' }, ann2 = { key: 'ann-2' };
+eq('rename to a free key',        rename([bob, ann], bob, 'carol'), 'carol');
+eq('rename onto a taken key',     rename([bob, ann], bob, 'ann'), 'ann-2');
+eq('retyping own key is a no-op', rename([bob, ann], bob, 'bob'), 'bob');
+eq('skips an existing -2',        rename([bob, ann, ann2], bob, 'ann'), 'ann-3');
+eq('other card keeps its key',    ann.key, 'ann');
+eq('collision is never silent',   rename([bob, ann], bob, 'ann') !== 'ann', true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

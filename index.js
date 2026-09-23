@@ -5731,7 +5731,16 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         const keyIn = input('sd-card-key', member.key, 'key', 'Portrait filename: npc/<key>.png');
         keyIn.addEventListener('change', function () {
             const v = keyIn.value.trim();
-            if (v) { member.key = v; commitCards(); renderCastCards(); }
+            if (!v || v === member.key) return;
+            // Creation runs keys through uniqueCastKey; renaming did not, so typing an
+            // existing key here produced the exact duplicate state migrateSettings was
+            // written to repair — every lookup is cast.find(m => m.key === k), so the
+            // second card went unreachable and its presence merged with the first. It
+            // stayed broken until the next reload, when the migration renumbered it.
+            const others = (getSettings().cast || []).filter(function (m) { return m !== member; });
+            member.key = uniqueCastKey(v, others);
+            commitCards();
+            renderCastCards();
         });
         const colorIn = document.createElement('input');
         colorIn.type = 'color';
