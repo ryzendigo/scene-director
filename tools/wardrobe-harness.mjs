@@ -12,8 +12,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// --src=<file> runs against a different build, for mutation checks.
+const SRC_OVERRIDE = (process.argv.find((a) => a.startsWith('--src=')) || '').slice(6) || null;
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const src = readFileSync(join(root, 'index.js'), 'utf8');
+const src = readFileSync(SRC_OVERRIDE || join(root, 'index.js'), 'utf8');
 const begin = src.indexOf('// === WARDROBE ENGINE (pure) BEGIN ===');
 const end = src.indexOf('// === WARDROBE ENGINE (pure) END ===');
 if (begin < 0 || end < 0) { console.error('engine markers not found in index.js'); process.exit(2); }
@@ -129,9 +131,29 @@ const CASES = [
   { t: ['She puts her belt on.', 'She is naked.'], want: ['(nothing)'] },
   // ...while a hat still survives, because it genuinely can:
   { t: ['She puts her hat on.', 'She is naked.'], want: ['(nothing)', 'hat'] },
+  // --- category() replacement rules -------------------------------------------------
+  // category() decides which garment displaces which. Breaking it entirely (making it
+  // return 'other' for everything) used to fail only ONE of these cases, because almost
+  // every case dressed a character once and never replaced anything. These pin the rules
+  // themselves: a mutant that cannot categorise now fails here loudly.
+  { t: ['She pulls on a blue jumper.', 'She pulls on a red jumper.'], want: ['red jumper'] },
+  { t: ['She wears a green dress.', 'She changes into a black dress.'], want: ['black dress'] },
+  // A dress displaces a separate top and bottom.
+  { t: ['She puts on a white shirt.', 'She pulls on jeans.', 'She changes into a summer dress.'], want: ['summer dress'] },
+  // ...but OUTERWEAR layers over it rather than replacing it: a jumper is category
+  // 'outer', and the rule is deliberately "a dress and a top/bottom do not coexist
+  // UNLESS it is outerwear". My first version of this case asserted ['grey jumper'] and
+  // was simply wrong about the design.
+  { t: ['She wears a summer dress.', 'She pulls on a grey jumper.'], want: ['grey jumper', 'summer dress'] },
+  // A real top, though, does displace the dress.
+  { t: ['She wears a summer dress.', 'She pulls on a white shirt.'], want: ['white shirt'] },
+  // Accessories accumulate rather than replacing each other.
+  { t: ['She puts on a scarf.', 'She puts on a hat.'], want: ['hat', 'scarf'] },
+  // Shoes replace shoes.
+  { t: ['She pulls on her boots.', 'She slips on her sandals.'], want: ['sandals'] },
 ];
 
-const one = process.argv[2];
+const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;
 if (one) { console.log(JSON.stringify(wornAfter([one]))); process.exit(0); }
 
 let fails = 0;

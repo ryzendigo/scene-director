@@ -46,6 +46,12 @@ demo character only) with the release candidate installed in
 - [ ] **The standalone checks pass**, none of which is a case suite:
 
       ```bash
+   Every suite and the wardrobe harness accept --src=<file>, so they can be run
+   against the private build or against a deliberately broken copy to check the
+   suite actually fails (a suite that passes on a mutant is not testing anything):
+
+      node tools/mood-cases.mjs --src=../docs/rachel-images/rachel-autobg-index.js
+
       node tools/regex-safety.mjs && node tools/settings-repair.mjs \
         && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs \
         && node tools/settings-fuzz.mjs && node tools/text-fuzz.mjs

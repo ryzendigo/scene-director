@@ -12,8 +12,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
+// --src=<file> runs the suite against a DIFFERENT build (a mutant, or the private
+// copy), which is what makes a mutation check possible. It deliberately does not use
+// argv[2]: several of these suites already take a single probe string there.
+const SRC_OVERRIDE = (process.argv.find((a) => a.startsWith('--src=')) || '').slice(6) || null;
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const src = readFileSync(join(root, 'index.js'), 'utf8');
+const src = readFileSync(SRC_OVERRIDE || join(root, 'index.js'), 'utf8');
 const begin = src.indexOf('// === PRESENCE ENGINE (pure) BEGIN ===');
 const end = src.indexOf('// === PRESENCE ENGINE (pure) END ===');
 if (begin < 0 || end < 0) { console.error('engine markers not found in index.js'); process.exit(2); }
@@ -119,7 +123,7 @@ const CASES = [
   { t: 'Tom sat alone.\n<think>Maybe Beth walks in and sits down', want: false },
 ];
 
-const one = process.argv[2];
+const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;
 if (one) { console.log(shown(one) ? 'SHOWN' : 'hidden'); process.exit(0); }
 
 let fails = 0;
