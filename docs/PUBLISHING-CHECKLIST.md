@@ -9,6 +9,17 @@ Run against a throwaway SillyTavern (the `st-demo` container: ST 1.18, no auth,
 demo character only) with the release candidate installed in
 `data/default-user/extensions/scene-director/`. Every item below must pass:
 
+- [ ] **No private names in the tree you are about to tag.** A clean working
+      `index.js` is not enough: a tag points at a commit, and a commit can carry
+      names an earlier one introduced. v0.9.8 was tagged this way by mistake.
+
+      ```bash
+      git grep -inE 'granty|martha|kelmscott|\brachel\b' HEAD -- index.js README.md
+      ```
+
+      Must print nothing. Check string and regex literals, not just comments:
+      a name inside an alternation (the `QUAL` garment list once hardcoded two
+      real people) is easy to miss when skimming.
 - [ ] **All six engine suites pass.** They lift the pure engine blocks straight
       out of `index.js`, so they test what ships, and they run in milliseconds
       with no container. Run these FIRST — a failure here is quicker to read
