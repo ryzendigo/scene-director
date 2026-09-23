@@ -1052,7 +1052,21 @@
         // Physical arrival / position cues (narration only). No speech verbs.
         const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:back )?(?:in|over|up)|com(?:es|ing) (?:back )?(?:in|over|up)|came (?:back )?(?:in|over|up)|step(?:s|ped)? (?:back )?(?:in|inside|closer|forward|up)|(?:comes?|came|gets?|got|walk(?:s|ed)?) back\\b(?! to (?:work|sleep|bed))|appear(?:s|ed)(?! to)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
         // Physical action verbs (narration only, weaker evidence).
-        const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|shrugged|frowns?|frowned|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|poured|sets? down|set down|picks? up|picked up|waves?|waved|shakes? (?:her|his) head|shook (?:her|his) head|folds? (?:her|his) arms|folded (?:her|his) arms|pats?|patted|squeez(?:es|ed)|hugs?|hugged|kiss(?:es|ed)|touch(?:es|ed)|points?|pointed|gestur(?:es|ed)|snorts?|snorted|sighs?|sighed';
+        const DEFAULT_ACTION = 'nods?|nodded|reach(?:es|ed)|laugh(?:s|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|looks? (?:at|over at|up at) (?:you|her|him)|smil(?:es|ed)|shrugs?|shrugged|frowns?|frowned|glanc(?:es|ed)|watch(?:es|ed|ing)|pass(?:es|ed)|pours?|poured|sets? down|set down|picks? up|picked up|waves?|waved|shakes? (?:her|his) head|shook (?:her|his) head|folds? (?:her|his) arms|folded (?:her|his) arms|pats?|patted|squeez(?:es|ed)|hugs?|hugged|kiss(?:es|ed)|touch(?:es|ed)|points?|pointed'
+            // 23 Sep: measured against the live chat rather than guessed. The table above is almost
+            // entirely GESTURES (nods, shrugs, waves) and had none of the ordinary physical verbs
+            // that carry domestic and intimate prose, so a character doing unmistakably present
+            // things scored zero: "Beth takes the potato from the fork ... She swallows and
+            // reaches up" got nothing. These are the verbs that actually followed her name in the
+            // messages presence scored 0, ranked by frequency and filtered to the unambiguously
+            // physical ones. Deliberately NOT included: says/tells (speech, and the absence table
+            // owns them), goes/gets/comes (too often idiomatic: "goes quiet", "gets angry"),
+            // feels/stays/stops (states, not actions), doesn (contraction fragment).
+            + '|takes?|took|turns?|turned|shifts?|shifted|pulls?|pulled|holds?|held|pushes|pushed'
+            + '|lifts?|lifted|sits?|sat|picks?|picked|settles?|settled|sets?|stands?|stood'
+            + '|slides?|slid|leans?|leaned|rolls?|rolled|drops?|dropped|opens?|opened|tilts?|tilted'
+            + '|arches|arched|chews|chewed|swallows|swallowed|gasps|gasped|breathes|breathed'
+            + '|steps?|stepped|puts?|takes? (?:it|them)|wipes?|wiped|presses|pressed|grips?|gripped|gestur(?:es|ed)|snorts?|snorted|sighs?|sighed';
         // Reported speech / phone / absence — any of these in the sentence
         // that names the character vetoes them for this message.
         const DEFAULT_ABSENCE = 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?(?! (?:out|across|over|up the stairs))|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|said|says?|would say|tell(?:s|ing)?|told|remember(?:s|ed|ing)?|miss(?:es|ed|ing)? (?:her|him|you|them|it|the|my|his)|wonder(?:s|ed|ing)?|promised?|about(?! to\b)|mention(?:s|ed)?|th(?:ink|ought)s? (?:of|about)|wish(?:es|ed)?|later|tomorrow|yesterday|last (?:night|week|time)|wrote|reckon(?:s|ed)?|thinks?|used to|back (?:home|at)|(?:is|was|\'s) (?:out|off|down|over|up) (?:at|by|with|in|the)\\b|about somewhere|been through|somewhere (?:about|round|around)|the way (?:her|his|my|your|their|our) \\w+(?: \\w+)? (?:does|did|do|would|used to|always)|(?:like|as|how) (?:her|his|my|your|their) (?:mother|father|mama|papa|mum|mom|dad|daddy|grandmother|granny|oma|opa)\\b|(?:mother|father|mama|papa|mum|mom|dad|daddy|grandmother|oma)\'s (?:way|hands|kitchen|voice|words|rule|recipe|habit)'
@@ -1194,8 +1208,34 @@
                     const sent = sentenceAround(narr, m.index);
                     if (T.absence && T.absence.test(sent.text)) {
                         const am = T.absence.exec(sent.text);
-                        vetoes.push('absence "' + (am ? am[0] : '') + '"');
-                        continue;
+                        // 23 Sep: this vetoed on the cue appearing ANYWHERE in the sentence, with no
+                        // regard for whose action it was. Measured against the live chat, that hid
+                        // the main character in 300 of the 329 messages that name her, while she was
+                        // physically acting in the scene. A speech verb only suggests absence when
+                        // SOMEONE ELSE is doing the talking: "Kate says Beth is coming" is about
+                        // an absent Beth, but "Beth says she is tired" is Beth speaking, here,
+                        // now — and "I say" is the narrator. The cue must not sit immediately after
+                        // this member's own name, nor belong to the narrator.
+                        // ...but ONLY for speech cues. A negation or a departure names the member as
+                        // the subject too ("Beth was not there", "Beth had gone home"), and those
+                        // must still veto — exempting them showed her for the very sentence saying
+                        // she was absent.
+                        const SPEECH_CUE = /^(?:says?|said|tell(?:s|ing)?|told|would say|mention(?:s|ed)?|promised?|ask(?:s|ed)?)$/i;
+                        const cueAt = am ? am.index : -1;
+                        const lead = cueAt > 0 ? sent.text.slice(Math.max(0, cueAt - 26), cueAt) : '';
+                        const ownAct = cueAt >= 0 && SPEECH_CUE.test(am[0]) && (
+                            (member.nameRe && member.nameRe.test(lead)) ||
+                            (member.aliasRe && member.aliasRe.test(lead)) ||
+                            /\b(?:i|we|you|she|he|they)\s*$/i.test(lead));
+                        if (!ownAct) {
+                            vetoes.push('absence "' + (am ? am[0] : '') + '"');
+                            continue;
+                        }
+                        // The member is the one speaking, in narration, in this scene. That is
+                        // direct evidence of presence, not merely the absence of a veto — clearing
+                        // the veto alone left "Beth says she is tired and sets her cup down" at 2
+                        // against a bar of 4, so she stayed hidden while talking in the room.
+                        score += 2; evidence.push('speaks "' + am[0] + '"');
                     }
                     const win = narr.slice(Math.max(0, m.index - 40), Math.min(narr.length, m.index + m[0].length + 40));
                     const cue = T.arrival ? T.arrival.exec(win) : null;
@@ -1213,6 +1253,23 @@
                         let am2;
                         while ((am2 = ar.exec(sent.text)) !== null) {
                             if (am2.index === ar.lastIndex) ar.lastIndex++;
+                            // 23 Sep: the verb must be THIS member's. Scoring every action verb in
+                            // the sentence credited a character with someone else's: expanding the
+                            // verb table made "She leans in and kisses him" score for a man merely
+                            // named nearby. Require the member's name, or a bare pronoun, in the 34
+                            // chars before the verb — a subject sits right in front of its verb.
+                            const pre = sent.text.slice(Math.max(0, am2.index - 34), am2.index);
+                            // A subject carries across a conjunction ("Beth takes the potato and
+                            // chews slowly"), so once a verb here is established as this member's,
+                            // a following verb joined by and/then/, in the same sentence is theirs
+                            // too — unless another name intervenes and takes over the subject.
+                            const carried = seen.size > 0 && /\b(?:and|then|,)\s+\S*\s*$/i.test(pre) && !/\b[A-Z][a-z]+\s+\S*\s*$/.test(pre);
+                            const mine = carried ||
+                                         (member.nameRe && member.nameRe.test(pre)) ||
+                                         (member.aliasRe && member.aliasRe.test(pre)) ||
+                                         (!/\b(?:and|then|as|while|before|after)\b[^,]*$/i.test(pre) &&
+                                          new RegExp('\\b' + (member.female === false ? 'he|his|him' : 'she|her') + '\\b[^.]{0,20}$', 'i').test(pre));
+                            if (!mine) continue;
                             seen.add(am2[0].toLowerCase());
                             if (seen.size >= 2) break;
                         }

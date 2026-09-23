@@ -78,6 +78,20 @@ The stage screenshot passed on all seven. Loading is not the test; saving is.
 Driver invocation (Playwright in Docker, host network, from the st-demo dir):
 `docker run --rm --network host -v $PWD/<script>:/w/<script>:ro mcr.microsoft.com/playwright:v1.55.0-noble sh -c 'cd /w && npm i -s playwright@1.55.0 >/dev/null 2>&1; node <script>'`
 
+⚠️ **Wait for the demo to answer before launching a driver.** `docker start st-demo`
+returns as soon as the container exists, not when SillyTavern is serving, and a
+driver that starts too early dies with `ERR_CONNECTION_REFUSED`. On 23 Sep that
+produced a run whose grep for PASS looked clean while errcheck had never
+executed. Gate the drivers on the port:
+
+```bash
+until curl -sf -m 3 -o /dev/null http://127.0.0.1:8327/; do sleep 2; done
+```
+
+And check each driver actually produced its own output line, rather than
+grepping the combined log for PASS — a missing section is the failure mode a
+PASS-only grep cannot see.
+
 ## 1. Take the three screenshots (blocks everything else)
 
 Use a **starter-pack or generic chat**, not your own story (no private names,

@@ -60,9 +60,14 @@ const CASES = [
   // ...without turning every "back" into an arrival:
   { t: 'He put the kettle back on the bench.', want: false },
   { t: 'He leaned back in his chair.', want: false },
-  // Real phrasings from the live chat: "came back in" is often idiom or reported speech, not an
-  // arrival, and "back to work"/"back to sleep" are not arrivals at all.
-  { t: 'Beth said we came back in one piece.', want: false },
+  // Real phrasings from the live chat: "back to work"/"back to sleep" are not arrivals at all.
+  // 23 Sep, corrected: this asserted `false` on the reasoning that "came back in one piece" is an
+  // idiom rather than an arrival. True, but beside the point — "Beth said" puts Beth in the room
+  // speaking, so showing her is right, and the old expectation was wrong rather than the engine.
+  // What must stay hidden is someone ELSE reporting about her, which the next two cases pin.
+  { t: 'Beth said we came back in one piece.', want: true },
+  { t: 'Kate said Beth came back in one piece.', want: false },
+  { t: '"Beth said we came back in one piece," Kate told him.', want: false },
   { t: 'Beth got back to work on the accounts.', want: false },
   { t: 'Beth went back to sleep.', want: false },
   { t: 'Beth walked back in from the yard.', want: true },
@@ -76,6 +81,29 @@ const CASES = [
   // ...and an ordinary present-tense scene must survive the new negation cues:
   { t: 'Beth was in the kitchen when he got home.', want: true },
   { t: 'Beth walked in, put the kettle on and took her coat off.', want: true },
+  // 23 Sep, measured against the live chat: the action table was almost entirely GESTURES and had
+  // none of the ordinary physical verbs that carry domestic prose, so a character doing plainly
+  // present things scored zero. Hidden in 300 of the 329 messages that named her.
+  { t: 'Beth takes the potato from the fork and chews slowly.', want: true },
+  { t: 'Beth turns from the sink and lifts the pan off the stove.', want: true },
+  { t: 'Beth leans against the doorway and pushes her hair back.', want: true },
+  // ...but an action must be THIS member's. Scoring every verb in the sentence credited a character
+  // with someone else's: expanding the table made a man named nearby "present" because a woman
+  // leaned in and kissed him.
+  { t: 'Tom watched from the door. She leans in and kisses him.', want: false },
+  { t: 'Beth had gone home. Kate turns from the sink and lifts the pan.', want: false },
+  // A speech verb is only absence when SOMEONE ELSE is talking (see the reported-speech cases
+  // above); the member doing the talking is present.
+  { t: 'Beth says she is tired and sets her cup down.', want: true },
+  // KNOWN LIMIT, pre-dating the 23 Sep work and deliberately not fixed here: ARRIVAL cues are still
+  // matched in a ±40 char window around the name with no regard for whose they are, so a character
+  // merely mentioned in a scene someone else is acting in can be shown. Measured on the live chat,
+  // this is the dominant remaining false positive. Actions are now subject-aware; cues are not.
+  // Written with Beth's name so it actually exercises the member the harness uses: she is only
+  // mentioned as the owner of the table, yet "stand" inside the ±40 char window scores her present.
+  // This case documents the bug and is EXPECTED TO FAIL the day someone makes cues subject-aware —
+  // flip it to false then.
+  { t: 'I stand at the end of Beth\'s table with the dog on my boot.', want: true },
 ];
 
 const one = process.argv[2];

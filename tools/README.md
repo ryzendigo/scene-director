@@ -66,3 +66,30 @@ nothing fails when it picks wrong. This prints every shared keyword.
 Sharing is not automatically wrong. `resort` belongs to both hotel and snow, and
 "ski resort" correctly reaches snow. Check each against the engine before
 changing it, and pin the answer in `background-cases.mjs`.
+
+## soak.mjs — run every engine over a real chat
+
+```
+node tools/soak.mjs <chat.jsonl> [Name,Name,...] [path/to/index.js]
+```
+
+The case suites test what the author imagined. This tests what a model actually
+writes, which is not the same thing: one pass over a real chat found the largest
+bug in the extension, where the main character was named in 329 messages and
+scored present in 29.
+
+Read it in this order:
+
+- **exceptions** must be zero. Anything else is a crash on real input.
+- **presence rate** per name, against how often that name appears. A main
+  character present in a tenth of their scenes is a bug. So is a character who
+  is absent from the story scoring high. Both matter, because widening a matcher
+  trades one for the other, and only measuring both shows the trade.
+- **slow** messages. The wardrobe is rebuilt on every message, edit and swipe,
+  so anything over 60ms is worth a look.
+
+Verdict counts are not assertions, since no chat is labelled. Compare them
+before and after a change rather than reading them as pass or fail.
+
+Chat files live in SillyTavern under
+`data/<user>/chats/<character>/<name>.jsonl`.
