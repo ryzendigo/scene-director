@@ -52,6 +52,14 @@ const CASES = [
   { t: 'She pulls her jumper off.', want: [] },
   { t: 'She steps out of her dress.', want: [] },
   { t: 'She unbuttons her blouse.', want: [] },      // unambiguous verb, no particle, still a removal
+  // "and into <garment>" has no verb of its own: the only verb belongs to the OFF clause before it.
+  { t: 'She slips out of her dress and into her nightgown.', want: ['nightgown'] },
+  // ...but it must stay a garment matcher, not a movement one:
+  { t: 'She got out of the car and into the house.', want: [] },
+  { t: 'She walked into the kitchen.', want: [] },
+  // Things that go "on" but are not worn:
+  { t: 'She puts the kettle on.', want: [] },
+  { t: 'She turns the light on.', want: [] },
   // Known limits, asserted so they are visible rather than forgotten:
   // A bare pronoun + non-possessive article ("a clean shirt", not "his") has no traceable owner,
   // so ownerOf drops it. With a possessive or a name it resolves — see the three cases above.
