@@ -7,8 +7,24 @@ v0.1.2 tagged and released, announcement drafts current. What's left needs a hum
 
 Run against a throwaway SillyTavern (the `st-demo` container: ST 1.18, no auth,
 demo character only) with the release candidate installed in
-`data/default-user/extensions/scene-director/`. All three must pass:
+`data/default-user/extensions/scene-director/`. Every item below must pass:
 
+- [ ] **All five engine suites pass.** They lift the pure engine blocks straight
+      out of `index.js`, so they test what ships, and they run in milliseconds
+      with no container. Run these FIRST — a failure here is quicker to read
+      than any browser driver:
+
+      ```bash
+      for t in wardrobe-harness mood-cases presence-cases pose-cases background-cases; do
+        printf '%-20s ' "$t"; node tools/$t.mjs | tail -1
+      done
+      ```
+
+      Expected: wardrobe 36, mood 18, presence 16, pose 13, background 11 — 94
+      cases, all pass. Several assert deliberate NON-detections (a mention
+      inside someone else's speech, a negated garment, a dog on all fours, a
+      room named by too few nouns). A change that makes an engine fire more
+      eagerly shows up here as a failure, which is the point.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
       third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
@@ -16,9 +32,6 @@ demo character only) with the release candidate installed in
       still saves the box).
 - [ ] `node tools/demo/apply.js` — no `PAGEERROR`, Apply status is not blank,
       both checks print **PASS**.
-- [ ] `node tools/wardrobe-harness.mjs` — all cases pass. Runs in milliseconds
-      against the live engine in `index.js`; no container needed. Run it first,
-      before any of the browser drivers.
 - [ ] `node tools/demo/errcheck.js` — toggles every checkbox twice and clicks the
       scan/self-test buttons; must report **no `PAGEERROR`** and no JS exceptions.
       Expected-and-harmless: 404s for `backgrounds/animated.json`,
