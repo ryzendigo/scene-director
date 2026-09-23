@@ -20,6 +20,15 @@ const block = src.slice(begin, end).replace('// === MOOD ENGINE (pure) BEGIN ===
 const M = eval('(function(){' + block.replace(/^\s*const MoodEngine = /m, 'return ') + '})()');
 
 const LX = M.compileLexicon();
+// 23 Sep: compileLexicon used `table || DEFAULT_LEXICON` — truthiness, not an array check — so a
+// settings import carrying a number or object here threw "is not iterable" instead of falling back.
+// Settings import copies any key present in defaultSettings with NO type check, so a hand-edited or
+// truncated export reaches this. A malformed table must mean "use the built-in one", never a crash.
+for (const bad of [42, 'nonsense', {}, { a: 1 }, true]) {
+  let ok = false;
+  try { ok = M.compileLexicon(bad).length > 0; } catch (e) { /* ok stays false */ }
+  if (!ok) { console.error(`FAIL  compileLexicon(${JSON.stringify(bad)}) did not fall back to the built-in table`); process.exit(1); }
+}
 const OPTS = { hex: '#c77', soloFemale: true };
 // A case may pass `others: [/\bName\b/i]` to supply otherNameRes, which is what the extension does
 // for every other cast member. Without it the "someone else is acting" guard cannot fire, and a

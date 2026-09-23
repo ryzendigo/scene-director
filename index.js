@@ -682,7 +682,12 @@
 
         function compileLexicon(table) {
             const out = [];
-            for (const row of (table || DEFAULT_LEXICON)) {
+            // 23 Sep: `table || DEFAULT_LEXICON` accepts anything truthy, so a settings import
+            // carrying a number or an object here threw "is not iterable" instead of falling back.
+            // Settings import copies any key present in defaultSettings with no type check, so a
+            // hand-edited or truncated export reaches this. A malformed table means "use the
+            // built-in one", never a crash.
+            for (const row of (Array.isArray(table) ? table : DEFAULT_LEXICON)) {
                 try {
                     if (!row || !row[0] || !LABEL_SET.has(row[1])) continue;
                     // Whole-word cues: a bare pattern like "rage" must never
@@ -1958,7 +1963,9 @@
             o = o || {};
             const mk = function (rows) {
                 const out = [];
-                for (const r of (rows || [])) {
+                // Array check, not just truthiness: a settings import can put a number or an object
+                // here and `rows || []` would pass it straight to for...of, which throws.
+                for (const r of (Array.isArray(rows) ? rows : [])) {
                     try { out.push({ key: r[0], re: new RegExp('\\b(?:' + r[1] + ')\\b', 'gi') }); } catch (e) { /* skip */ }
                 }
                 return out;
@@ -2945,7 +2952,11 @@
             const cap = maxSubs || 3;
             const order = [];
             const byVenue = new Map();
-            for (const raw of (list || [])) {
+            // Array check, not truthiness. The atlas is read back from chat metadata, which can be
+            // hand-edited or truncated: a number or object here threw "is not iterable", and a
+            // STRING was worse — for...of walked it character by character and rendered the day's
+            // trail as "K → e → l → m …".
+            for (const raw of (Array.isArray(list) ? list : [])) {
                 const l = String(raw).trim();
                 if (!l) continue;
                 const m = VENUE_SEP.exec(l);
@@ -6911,9 +6922,21 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     throw new Error('top level must be an object');
                 }
                 const s = getSettings();
+                // 23 Sep: this copied any key straight across with no type check, so a hand-edited
+                // or truncated export could put a number where a table belongs. The engines cope
+                // with that now, but storing it is still wrong: the value survives every reload and
+                // silently disables whatever reads it. Take a value only when its type matches the
+                // default's. `null` defaults accept anything, since that is the "unset" marker.
+                const skipped = [];
                 for (const key of Object.keys(defaultSettings)) {
-                    if (parsed[key] !== undefined) s[key] = parsed[key];
+                    if (parsed[key] === undefined) continue;
+                    const def = defaultSettings[key];
+                    const want = Array.isArray(def) ? 'array' : def === null ? 'any' : typeof def;
+                    const got = Array.isArray(parsed[key]) ? 'array' : typeof parsed[key];
+                    if (want !== 'any' && want !== got) { skipped.push(`${key} (want ${want}, got ${got})`); continue; }
+                    s[key] = parsed[key];
                 }
+                if (skipped.length) console.warn(`${LOG} import skipped ${skipped.length} wrong-typed field(s): ${skipped.join(', ')}`);
                 migrateSettings(s);
                 saveSettings();
                 loadSettingsIntoForm();
@@ -6921,7 +6944,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 lastBg = null;
                 lastCostume = null;
                 onMessage();
-                if (ioStatus) ioStatus.textContent = 'Imported.';
+                // Say so in the UI, not only the console: a silently partial import looks identical
+                // to a clean one, and the user would have no reason to look for a reason.
+                if (ioStatus) ioStatus.textContent = skipped.length
+                    ? `Imported, but skipped ${skipped.length} wrong-typed field${skipped.length > 1 ? 's' : ''}: ${skipped.map(x => x.split(' ')[0]).join(', ')}`
+                    : 'Imported.';
             } catch (e) {
                 if (ioStatus) ioStatus.textContent = 'Import failed: ' + e.message;
             }

@@ -23,6 +23,13 @@ function lift(name, ctor) {
 const BackgroundEngine = lift('BACKGROUND', 'BackgroundEngine');
 const PresenceEngine = lift('PRESENCE', 'PresenceEngine');
 const TABLES = BackgroundEngine.compileTables();
+// 23 Sep: the row loops used `rows || []` — truthiness, not an array check — so a settings import
+// carrying a number or a string where a table belongs threw "is not iterable". Settings import
+// copies any key present in defaultSettings with NO type check, so this is reachable.
+for (const bad of [42, 'nonsense', { generic: 'not-an-array' }, { nouns: 7 }, { generic: 42, nouns: {} }]) {
+  try { BackgroundEngine.compileTables(bad); }
+  catch (e) { console.error(`FAIL  compileTables(${JSON.stringify(bad)}) threw: ${e}`); process.exit(1); }
+}
 
 const bg = t => {
   const r = BackgroundEngine.evaluate({ tables: TABLES, header: '', narr: PresenceEngine.mask(t).narr, available: null });

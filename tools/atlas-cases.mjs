@@ -67,6 +67,14 @@ const FOLD_CASES = [
   { name: 'empty list', in: [], want: [] },
   // A hyphen with no spaces is part of a name, not a separator.
   { name: 'hyphenated name is not split', in: ['Jean-Paul Street'], want: ['Jean-Paul Street'] },
+  // 23 Sep: the atlas is read back from chat metadata, which can be hand-edited or truncated, and
+  // the loop used `list || []` — truthiness, not an array check. A number or object threw
+  // "is not iterable"; a STRING was worse, because for...of walked it character by character and
+  // rendered the day's trail as "K → e → l → m …".
+  { name: 'null is empty', in: null, want: [] },
+  { name: 'a number is empty', in: 42, want: [] },
+  { name: 'an object is empty', in: { a: 1 }, want: [] },
+  { name: 'a string is empty, NOT split into letters', in: 'Kelmscott', want: [] },
 ];
 
 const one = process.argv[2];
@@ -86,7 +94,11 @@ for (const c of SORT_CASES) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  sort ${got.join(' ')}`);
 }
 for (const c of FOLD_CASES) {
-  const got = A.foldTrail(c.in, 3);
+  // A throw is a failure, not a crash: the malformed-input cases exist precisely because foldTrail
+  // used to throw, and a crashed runner reports nothing about the other cases.
+  let got;
+  try { got = A.foldTrail(c.in, 3); }
+  catch (e) { fails++; console.log(`FAIL  fold  ${c.name} -> THREW ${String(e).slice(0, 60)}`); continue; }
   const ok = JSON.stringify(got) === JSON.stringify(c.want);
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  fold  ${c.name}${ok ? '' : ' -> ' + JSON.stringify(got)}`);
