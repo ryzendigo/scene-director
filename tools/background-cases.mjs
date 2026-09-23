@@ -47,6 +47,33 @@ const CASES = [
   // so this one also checks the backyard signal is not overtaken by it.
   { t: 'She hung the towel on the line in the backyard by the clothesline and the fence.', want: 'none' },
   { t: 'He opened the wardrobe, took out a shirt, and shut the bedroom door.', want: 'none' },
+  // 23 Sep: two nouns were claimed by TWO keys each, so an ordinary scene scored a phantom point
+  // for a room nobody was in — "bench" gave park a point in a kitchen, "monitor" gave hospital one
+  // in an office. Both words are genuinely ambiguous, so the fix was to make the second claimant
+  // require context rather than to delete the word. These pin that the phantom stays gone AND that
+  // the real park/hospital senses still score.
+  { t: 'She wiped the bench, put the kettle on and opened the fridge.', want: 'kitchen' },
+  { t: 'They sat on a park bench watching the kids on the swing and the slide.', want: 'park' },
+  { t: 'The nurse checked the drip and wheeled the gurney past the ward.', want: 'hospital' },
+];
+
+// The header layer (📍, +4 and decisive) had NO coverage, and two words were claimed by two keys
+// each in a table whose whole contract is "specific venues first, broad words last". Whichever row
+// came first won, which is only correct if no row claims a word a more specific row owns.
+const HEADER_CASES = [
+  { h: 'dorm room', want: 'bedroom' },        // was 'campus': a dorm room is where you sleep
+  { h: 'the dorm', want: 'bedroom' },
+  { h: 'university campus', want: 'campus' }, // was 'school': matched 'university' on the later row
+  { h: 'college', want: 'campus' },
+  // ...and the plain senses those two rows still own must not have moved:
+  { h: 'university', want: 'school' },
+  { h: 'school', want: 'school' },
+  { h: 'the lecture hall', want: 'school' },
+  // Remaining shared words resolve to the more specific key by table order, which is correct:
+  { h: 'ski resort', want: 'snow' },
+  { h: 'beach resort', want: 'hotel' },
+  { h: 'motel room', want: 'motel' },
+  { h: 'the old saloon', want: 'western-saloon' },
 ];
 
 let fails = 0;
@@ -56,5 +83,16 @@ for (const c of CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(10)} want ${c.want.padEnd(10)} ${c.t.slice(0, 58)}`);
 }
-console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length} pass`);
+const hdr = h => {
+  const r = BackgroundEngine.evaluate({ tables: TABLES, header: '📍 ' + h, narr: '', available: null });
+  return (r && r.file) ? r.file.replace('generic-', '').replace('.jpg', '') : 'none';
+};
+for (const c of HEADER_CASES) {
+  const got = hdr(c.h);
+  const ok = got === c.want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(10)} want ${c.want.padEnd(10)} 📍 ${c.h}`);
+}
+const total = CASES.length + HEADER_CASES.length;
+console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

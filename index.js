@@ -1685,7 +1685,9 @@
             ['subway', 'subway|metro station|underground station|the tube\\b'],
             ['brownstone', 'brownstone|fire escape|walk-?up apartment'],
             ['nyc-street', 'manhattan|brooklyn|new york|the city street|downtown block'],
-            ['campus', 'campus|college|quad\\b|dorm'],
+            // 'dorm' removed: a dorm room is somewhere you sleep, and 'bedroom' (further down) owns
+            // it. Leaving it here made "📍 dorm room" resolve to the campus exterior.
+            ['campus', 'campus|college|quad\\b'],
             ['southern-porch', 'wraparound porch|porch swing|southern porch|screened porch'],
             ['red-barn', 'red barn|the barnyard|hayloft|farmstead'],
             ['ranch', 'ranch|corral|the stables\\b'],
@@ -1730,7 +1732,10 @@
             ['laundry', 'laundromat|laundrette|laundry'],
             ['basement', 'basement|cellar'],
             ['school-hallway', 'lockers|school (?:hallway|corridor)'],
-            ['school', 'school|classroom|university|lecture|campus|kindergarten|daycare'],
+            // 'campus' removed: the 'campus' key above owns it and is ordered first for a reason.
+            // Keeping it here meant "📍 university campus" matched 'university' on this row and
+            // resolved to a classroom interior instead of the campus grounds.
+            ['school', 'school|classroom|university|lecture|kindergarten|daycare'],
             ['gym-locker', 'locker room|change rooms?|changing room'],
             ['pool', 'swimming pool|the pool\\b(?! table| room| cue)|pool ?side|aquatic'],
             ['gym', '\\bgym\\b|basketball court|tennis court|weights room|fitness'],
@@ -1793,13 +1798,19 @@
             ['porch', 'verandah|porch|screen door|porch steps|front steps'],
             ['backyard', 'clothesline|lawn|hose|fence|washing'],
             ['street', 'footpath|kerb|traffic|shopfront|crossing'],
-            ['park', 'swing|slide|bench|grass|picnic'],
+            // "bench" is a kitchen bench far more often than a park bench in domestic prose, and it
+            // was scoring BOTH keys: "she wiped the bench, put the kettle on" handed park a point it
+            // had no business having. Park keeps it only when the sentence says so (park bench /
+            // bench in the park); the bare word belongs to the kitchen list.
+            ['park', 'swing|slide|park bench|bench (?:in|by) the (?:park|gardens)|grass|picnic'],
             ['beach', 'sand|waves|surf|tide|seaweed'],
             ['forest', 'trees|undergrowth|leaf litter|gum trees|scrub'],
             ['country-road', 'highway|bitumen|gravel|road train|paddocks?'],
             ['farm', 'paddock|tractor|hay|fence line|cattle|sheep'],
             ['church', 'pew|altar|hymn|pulpit|stained glass|crucifix'],
-            ['hospital', 'ward|drip|gurney|nurse|monitor'],
+            // "monitor" was scoring hospital as well as office, so an ordinary desk scene picked up
+            // a phantom hospital point. Hospital keeps the clinical sense only.
+            ['hospital', 'ward|drip|gurney|nurse|heart monitor|monitors? (?:beeping|bleeping)|obs machine'],
             ['clinic', 'consulting|examination|surgery|waiting room|receptionist|stethoscope'],
             ['car', 'steering wheel|windscreen|dashboard|seatbelt|glovebox|handbrake|footwell|headrest|indicator'],
             ['transit', 'platform|carriage|ticket|departure'],
