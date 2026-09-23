@@ -230,6 +230,31 @@ for (const c of NL_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  normaliseLocal: ${c.label}`);
 }
-const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length + NL_CASES.length;
+// --- the >= 3 floor -----------------------------------------------------------------
+// verdict()'s rule 3c needs topScore >= 3 before the lexicon may set a mood; thinner
+// than that, holding the previous one is safer. Measured on the real corpus: 406 of
+// 2,725 messages produce a top label scoring under 3, and without this floor every one
+// of them would move the sprite on evidence too thin to trust.
+const FLOOR_CASES = [
+  // One explicit cue clears the floor.
+  ['she laughed', true, 'an explicit cue decides'],
+  // A real 1-2 band sentence from the corpus: one supporting cue, not enough on its own.
+  // My first attempt here used "the word joy was written on the card", which scores ZERO
+  // and so passed even with the floor removed — it was not testing the floor at all.
+  ['"That there\'s pie." She tilts her head toward the kitchen.', false,
+    'a single supporting cue (score 2) holds instead'],
+  ['Grateful that he brought this here, and laid it down before them.', false,
+    'score 1.5 holds instead'],
+];
+for (const [text, wantDecide, why] of FLOOR_CASES) {
+  const ext = M.extractOwn(text, OPTS);
+  const lex = M.lexicon(ext, LX);
+  const out = M.verdict({ tag: null, local: null, lex, prev: null });
+  const decided = Boolean(out && !out.hold && out.final && out.final !== 'neutral');
+  const ok = decided === wantDecide;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${(decided ? 'decides' : 'holds').padEnd(9)} want ${(wantDecide ? 'decides' : 'holds').padEnd(9)} ${why}  [${out && out.rule}]`);
+}
+const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length + NL_CASES.length + FLOOR_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
