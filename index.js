@@ -2752,6 +2752,37 @@
         } catch (e) { /* ignore */ }
     }
 
+    // === ATLAS ENGINE (pure) BEGIN ===
+    // Date-key helpers for the story atlas. No DOM, no SillyTavern, so the node suite can lift this
+    // block and run it. Keys are "YYYY-M-D" as the trail writes them: no zero padding.
+    const AtlasEngine = (function () {
+        /** Numeric ordering for "YYYY-M-D": a string sort puts month 10 before month 8. */
+        function keyOrder(k) {
+            const p = String(k).split('-').map(Number);
+            return (p[0] || 0) * 10000 + (p[1] || 0) * 100 + (p[2] || 0);
+        }
+
+        /** "2026-9-23" -> "Wed Sep 23 2026"; anything unparseable is shown as-is. */
+        function prettyDate(k, dayNames, monNames) {
+            const p = String(k).split('-').map(Number);
+            if (p.length === 3 && p[0] > 0 && p[1] >= 1 && p[1] <= 12 && p[2] >= 1 && p[2] <= 31) {
+                const js = new Date(p[0], p[1] - 1, p[2]);
+                // new Date(2026, 12, 99) is NOT invalid — it rolls into the next year — so isNaN is
+                // not a validity check. Confirm the Date did not roll before trusting it.
+                if (!isNaN(js.getTime()) && js.getMonth() === p[1] - 1 && js.getDate() === p[2]) {
+                    return `${dayNames[js.getDay()]} ${monNames[p[1] - 1]} ${p[2]} ${p[0]}`;
+                }
+            }
+            return String(k);
+        }
+
+        return { keyOrder, prettyDate };
+    })();
+    // === ATLAS ENGINE (pure) END ===
+
+    function atlasKeyOrder(k) { return AtlasEngine.keyOrder(k); }
+    function prettyAtlasDate(k) { return AtlasEngine.prettyDate(k, DAY_NAMES, MON_NAMES); }
+
     /** File the day that is ending into meta.atlas. No-op for an empty or unnamed day. */
     let sdSuppressClick = false;
 
@@ -2770,11 +2801,6 @@
     }
 
     /** Numeric ordering for "YYYY-M-D" keys: a string sort gets month 10 and month 9 backwards. */
-    function atlasKeyOrder(k) {
-        const p = String(k).split('-').map(Number);
-        return (p[0] || 0) * 10000 + (p[1] || 0) * 100 + (p[2] || 0);
-    }
-
     /** Every day the chat has recorded, today included, oldest first. */
     function atlasDays() {
         const out = [];
@@ -2790,18 +2816,6 @@
         return out;
     }
 
-    /** "2026-9-23" -> "Wed Sep 23 2026"; anything unparseable is shown as-is. */
-    function prettyAtlasDate(k) {
-        const p = String(k).split('-').map(Number);
-        if (p.length === 3 && p[0] > 0 && p[1] >= 1 && p[1] <= 12 && p[2] >= 1 && p[2] <= 31) {
-            const js = new Date(p[0], p[1] - 1, p[2]);
-            // Reject a rolled-over date (31 Feb becomes 3 Mar) so the label never contradicts the key.
-            if (!isNaN(js.getTime()) && js.getMonth() === p[1] - 1 && js.getDate() === p[2]) {
-                return `${DAY_NAMES[js.getDay()]} ${MON_NAMES[p[1] - 1]} ${p[2]} ${p[0]}`;
-            }
-        }
-        return String(k);
-    }
 
     // v0.5.0: restore the day trail on chat open — metadata first, else a
     // deterministic rescan of the last ~20 messages (pure text parsing).
