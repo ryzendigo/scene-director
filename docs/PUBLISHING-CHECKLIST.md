@@ -113,7 +113,7 @@ demo character only) with the release candidate installed in
 > The playwright-core version MUST match the image tag — npm otherwise pulls a newer one
 > and it refuses to use the image's browsers. Stop st-demo when finished.
 
-- [ ] `tools/demo/pipeline.js` — all 5 **PASS**. The only check that reads what the
+- [ ] `tools/demo/pipeline.js` — all 7 **PASS**. The only check that reads what the
       extension actually RENDERS: it pushes a message with a known header through
       MESSAGE_RECEIVED and asserts the location, the time and the garment all reach
       the HUD. Every other driver only checks that the HUD exists. Works against

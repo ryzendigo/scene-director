@@ -32,7 +32,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const et = ctx.eventTypes || ctx.event_types;
     ctx.chat.push({
       name: ctx.name2 || 'Elise', is_user: false, is_system: false, send_date: Date.now(),
-      mes: '📍 the kitchen | 🕰️ 9:15 AM | ☀️ clear\n\n*She pulled the blue cardigan on and put the kettle down.*',
+      // The real header format, taken from a live chat: bracketed, pipe-separated,
+      // with the weather last. The default weatherRegex anchors on the closing ']',
+      // so a bare unbracketed header parses location and time but never weather —
+      // my first version of this test used one and silently checked nothing there.
+      mes: '[ 🕰️ 9:15 AM | ☀️ Sunday, August 17, 2026 AD | 📍 the kitchen | ☀️ 64°F ]'
+        + '\n\n*She pulled the blue cardigan on and put the kettle down.*',
       extra: {},
     });
     await ctx.eventSource.emit(et.MESSAGE_RECEIVED, ctx.chat.length - 1);
@@ -58,6 +63,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ['HUD shows the time', /9[:.]15|9\s*AM/i.test(result.hudText)],
     // The wardrobe read "pulled the blue cardigan on"; its tooltip carries what she wears.
     ['wardrobe saw the cardigan', /cardigan/i.test(result.hudText + ' ' + result.hudTitle)],
+    // Date and weather were never asserted before; both are default-on HUD rows, so a
+    // regression in either would have rendered nothing and passed.
+    ['HUD shows the date', /Aug|17/i.test(result.hudText)],
+    ['HUD shows the weather', /64|°F/i.test(result.hudText)],
   ];
   let bad = 0;
   for (const [label, ok] of checks) { if (!ok) bad++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`); }
