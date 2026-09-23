@@ -35,6 +35,27 @@ for (const fn of captures) {
 // The counter has to actually move, or every guard is a no-op.
 if (guards.size && !/chatGen\+\+/.test(src)) problems.push('chatGen is never incremented — every guard is a no-op');
 
+// The invariant the guards exist for: inside a function that captures chatGen, an
+// `await` must not be followed by a write to per-chat state without a guard in
+// between. getContext()/chatMeta() resolve live, so such a write lands on whatever
+// chat is open when the handler resumes.
+const PER_CHAT_WRITE = /^\s*(lastBg|lastBgLoc|lastBgGraded|lastCostume|trailDateKey|trailLocs)\s*=[^=]|^\s*meta\.(lastCostume|trailDateKey|trailLocs)\s*=/;
+for (const fnStart of captures) {
+    // Walk this function's body to its end (next function start, or EOF).
+    const next = starts.find((x) => x > fnStart);
+    const end = next === undefined ? lines.length : next;
+    let sawAwait = false, guardSince = true;
+    for (let i = fnStart; i < end; i++) {
+        const l = lines[i];
+        if (/\bawait\b/.test(l)) { sawAwait = true; guardSince = false; }
+        if (/gen !== chatGen/.test(l)) guardSince = true;
+        if (sawAwait && !guardSince && PER_CHAT_WRITE.test(l)) {
+            problems.push(`line ${i + 1}: "${l.trim().slice(0, 50)}" writes per-chat state after an await with no guard`);
+            guardSince = true;   // report once per run of writes
+        }
+    }
+}
+
 if (problems.length) {
     console.log(`chat-generation guard problems: ${problems.length}`);
     for (const p of problems) console.log('  ' + p);

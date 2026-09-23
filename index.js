@@ -5506,6 +5506,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     } else {
                         dbg(`no background verdict for "${location}" — keeping ${lastBg || 'current'}`);
                     }
+                    if (gen !== chatGen) return;   // chat switched during applyBackground
                     lastBgLoc = location;
                 } catch (e) {
                     console.error(`${LOG} background switch failed`, e);
