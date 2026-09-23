@@ -4968,11 +4968,22 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         } catch (e) { return desired; }
     }
 
+    // Every other SillyTavern API this extension touches is feature-detected before use;
+    // this one assumed that if the newer method is missing the older one is present. If a
+    // future rename removed both, the else branch would call undefined and throw a
+    // TypeError on every background and costume change — all of them inside catch blocks,
+    // so the extension would just quietly stop changing anything with nothing in the log
+    // pointing at why. Say it once, clearly, instead.
+    let slashApiWarned = false;
     async function runCommand(ctx, cmd) {
         if (ctx.executeSlashCommandsWithOptions) {
             await ctx.executeSlashCommandsWithOptions(cmd, { handleParserErrors: true });
-        } else {
+        } else if (typeof ctx.executeSlashCommands === 'function') {
             await ctx.executeSlashCommands(cmd);
+        } else if (!slashApiWarned) {
+            slashApiWarned = true;
+            console.error(`${LOG} this SillyTavern build exposes neither executeSlashCommandsWithOptions`
+                + ' nor executeSlashCommands, so backgrounds, costumes and expressions cannot be set.');
         }
     }
 

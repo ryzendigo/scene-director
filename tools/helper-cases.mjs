@@ -740,6 +740,57 @@ const one = (cast) => wc(cast)[0] || NO_RE;
   eq('cast: bad regex falls back',  bad.length && bad[0].re.test('Bea waved'), true);
 }
 
+// ---------------------------------------------------------------------------
+// runCommand drives /bg, /costume and /emote. Every other SillyTavern API this
+// extension touches is feature-detected; this one assumed that if the newer method
+// is absent the older one is present. If a future build removed both, the else
+// branch called undefined and threw on every background and costume change — all
+// inside catch blocks, so the extension would quietly stop changing anything with
+// nothing in the log saying why.
+const runCommandSrc = (function () {
+  const i = src.indexOf('let slashApiWarned = false;');
+  if (i < 0) return null;
+  return src.slice(i, src.indexOf('\n    }', src.indexOf('async function runCommand', i)) + 6);
+})();
+eq('slash: guard is present', Boolean(runCommandSrc), true);
+// Without the guard the behavioural cases below would simply be SKIPPED, proving
+// nothing against the old code. Fall back to lifting whatever runCommand is there, so
+// they run either way and fail honestly when it is the unguarded version.
+const rcSrc = runCommandSrc || (function () {
+  const i = src.indexOf('async function runCommand');
+  return i < 0 ? null : 'let slashApiWarned = false;\n' + src.slice(i, src.indexOf('\n    }', i) + 6);
+})();
+if (rcSrc) {
+  const logged = [];
+  const runCommand = eval('(function(){const LOG="[sd]"; const console={error:(...a)=>logged.push(a.join(" "))};'
+    + rcSrc + '\nreturn runCommand;})()');
+  ASYNC.push(['slash: uses the new API', async () => {
+    let got = null;
+    await runCommand({ executeSlashCommandsWithOptions: (c) => { got = c; } }, '/bg x');
+    return got;
+  }, '/bg x']);
+  ASYNC.push(['slash: falls back to old', async () => {
+    let got = null;
+    await runCommand({ executeSlashCommands: (c) => { got = c; } }, '/bg x');
+    return got;
+  }, '/bg x']);
+  ASYNC.push(['slash: neither does not throw', async () => {
+    try { await runCommand({}, '/bg x'); return 'ok'; } catch (e) { return 'THREW'; }
+  }, 'ok']);
+  // slashApiWarned is module-scoped and latches on first use, so this needs a FRESH
+  // instance — an earlier case in this file has already tripped the shared one.
+  ASYNC.push(['slash: warns once, not per call', async () => {
+    const own = [];
+    const fresh = eval('(function(){const LOG="[sd]"; const console={error:(...a)=>own.push(a.join(" "))};'
+      + rcSrc + '\nreturn runCommand;})()');
+    await fresh({}, '/a'); await fresh({}, '/b'); await fresh({}, '/c');
+    return own.length;
+  }, 1]);
+  ASYNC.push(['slash: a non-function is rejected', async () => {
+    try { await runCommand({ executeSlashCommands: 'nope' }, '/bg x'); return 'ok'; } catch (e) { return 'THREW'; }
+  }, 'ok']);
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
