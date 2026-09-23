@@ -51,6 +51,7 @@ const CASES = [
   ['seasonalMap holds junk', { cast: [], places: [], seasonalMap: ['nope', { month: 8, from: 'a', to: 'b' }] }],
   ['costumeRules holds null', { cast: [], places: [], costumeRules: [null] }],
   ['rule list is not an array', { cast: [], places: [], wardrobeCostumeRules: 'nope' }],
+  ['counters holds null', { cast: [], places: [], counters: [null, { date: '2026-07-01' }] }],
 ];
 let fails = 0;
 for (const [name, s] of CASES) {
@@ -60,7 +61,7 @@ for (const [name, s] of CASES) {
   if (!Array.isArray(s.places)) problems.push('places is not an array');
   if (Array.isArray(s.cast) && s.cast.some(x => !x || typeof x !== 'object')) problems.push('cast holds a non-object');
   if (Array.isArray(s.places) && s.places.some(x => !x || typeof x !== 'object')) problems.push('places holds a non-object');
-  for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules']) {
+  for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules', 'counters']) {
     if (s[list] === undefined) continue;
     if (!Array.isArray(s[list])) { problems.push(`${list} is not an array`); continue; }
     if (s[list].some(x => !x || typeof x !== 'object')) problems.push(`${list} holds a non-object`);

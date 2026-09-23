@@ -2244,7 +2244,7 @@
             // passes as "array" and never sees a validator. applyVariants then reads .minYear /
             // .month straight off each entry, and it is called inside the background try block, so
             // one null entry silently disables backgrounds on every message with no error shown.
-            for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules']) {
+            for (const list of ['eraRules', 'seasonalMap', 'costumeRules', 'wardrobeCostumeRules', 'counters']) {
                 if (!Array.isArray(s[list])) { s[list] = []; continue; }
                 if (s[list].some(function (e) { return !e || typeof e !== 'object'; })) {
                     s[list] = s[list].filter(function (e) { return e && typeof e === 'object'; });
@@ -4404,8 +4404,14 @@
                 if (Math.abs(aspect - 1) > 0.05) spriteRefAspect = aspect; // remember a non-square (static) aspect
             }
             const defaultVh = Math.min(90, (gutter / spriteRefAspect) / vh);
-            let targetVh = (settings.spriteAuto || !settings.spriteVh) ? defaultVh : Number(settings.spriteVh);
-            targetVh = Math.max(20, Math.min(160, targetVh));
+            // 23 Sep: Number("50px") is NaN, and Math.max/Math.min PROPAGATE NaN rather than
+            // clamping it — so a non-numeric spriteVh reached the stylesheet as "NaNpx" and the
+            // sprite got no height at all. "50px" is an easy thing to type in a box labelled with a
+            // unit. Fall back to the computed default rather than trusting the clamp to catch it.
+            const manualVh = Number(settings.spriteVh);
+            let targetVh = (settings.spriteAuto || !settings.spriteVh || !Number.isFinite(manualVh))
+                ? defaultVh : manualVh;
+            targetVh = Math.max(20, Math.min(160, Number.isFinite(targetVh) ? targetVh : defaultVh));
             let hPx = targetVh * vh;
             // Gutter clamp only in auto mode — a manual size is the user's call.
             if (settings.spriteAuto && hPx * aspect > gutter) hPx = gutter / aspect;

@@ -108,6 +108,30 @@ eq('31 Apr loses the weekday', dateLabel(2026, 4, 31), 'Apr 31 2026');
 eq('29 Feb in a common year', dateLabel(2026, 2, 29), 'Feb 29 2026');
 eq('month only, no day', hudFor({ date: { year: 2026, month: 8, day: null } }).date, 'Aug 2026');
 
+// The sprite-size clamp. 23 Sep: Number("50px") is NaN, and Math.max/Math.min PROPAGATE NaN rather
+// than clamping it, so a non-numeric spriteVh reached the stylesheet as "NaNpx" and the sprite got
+// no height at all. applySpriteSize touches the DOM so it cannot be lifted; this drives the clamp
+// EXPRESSION read out of index.js, so it still cannot drift from what ships.
+const clampSrc = /let targetVh = ([\s\S]*?);\n\s+targetVh = ([^;]*);/.exec(src);
+if (!clampSrc) { console.error('sprite clamp not found'); process.exit(2); }
+const spriteVhFor = (spriteVh, spriteAuto) => {
+  const settings = { spriteVh, spriteAuto };
+  const defaultVh = 42;
+  const manualVh = Number(settings.spriteVh);
+  let targetVh = eval(clampSrc[1]);
+  targetVh = eval(clampSrc[2]);
+  return targetVh;
+};
+eq('number passes through', spriteVhFor(50, false), 50);
+eq('numeric string works', spriteVhFor('50', false), 50);
+eq('"50px" falls back', spriteVhFor('50px', false), 42);
+eq('gibberish falls back', spriteVhFor('abc', false), 42);
+eq('object falls back', spriteVhFor({}, false), 42);
+eq('unset uses default', spriteVhFor(null, false), 42);
+eq('auto ignores the value', spriteVhFor(99, true), 42);
+eq('too large clamps down', spriteVhFor(500, false), 160);
+eq('too small clamps up', spriteVhFor(-5, false), 20);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
