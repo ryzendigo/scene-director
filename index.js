@@ -469,6 +469,21 @@
         // hit (times 2 in the message's last 40%). Vetoes are labels a hit
         // rules OUT. Kept as plain data so the public build can expose it.
         const DEFAULT_LEXICON = [
+            // 23 Sep: plain stated feeling. The table rightly prefers physical cues ("laugh", "cheeks
+            // go pink") over a character being TOLD to us, but a dozen of the commonest words -- sad,
+            // angry, upset, worried, surprised, embarrassed -- were absent entirely, so "She was sad."
+            // returned no mood at all. Low weight (1.2) on purpose: it is enough to beat nothing, and
+            // it loses to any real behavioural cue in the same message, which is the intended bias.
+            // Subject-anchored so it cannot fire on someone else ("he was angry", "the dog was upset").
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?sad(?:der|dest)?\\b', 'sadness', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:miserable|wretched|lonely|heartbroken)\\b', 'sadness', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:angry|cross|livid|irate)\\b', 'anger', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:upset|put\\s+out)\\b', 'annoyance', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:worried|anxious|uneasy|apprehensive)\\b', 'nervousness', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:surprised|taken\\s+aback|astonished)\\b', 'surprise', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:embarrassed|mortified|self-conscious)\\b', 'embarrassment', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:glad|cheerful|content|pleased)\\b', 'joy', 1.2, []],
+            ['(?:she|I)\\s+(?:was|were|is|am|felt|feels?|looked|looks?|seemed|seems?|sounded|sounds?)\\s+(?:so\\s+|very\\s+|really\\s+|quite\\s+|a\\s+little\\s+|rather\\s+)?(?:tired|exhausted|worn\\s+out|drained)\\b', 'sadness', 1.2, []],
             // amusement / joy
             ['laugh(?:s|ed|ing|ter)?', 'amusement', 3, ['sadness', 'grief', 'anger', 'fear']],
             ['giggl(?:es|ed|ing)?', 'amusement', 3, ['sadness', 'grief', 'anger', 'fear']],
