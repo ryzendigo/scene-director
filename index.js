@@ -3946,7 +3946,13 @@
         // v0.5.3: from the server's sprite list (no 404 probes).
         const cacheKey = folder + '|' + ext;
         if (!neutralVariantCache[cacheKey]) {
-            const apiName = decodeURIComponent(folder.replace(/^\/characters\//, '').replace(/\/$/, ''));
+            // 23 Sep: decodeURIComponent THROWS on a malformed escape, and a character folder can
+            // legitimately contain a bare '%' — "50% Human" gives URIError. Both callers catch, so
+            // the only symptom was neutral-variant crossfades silently never working for that
+            // character. Fall back to the raw name, which is what an un-encoded folder already is.
+            const rawName = folder.replace(/^\/characters\//, '').replace(/\/$/, '');
+            let apiName;
+            try { apiName = decodeURIComponent(rawName); } catch (e) { apiName = rawName; }
             neutralVariantCache[cacheKey] = spriteList(apiName).then(function (list) {
                 return list.filter(function (x) { return x.label === 'neutral'; })
                     .map(function (x) { return x.path.split('?')[0]; });

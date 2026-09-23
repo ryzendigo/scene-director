@@ -132,6 +132,25 @@ eq('auto ignores the value', spriteVhFor(99, true), 42);
 eq('too large clamps down', spriteVhFor(500, false), 160);
 eq('too small clamps up', spriteVhFor(-5, false), 20);
 
+// Character-folder decoding. 23 Sep: decodeURIComponent THROWS on a malformed escape, and a folder
+// name can legitimately contain a bare '%' — "50% Human" gives URIError. Both callers catch, so the
+// only symptom was neutral-variant crossfades silently never working for that character. This
+// drives the try/catch read out of getNeutralVariants, not a copy of it.
+const decodeSrc = /const rawName = ([\s\S]*?);\n\s+let apiName;\n\s+try \{ apiName = ([^;]*); \} catch \(e\) \{ apiName = ([^;]*); \}/.exec(src);
+if (!decodeSrc) { console.error('folder decode not found'); process.exit(2); }
+const apiNameFor = folder => {
+  const rawName = eval(decodeSrc[1].replace(/\bfolder\b/g, 'folder'));
+  let apiName;
+  try { apiName = eval(decodeSrc[2]); } catch (e) { apiName = eval(decodeSrc[3]); }
+  return apiName;
+};
+eq('plain name', apiNameFor('/characters/Elise/'), 'Elise');
+eq('spaces survive', apiNameFor('/characters/Anne Marie/'), 'Anne Marie');
+eq('encoded percent decodes', apiNameFor('/characters/100%25/'), '100%');
+eq('bare percent does not throw', apiNameFor('/characters/50% Human/'), '50% Human');
+eq('malformed escape does not throw', apiNameFor('/characters/a%zz/'), 'a%zz');
+eq('encoded CJK decodes', apiNameFor('/characters/%E4%B8%AD/'), '\u4e2d');
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
