@@ -50,6 +50,32 @@ const CASES = [
   { t: 'She thought about Beth for a while.', want: false },
   { t: 'He wondered whether Beth would come.', want: false },
   { t: 'Beth’s coat was on the hook.', want: false },
+  // 23 Sep: a return was not an arrival. Every arrival cue wanted the verb and its particle
+  // adjacent, so inserting "back" between them defeated all of them — and a return usually FOLLOWS
+  // a departure, so the chip stayed hidden exactly when it mattered.
+  { t: 'Beth came back in with the shopping.', want: true },
+  { t: 'Beth walked back in.', want: true },
+  { t: 'Beth stepped back inside.', want: true },
+  { t: 'Beth went out to the car. She came back in and sat down.', want: true },
+  // ...without turning every "back" into an arrival:
+  { t: 'He put the kettle back on the bench.', want: false },
+  { t: 'He leaned back in his chair.', want: false },
+  // Real phrasings from the live chat: "came back in" is often idiom or reported speech, not an
+  // arrival, and "back to work"/"back to sleep" are not arrivals at all.
+  { t: 'Beth said we came back in one piece.', want: false },
+  { t: 'Beth got back to work on the accounts.', want: false },
+  { t: 'Beth went back to sleep.', want: false },
+  { t: 'Beth walked back in from the yard.', want: true },
+  // 23 Sep: the absence table was entirely remote/reported contact (rang, said, told) with no
+  // negation in it, so a flat statement of absence vetoed nothing. It only looked correct because
+  // such a sentence usually scores 0 anyway — put a real arrival cue beside it and the absent
+  // character was shown, credited with someone ELSE's arrival from inside the ±40 char window.
+  { t: 'Beth was not there. Her brother came in instead and took the chair by the window.', want: false },
+  { t: 'Beth had gone home. A long time afterwards, Tom walked in and sat down at the table.', want: false },
+  { t: 'Beth is away for the week.', want: false },
+  // ...and an ordinary present-tense scene must survive the new negation cues:
+  { t: 'Beth was in the kitchen when he got home.', want: true },
+  { t: 'Beth walked in, put the kettle on and took her coat off.', want: true },
 ];
 
 const one = process.argv[2];
