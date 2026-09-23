@@ -154,3 +154,22 @@ disables a feature, which is worse than the bug it prevents.
 
 `compileRegex` is lifted from `index.js` rather than reimplemented, so this
 cannot drift from what ships. Rerun it if the probe or the limit is retuned.
+
+## settings-repair.mjs — does a corrupted settings object get fixed?
+
+```
+node tools/settings-repair.mjs [path/to/index.js]
+```
+
+24 call sites read `find`, `filter`, `map` or `forEach` off `cast` and `places`,
+and most then read a property straight off each element. A non-array, or a
+single null inside the list, therefore takes out the settings panel and
+background selection with a TypeError and no way back.
+
+`migrateSettings` runs on every load and is the only thing that can fix settings
+that were already stored badly. The import type check only stops new ones
+arriving.
+
+The last check in each case is the one that matters: can the real call sites
+actually run? `migrateSettings` is lifted from `index.js` rather than
+reimplemented, so this cannot drift from what ships.

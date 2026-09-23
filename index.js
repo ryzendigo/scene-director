@@ -2217,6 +2217,11 @@
     function migrateSettings(s) {
         try {
             if (!Array.isArray(s.places)) s.places = [];
+            // Drop stray non-objects: three call sites read .pattern or .slots straight off each
+            // element, so a single null in the list takes out background selection entirely.
+            if (s.places.some(function (p) { return !p || typeof p !== 'object'; })) {
+                s.places = s.places.filter(function (p) { return p && typeof p === 'object'; });
+            }
             // v0.3.x flat backgroundMap rows -> Place cards (day slot only).
             if (Array.isArray(s.backgroundMap) && s.backgroundMap.length) {
                 for (const e of s.backgroundMap) {
@@ -2235,14 +2240,24 @@
             // 0.5.1: chipSize changed from px to vh.
             if (Number(s.chipSize) > 40) s.chipSize = defaultSettings.chipSize;
             // Cast members gain optional fields.
-            if (Array.isArray(s.cast)) {
-                for (const m of s.cast) {
-                    if (m.bio === undefined) m.bio = '';
-                    if (m.avatar === undefined) m.avatar = '';
-                    if (m.moodVariants === undefined) m.moodVariants = false;
-                    if (m.aliasRegex === undefined) m.aliasRegex = '';
-                    if (m.contextRegex === undefined) m.contextRegex = '';
-                }
+            // 23 Sep: `places` was repaired to an array unconditionally but `cast` was only touched
+            // when it ALREADY was one, so a non-array cast survived migration and then threw on the
+            // 16 places that call .find() on it — a dead settings panel with no way back. The import
+            // type check added the same day stops new ones arriving, but settings corrupted before
+            // it existed still load, and migrateSettings is the only thing that runs every time.
+            if (!Array.isArray(s.cast)) s.cast = [];
+            // Same as places: eight call sites read properties straight off each member, so one
+            // stray null in the list breaks all of them. Drop them here rather than guard eight
+            // times.
+            if (s.cast.some(function (m) { return !m || typeof m !== 'object'; })) {
+                s.cast = s.cast.filter(function (m) { return m && typeof m === 'object'; });
+            }
+            for (const m of s.cast) {
+                if (m.bio === undefined) m.bio = '';
+                if (m.avatar === undefined) m.avatar = '';
+                if (m.moodVariants === undefined) m.moodVariants = false;
+                if (m.aliasRegex === undefined) m.aliasRegex = '';
+                if (m.contextRegex === undefined) m.contextRegex = '';
             }
         } catch (e) {
             console.error(`${LOG} settings migration failed`, e);
