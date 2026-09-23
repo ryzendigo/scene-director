@@ -76,7 +76,22 @@ const CASES = [
   // ...but a character stating what they have on is real and must survive the guard above:
   { t: '"I\'m wearing the green dress," she said.', want: ['green dress'] },
   { t: 'She pulled her coat on. "Ready," she said.', want: ['coat'] },
+  // Nakedness. These had NO coverage at all, which is how the fast path drifted out of step with
+  // NAKED_RE and silently swallowed three of them (23 Sep).
+  { t: 'She is naked.', want: ['(nothing)'] },
+  { t: 'She had nothing on.', want: ['(nothing)'] },
+  { t: 'She is wearing nothing.', want: ['(nothing)'] },
+  { t: 'She is wearing nothing at all.', want: ['(nothing)'] },
+  { t: 'Not a stitch on her.', want: ['(nothing)'] },
+  { t: 'She has nothing on under her coat.', want: ['(nothing)'] },
+  // "nothing BUT X" is not nakedness: X is worn. Stripping here lost the garment entirely.
+  { t: 'She is wearing nothing but a towel.', want: [] },
+  { t: 'She stands there in nothing but a towel.', want: [] },
+  { t: 'She had nothing on but her slip.', want: [] },
   // Known limits, asserted so they are visible rather than forgotten:
+  // "nothing but a towel" correctly stops being NAKED, but the towel is not recorded as worn
+  // either: no ON_RE branch matches a bare noun with no dressing verb. Not-naked is the more
+  // important half, and a wrong garment would be worse than none.
   // An instruction followed by narration of it being obeyed is suppressed with the instruction.
   // Recording clothing nobody put on is the worse error, so this stays a deliberate false negative.
   { t: '"Put your coat on," she said, and he pulled it on.', want: [] },

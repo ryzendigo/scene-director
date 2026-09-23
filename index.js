@@ -1360,7 +1360,14 @@
         const GARMENT_RE = new RegExp('\\b(' + QUAL + NOUN + ')\\b', 'gi');
         const ON_RE = new RegExp("\\b(?:puts?|put|pulls?|pulled|slips?|slipped|tugs?|tugged|shrugs?|shrugged|steps?|stepped|gets?|got|throws?|threw|buttons?|buttoned|zips?|zipped|wriggles?|wriggled|draws?|drew|hooks?|hooked|wraps?|wrapped|drapes?|draped|climbs?|climbed|goes|went|gets?|got)\\s+(?:the|a|an|into|on|back|it)?\\s*(?:herself|himself|myself)?\\s*(?:on|into|up|over|round|around|back on|back into)?\\s*(?:the\\s+|a\\s+|an\\s+|her\\s+|his\\s+|my\\s+|their\\s+|your\\s+)?(" + QUAL + NOUN + ")\\b|\\b(?:wearing|wears|wore|dressed\\s+in|has\\s+on|had\\s+on|still\\s+in|back\\s+in|changes?\\s+into|changed\\s+into|buttoned\\s+into|zipped\\s+into|in)\\s+(?:a\\s+|the\\s+)?(" + QUAL + NOUN + ")\\b|\\b(" + QUAL + NOUN + ")\\s+(?:goes|went|comes|came)\\s+(?:back\\s+)?on\\b|(?:\\band\\b|,)\\s*(?:back\\s+)?into\\s+(?:her\\s+|his\\s+|my\\s+|your\\s+|their\\s+|the\\s+|a\\s+|an\\s+)?(" + QUAL + NOUN + ")\\b", 'gi');
         const OFF_RE = new RegExp("\\b(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\\s+(?:the|a|off|out of|down)?\\s*(?:off|out\\s+of|down|away)?\\s*(?:the|a)?\\s*(" + QUAL + NOUN + ")\\s*(?:off|down|away|over\\s+her\\s+head|to\\s+the\\s+floor|onto\\s+the\\s+floor)?\\b|\\b(" + QUAL + NOUN + ")\\s+(?:comes|came|falls|fell|slides|slid|drops|dropped|goes|went|is|was)\\s+(?:off|down|to\\s+the\\s+floor|onto\\s+the\\s+floor|over\\s+(?:her|his)\\s+head|gone|discarded|in\\s+a\\s+heap)\\b|\\bout\\s+of\\s+(" + QUAL + NOUN + ")\\b", 'gi');
-        const NAKED_RE = /\bnaked\b|\bnude\b|\b(?:with|wearing|has|had|got|in)\s+nothing\s+on\b|\bnothing\s+on\s+(?:at\s+all|but|under|beneath|except)\b|\bnot\s+a\s+stitch\b|\bbare\s+(?:from|to)\b|\bin\s+nothing\s+(?:at\s+all|but)\b|\bstripped\s+bare\b|\bwithout\s+a\s+thread\b|\bwearing\s+nothing\b/i;
+        // "nothing" phrases mean naked ONLY when nothing is excepted. "wearing nothing but a towel"
+        // and "in nothing but her slip" describe a woman who IS wearing something, and stripping her
+        // lost the garment entirely. EXCEPT_RE is checked separately (below) rather than as a
+        // lookahead on one branch, because three different branches here can match the same
+        // "nothing", so guarding only one of them leaves the others firing.
+        const NAKED_RE = /\bnaked\b|\bnude\b|\b(?:with|wearing|has|had|got|in)\s+nothing\s+on\b|\bnothing\s+on\s+(?:at\s+all|under|beneath)\b|\bnot\s+a\s+stitch\b|\bbare\s+(?:from|to)\b|\bin\s+nothing\s+at\s+all\b|\bstripped\s+bare\b|\bwithout\s+a\s+thread\b|\bwearing\s+nothing\b/i;
+        // "...nothing but X" / "...nothing except X": X is worn, so this is not nakedness.
+        const NAKED_EXCEPT_RE = /\bnothing\s+(?:on\s+)?(?:but|except|save|bar|other\s+than|aside\s+from)\b/i;
         // A command to get dressed, quoted or reported. Anchored at a quote/sentence start so it
         // cannot fire on ordinary narration like 'She put her coat on'.
         // Cheap gate: IMPERATIVE_RE only ever matches at a quote or after a speech verb, and its
@@ -1478,7 +1485,13 @@
         // long chat. Most messages mention no clothing at all, so one cheap whole-message test skips
         // the sentence split and the ON/OFF passes entirely. Nothing downstream changes: a message
         // with no garment word, no "naked" and no bare-body phrase could not have produced a change.
-        const ANY_CLOTHES_RE = new RegExp(GARMENT_RE.source + '|\\bnaked\\b|\\bnude\\b|\\bundress|\\bstrips?\\b|\\bnothing\\s+on\\b', 'i');
+        //
+        // 23 Sep: that claim only holds while this test admits EVERYTHING NAKED_RE matches. It had
+        // drifted — it listed only "nothing on", so "she is wearing nothing", "wearing nothing at
+        // all" and "not a stitch on her" were dropped here and never reached the naked check, which
+        // handles them correctly. Built from NAKED_RE.source now so the two cannot fall out of step
+        // again when either is extended.
+        const ANY_CLOTHES_RE = new RegExp(GARMENT_RE.source + '|' + NAKED_RE.source + '|\\bundress|\\bstrips?\\b', 'i');
         function scan(text, cast, state, opts) {
             const changes = [];
             const at = (opts && opts.at) || 0;
@@ -1496,7 +1509,7 @@
                 // this deliberately does NOT strip quoted text wholesale.
                 if (SPEECH_HINT_RE.test(sent) && IMPERATIVE_RE.test(sent)) continue;
                 const subj = whose(sent, cast, opts);
-                if (NAKED_RE.test(sent) && subj) { strip(state, subj, at, true); changes.push(subj + ': (nothing)'); }
+                if (NAKED_RE.test(sent) && !NAKED_EXCEPT_RE.test(sent) && subj) { strip(state, subj, at, true); changes.push(subj + ': (nothing)'); }
                 OFF_RE.lastIndex = 0; let m;
                 while ((m = OFF_RE.exec(sent)) !== null) {
                     const d = m[1] || m[2] || m[3]; if (!d) continue;
