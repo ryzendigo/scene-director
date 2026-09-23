@@ -435,6 +435,13 @@
     }
     function PRESENCE_MISS_LIMIT_() { try { return Math.max(1, Math.min(6, (Number(getSettings().graceMessages) || 2) + 1)); } catch (e) { return 3; } }
 
+    // Strip <details> planning blocks from a message, leaving only prose. Callers outside the pure
+    // engine blocks use this; the engines carry their own copy because each block is lifted and run
+    // standalone by the test suites and cannot reference anything defined out here.
+    // The `|$` matters: an unclosed block (a truncated message) would otherwise match nothing and
+    // leak the whole plan into whatever is reading the text.
+    function stripPlanning(raw) { return String(raw || '').replace(/<details[\s\S]*?(?:<\/details>|$)/gi, ' '); }
+
     // === MOOD ENGINE (pure) BEGIN ===
     // Layered mood verdict. Pure functions only (no DOM, no ST) so a node
     // harness can extract this block and run it against saved chats.
@@ -451,8 +458,16 @@
             'gratitude', 'grief', 'joy', 'love', 'nervousness', 'optimism', 'pride',
             'realization', 'relief', 'remorse', 'sadness', 'surprise', 'neutral'];
         const LABEL_SET = new Set(LABELS);
-        const DETAILS_RE = /<details[\s\S]*?<\/details>/gi;
-        const THINK_RE = /<think>[\s\S]*?<\/think>/gi;
+        // 23 Sep: the non-greedy form REQUIRED a closing tag, so a truncated message whose
+        // <details> never closes had its whole planning block leak into the engines — and a
+        // hypothetical branch ("Path_A: Beth walks in and sits down") then marked a character
+        // present. 14 such messages in the live chat. The `(?:...|$)` alternative strips an
+        // unclosed block to end of message. Replacement must stay length-preserving where
+        // offsets matter, which it is: the match simply runs to the end.
+        const DETAILS_RE = /<details[\s\S]*?(?:<\/details>|$)/gi;
+        // Same `|$` guard as DETAILS_RE: a truncated reasoning block that never closes would
+        // otherwise match nothing and leak the model's thinking into the engines as prose.
+        const THINK_RE = /<think>[\s\S]*?(?:<\/think>|$)/gi;
         const TAG_RE = /[\[〔]\s*MOOD\s*[:：]\s*([a-z]+)\s*[\]〕]/gi;
         const DETAILS_MOOD_RE = /<details[\s\S]*?\bmood\b\s*[:：]?\s*\**\s*([a-z]+)[\s\S]*?<\/details>/i;
         const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/gm;
@@ -1045,8 +1060,16 @@
     const PresenceEngine = (function () {
         const FONT_ANY_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>([\s\S]*?)<\/font>/gi;
         const QUOTE_RE = /"[^"\n]{2,400}"|“[^”\n]{2,400}”/g;
-        const DETAILS_RE = /<details[\s\S]*?<\/details>/gi;
-        const THINK_RE = /<think>[\s\S]*?<\/think>/gi;
+        // 23 Sep: the non-greedy form REQUIRED a closing tag, so a truncated message whose
+        // <details> never closes had its whole planning block leak into the engines — and a
+        // hypothetical branch ("Path_A: Beth walks in and sits down") then marked a character
+        // present. 14 such messages in the live chat. The `(?:...|$)` alternative strips an
+        // unclosed block to end of message. Replacement must stay length-preserving where
+        // offsets matter, which it is: the match simply runs to the end.
+        const DETAILS_RE = /<details[\s\S]*?(?:<\/details>|$)/gi;
+        // Same `|$` guard as DETAILS_RE: a truncated reasoning block that never closes would
+        // otherwise match nothing and leak the model's thinking into the engines as prose.
+        const THINK_RE = /<think>[\s\S]*?(?:<\/think>|$)/gi;
         const SENTENCE_SPLIT_RE = /[.!?\n]/;
         const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/m;
         // Physical arrival / position cues (narration only). No speech verbs.
@@ -4795,7 +4818,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             try { dateRe = compileRegex(settings.dateRegex); } catch (e) { dateRe = null; }
             for (let i = start; i < chat.length; i++) {
                 const m = chat[i]; if (!m || m.is_system) continue;
-                const text = String(m.mes || '').split('<details')[0].slice(0, 20000);
+                // 23 Sep: this used to split on '<details' and keep only what came BEFORE it, which
+                // is safe but throws away any real narration written after a closed block. Strip the
+                // blocks instead, the same way the mood and presence engines do, so all three agree
+                // on what counts as prose. An unclosed block still runs to end of message.
+                const text = stripPlanning(m.mes).slice(0, 20000);
                 // Day rollover: when the header moves to a new date, outerwear, accessories and shoes put on
                 // before it come off (nobody keeps the coat on across a night); tops/dresses stay until the text says.
                 try {
@@ -5173,8 +5200,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             let pose = null;
             try {
                 if (settings.poseSprites !== false) {
-                    const intimateNow = MoodEngine.isIntimate(raw);
-                    const p = intimateNow ? PoseEngine.detect(raw) : null;
+                    // 23 Sep: both of these ran on the RAW message, so a <details> planning block
+                    // describing a branch that had not happened ("Path_B: she straddles him") set a
+                    // real pose and changed the sprite on screen. Strip the blocks first, as the
+                    // mood, presence, wardrobe and background paths already do.
+                    const prose = stripPlanning(raw);
+                    const intimateNow = MoodEngine.isIntimate(prose);
+                    const p = intimateNow ? PoseEngine.detect(prose) : null;
                     if (p) { if (p.pose !== lastPose) dbg(`pose ${lastPose || 'none'} -> ${p.pose} ("${p.cue}")`); lastPose = p.pose; }
                     else if (!intimateNow && lastPose) { dbg(`pose ${lastPose} cleared (scene no longer intimate)`); lastPose = null; }
                     pose = lastPose;

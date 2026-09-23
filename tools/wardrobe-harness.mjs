@@ -21,9 +21,13 @@ const block = src.slice(begin, end).replace('// === WARDROBE ENGINE (pure) BEGIN
 const WardrobeEngine = eval('(function(){' + block.replace(/^\s*const WardrobeEngine = /m, 'return ') + '})()');
 
 const OPTS = { at: 1, mainRe: /\bElise\b/i, userRe: /\bRyan\b/i, otherFemale: false, userIsMale: true, speaker: 'main' };
+// The extension strips <details> planning blocks before handing text to the engine
+// (stripPlanning at the call site), so the harness must too, or it tests a path that does not ship.
+// Keep this identical to the call site, including the `|$` for an unclosed block.
+const strip = t => String(t || '').replace(/<details[\s\S]*?(?:<\/details>|$)/gi, ' ');
 function wornAfter(sentences) {
   const state = {};
-  for (const s of sentences) WardrobeEngine.scan(s, [], state, OPTS);
+  for (const s of sentences) WardrobeEngine.scan(strip(s), [], state, OPTS);
   const all = [];
   for (const k of Object.keys(state)) for (const g of Object.keys(state[k])) all.push(g);
   return all.sort();
@@ -99,6 +103,14 @@ const CASES = [
   // so ownerOf drops it. With a possessive or a name it resolves — see the three cases above.
   { t: 'He pulls a clean shirt on.', want: [] },
   { t: 'She shrugs her cardigan on over the tank top.', want: ['cardigan'] },  // only the first garment in a clause
+  // 23 Sep: a <details> planning block lists branches that have NOT happened. The engine was fed
+  // text split at the first '<details', which is safe but discards real prose written after a
+  // closed block; it now strips the blocks instead, like the mood and presence paths. A garment
+  // named only inside a plan must never be recorded — 89 messages in the live chat put a garment
+  // word inside one.
+  { t: 'She puts her blue dress on.\n<details><summary>Plot</summary>- Path_A: she puts her red coat on</details>', want: ['blue dress'] },
+  { t: 'She puts her blue dress on.\n<details><summary>Plot</summary>- Path_A: she puts her red coat on', want: ['blue dress'] },
+  { t: '<details><summary>Plot</summary>- Path_A: she puts her red coat on</details>\nShe puts her blue dress on.', want: ['blue dress'] },
 ];
 
 const one = process.argv[2];

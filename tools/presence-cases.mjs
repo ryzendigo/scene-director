@@ -104,6 +104,19 @@ const CASES = [
   // This case documents the bug and is EXPECTED TO FAIL the day someone makes cues subject-aware —
   // flip it to false then.
   { t: 'I stand at the end of Beth\'s table with the dog on my boot.', want: true },
+  // 23 Sep: <details> planning blocks list branches that have NOT happened ("Path_B: Beth walks in
+  // and sits down"). They were stripped correctly only when the tag closed — the non-greedy regex
+  // REQUIRED a </details>, so a truncated message leaked its whole plan and a hypothetical arrival
+  // marked the character present. 14 such messages in the live chat.
+  { t: 'Tom sat alone.\n<details><summary>Plot</summary>- Path_A: Beth walks in and sits down</details>', want: false },
+  { t: 'Tom sat alone.\n<details><summary>Plot</summary>- Path_A: Beth walks in and sits down', want: false },
+  // ...and real prose on either side of a block must survive:
+  { t: '<details><summary>Plot</summary>- Path_A: nothing</details>\nBeth walks in and sits down.', want: true },
+  // <think> reasoning carried the identical flaw — the strip required a closing tag. Only one live
+  // message uses it and it closes cleanly, so this is latent rather than active, but reasoning
+  // models truncate and it was the same one-character fix.
+  { t: 'Tom sat alone.\n<think>Maybe Beth walks in and sits down</think>', want: false },
+  { t: 'Tom sat alone.\n<think>Maybe Beth walks in and sits down', want: false },
 ];
 
 const one = process.argv[2];

@@ -24,7 +24,10 @@ const PoseEngine = lift('POSE', 'PoseEngine');
 const MoodEngine = lift('MOOD', 'MoodEngine');
 
 // 'gated' = the intimacy check rejected the message, so no pose is even attempted.
-const live = t => { if (!MoodEngine.isIntimate(t)) return 'gated'; const r = PoseEngine.detect(t); return r ? r.pose : 'none'; };
+// The extension strips <details> planning blocks before either call (stripPlanning), so the harness
+// must too — otherwise it tests a path that does not ship. Keep this identical to the call site.
+const strip = t => String(t || '').replace(/<details[\s\S]*?(?:<\/details>|$)/gi, ' ');
+const live = t => { const p = strip(t); if (!MoodEngine.isIntimate(p)) return 'gated'; const r = PoseEngine.detect(p); return r ? r.pose : 'none'; };
 
 const CASES = [
   // Real detections must keep working — this is what the suite is protecting.
@@ -43,6 +46,14 @@ const CASES = [
   { t: 'He was bent over the engine of the car.', want: 'gated' },
   { t: 'She drew her knees up and hugged them.', want: 'gated' },
   { t: 'She knelt down in front of the fire.', want: 'gated' },
+  // 23 Sep: a <details> planning block lists branches that have NOT happened, but the pose path ran
+  // on the RAW message, so "Path_B: she straddles him" set a real pose and changed the sprite on
+  // screen. Both the closed and the unclosed form must be inert; the unclosed one matters because
+  // the strip regex used to require a closing tag.
+  { t: 'They talked quietly.\n<details><summary>Plot</summary>- Path_B: she straddles him and rides him</details>', want: 'gated' },
+  { t: 'They talked quietly.\n<details><summary>Plot</summary>- Path_B: she straddles him and rides him', want: 'gated' },
+  // ...while a real pose written outside the block still lands:
+  { t: 'She straddles him, hips rolling.\n<details><summary>Plot</summary>- Path_A: nothing</details>', want: 'riding' },
 ];
 
 const one = process.argv[2];
