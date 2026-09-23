@@ -127,6 +127,36 @@ for (const [file, want] of BASE_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(26)} want ${String(want).padEnd(24)} baseOf(${JSON.stringify(file)})`);
 }
-const total = CASES.length + HEADER_CASES.length + BASE_CASES.length;
+// --- rainRegex ----------------------------------------------------------------------
+// scene.raining selects the -rain background variant and turns on the rain overlay. The
+// default matched words only, and the model most often signals rain with an ICON: across
+// 1,304 real headers, 323 weather segments carry 🌧 but only 156 say rain/storm/shower/
+// drizzle. The rest read "🌧️ Overcast, 9°C" and got no rain treatment at all.
+const RAIN_SRC = /^\s+rainRegex: '((?:[^'\\]|\\.)*)'/m.exec(src);
+const RAIN_CASES = [
+  ['🌧️ Overcast, 9°C', true, 'rain icon with dry words'],
+  ['⛈ Thunderstorm, 18°C', true, 'thunder icon'],
+  ['🌦️ 14°C', true, 'sun behind rain'],
+  ['Light rain', true, 'words still work'],
+  ['showers later', true, 'words still work'],
+  ['☀️ 84°F', false, 'sun'],
+  ['🌫️ 9°C', false, 'fog is not rain'],
+  ['☁ Overcast, 11°C', false, 'cloud is not rain'],
+  ['🌙 Dusk, 71°F', false, 'moon'],
+  ['🌥️ Partly cloudy', false, 'partly cloudy'],
+  ['snow, -2°C', false, 'snow is not rain'],
+];
+if (!RAIN_SRC) { console.log('FAIL  rainRegex not found in defaultSettings'); fails++; }
+else {
+  const rain = new RegExp(RAIN_SRC[1].replace(/\\\\/g, '\\'), 'i');
+  for (const [seg, want, why] of RAIN_CASES) {
+    rain.lastIndex = 0;
+    const got = rain.test(seg.toLowerCase());
+    const ok = got === want;
+    if (!ok) fails++;
+    console.log(`${ok ? 'PASS' : 'FAIL'}  raining=${String(got).padEnd(6)} want ${String(want).padEnd(6)} ${JSON.stringify(seg)}  (${why})`);
+  }
+}
+const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

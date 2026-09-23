@@ -334,7 +334,13 @@
         timeRegex: '🕰️?\\s*(\\d{1,2})[:.](\\d{2})\\s*(AM|PM)?',
         dateRegex: '(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{1,2}),?\\s+(\\d{4})',
         weatherRegex: '\\|\\s*([^|\\[\\]]+)\\]\\s*$',
-        rainRegex: 'rain|storm|shower|drizzl',
+        // 24 Sep: words only, which missed the way the model most often says "wet".
+        // Measured across 1,304 real headers: 323 weather segments carry 🌧 but only 156
+        // say rain/storm/shower/drizzle — the rest read "🌧️ Overcast, 9°C", where the
+        // icon is the only signal. scene.raining drives the -rain background variant and
+        // the rain overlay, so those 167 scenes got neither. The icons are the wet ones
+        // only: 🌦 (sun behind rain) and ⛈ (thunder) included, 🌫 fog and ☁ cloud not.
+        rainRegex: 'rain|storm|shower|drizzl|🌧|🌦|⛈',
 
         // Cast Mood Bubbles keyword sets (regex sources).
         moodKeywords: {
