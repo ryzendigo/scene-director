@@ -56,6 +56,7 @@ const B_T = Background && Background.compileTables();
 const cast = names.map(n => ({ key: n.toLowerCase(), name: n, nameRe: new RegExp('\\b' + n + '\\b', 'i'), hex: '#c77', female: true }));
 
 const errs = [], slow = [], moods = {}, pres = {}, named = {}, was = {};
+const lat = [];   // every per-message time, for percentiles
 const wstate = {};
 let bgCount = 0, poseCount = 0;
 
@@ -104,6 +105,7 @@ msgs.forEach((m, i) => {
     errs.push({ i, msg: m.slice(0, 90), err: String(e).slice(0, 140) });
   }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  lat.push(ms);
   if (ms > 60) slow.push({ i, ms: ms.toFixed(0), len: m.length });
 });
 
@@ -121,5 +123,11 @@ console.log('mood:', JSON.stringify(Object.fromEntries(Object.entries(moods).sor
 console.log('exceptions:', errs.length);
 for (const e of errs.slice(0, 8)) console.log(`  #${e.i} ${e.err}\n     ${JSON.stringify(e.msg)}`);
 console.log('slow (>60ms):', slow.length);
+// A pass/fail threshold hides whether there is headroom or we are sitting just under it.
+if (lat.length) {
+  const xs = lat.slice().sort(function (a, b) { return a - b; });
+  const q = function (f) { return xs[Math.min(xs.length - 1, Math.floor(xs.length * f))].toFixed(1); };
+  console.log('latency ms: p50 ' + q(0.5) + '  p90 ' + q(0.9) + '  p99 ' + q(0.99) + '  max ' + xs[xs.length - 1].toFixed(1));
+}
 for (const s of slow.slice(0, 8)) console.log(`  #${s.i} ${s.ms}ms for ${s.len} chars`);
 process.exit(errs.length ? 1 : 0);
