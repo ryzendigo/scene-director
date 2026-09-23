@@ -50,6 +50,21 @@ const CASES = [
   { t: 'It was not that she was sad.', want: 'none' },
 ];
 
+// npcVariant picks which portrait file a cast chip shows. Added 0.9.14: an exact per-mood file
+// wins over the bucket map, so npc/bob-curiosity.png is used instead of collapsing to neutral.
+// The last two cases are the ones that matter for existing users: with no per-mood files the
+// behaviour must be exactly what it was before.
+const VARIANT_CASES = [
+  { label: 'curiosity', have: ['curiosity', 'happy'], want: 'curiosity' },   // exact file wins
+  { label: 'curiosity', have: ['happy'], want: 'neutral' },                  // no file, no bucket
+  { label: 'desire', have: ['flirty'], want: 'flirty' },                     // near neighbour
+  { label: 'desire', have: [], want: 'neutral' },                            // desire has no bucket
+  { label: 'anger', have: ['angry'], want: 'angry' },
+  { label: 'neutral', have: ['neutral'], want: 'neutral' },
+  { label: 'joy', have: null, want: 'happy' },                               // no set: old behaviour
+  { label: 'sadness', have: null, want: 'sad' },
+];
+
 const one = process.argv[2];
 if (one) { console.log(mood(one)); process.exit(0); }
 
@@ -60,5 +75,12 @@ for (const c of CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} ${c.t}`);
 }
-console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length} pass`);
+for (const c of VARIANT_CASES) {
+  const got = M.npcVariant(c.label, c.have ? new Set(c.have) : null);
+  const ok = got === c.want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} npcVariant(${c.label}, ${c.have ? '[' + c.have.join(',') + ']' : 'none'})`);
+}
+const total = CASES.length + VARIANT_CASES.length;
+console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

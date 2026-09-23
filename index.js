@@ -1007,7 +1007,18 @@
             anger: 'angry', annoyance: 'angry', disgust: 'angry', disapproval: 'angry',
             sadness: 'sad', grief: 'sad', fear: 'sad', remorse: 'sad',
         };
-        function npcVariant(label) { return (label && NPC_VARIANT[label]) || 'neutral'; }
+        // 0.9.14: a character with a portrait for the EXACT mood on disk uses it, instead of being
+        // collapsed into the handful of buckets below. Make npc/bob-curiosity.png, list it in
+        // npc/animated.json (or just have the .png there), and curiosity is what shows. Without a
+        // matching file nothing changes: NPC_VARIANT_EXTRA offers a near neighbour first, then the
+        // bucket map, then neutral. allowedExtra is the set of labels that character actually has.
+        const NPC_VARIANT_EXTRA = { desire: 'flirty', embarrassment: 'flushed', nervousness: 'flushed', excitement: 'flushed' };
+        function npcVariant(label, allowedExtra) {
+            if (label && label !== 'neutral' && allowedExtra && allowedExtra.has(label)) return label;
+            const extra = label && NPC_VARIANT_EXTRA[label];
+            if (extra && allowedExtra && allowedExtra.has(extra)) return extra;
+            return (label && NPC_VARIANT[label]) || 'neutral';
+        }
 
         function describe(tag, local, lex, out) {
             const loc = normaliseLocal(local).slice(0, 3).map(function (x) { return x.label + ' ' + x.share.toFixed(2); }).join(', ');
@@ -2509,7 +2520,7 @@
             if (!ext.parts.length) return 'neutral';
             const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
             const out = MoodEngine.verdict({ tag: null, local: null, lex, prev: null });
-            return MoodEngine.npcVariant(out.final);
+            return MoodEngine.npcVariant(out.final, npcExtraFor(member.key));
         } catch (e) { return 'neutral'; }
     }
     async function refineNpcMood(text, member, settings) {
@@ -2521,7 +2532,7 @@
             if (!local) return;
             const lex = MoodEngine.lexicon(ext, moodLexiconCompiled(settings));
             const out = MoodEngine.verdict({ tag: null, local, lex, prev: null });
-            const variant = MoodEngine.npcVariant(out.final);
+            const variant = MoodEngine.npcVariant(out.final, npcExtraFor(member.key));
             const chip = castChips.get(member.key);
             if (!chip || chip.mood === variant || !chip.el.isConnected) return;
             if (chip.moodTs && Date.now() - chip.moodTs < 8000) return;
@@ -4250,6 +4261,21 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 .then(function (list) { if (Array.isArray(list)) for (const k of list) animatedPortraits.add(String(k)); })
                 .catch(function () { /* no manifest: stills only */ });
         } catch (e) { /* ignore */ }
+    }
+
+    // The animated manifest already lists every portrait name ("bob", "bob-curiosity", ...), so the
+    // set of moods a character has needs no extra fetch and no config: it is that list, filtered to
+    // this member's prefix. Cached per key and invalidated whenever the manifest folder changes.
+    const npcExtraCache = new Map();
+    function npcExtraFor(key) {
+        if (!key) return null;
+        const cached = npcExtraCache.get(key);
+        if (cached && cached.gen === animatedFolderLoaded && cached.size === animatedPortraits.size) return cached.set;
+        const out = new Set();
+        const prefix = key + '-';
+        for (const name of animatedPortraits) if (name.startsWith(prefix)) out.add(name.slice(prefix.length));
+        npcExtraCache.set(key, { gen: animatedFolderLoaded, size: animatedPortraits.size, set: out });
+        return out;
     }
 
     function chipImageSrc(member, mood, settings, still) {
