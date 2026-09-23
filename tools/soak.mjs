@@ -145,10 +145,13 @@ if (Wardrobe) {
     times.push(Number(process.hrtime.bigint() - t0) / 1e6);
   }
   if (times.length) {
+    // A single max is noise: repeated runs of this exact measurement ranged 46-63ms on
+    // the same chat, so one sample cannot tell a regression from scheduling jitter.
+    // Report p90 as the headline and keep max as the worst seen.
     times.sort((a, b) => a - b);
-    const med = times[Math.floor(times.length / 2)].toFixed(1);
+    const q = (f) => times[Math.min(times.length - 1, Math.floor(times.length * f))].toFixed(1);
     const max = times[times.length - 1].toFixed(1);
-    console.log(`full rebuild (window ${LOOK}, runs per message): median ${med}ms  max ${max}ms  budget 60ms`);
+    console.log(`full rebuild (window ${LOOK}, runs per message): median ${q(0.5)}ms  p90 ${q(0.9)}ms  max ${max}ms  budget 60ms`);
   }
 }
 // A pass/fail threshold hides whether there is headroom or we are sitting just under it.

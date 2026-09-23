@@ -1652,7 +1652,7 @@
             while ((m = SPLIT.exec(sent)) !== null) { if (m.index < idx) a = m.index + m[0].length; else { b = m.index; break; } }
             return sent.slice(a, b);
         }
-        // 0.9.6 perf: the wardrobe is rebuilt from the last 80 messages on EVERY message, edit and
+        // 0.9.6 perf: the wardrobe is rebuilt from a WARDROBE_LOOKBACK window on EVERY message, edit and
         // swipe, and profiling showed this function alone taking ~13% of the per-message time on a
         // long chat. Most messages mention no clothing at all, so one cheap whole-message test skips
         // the sentence split and the ON/OFF passes entirely. Nothing downstream changes: a message
