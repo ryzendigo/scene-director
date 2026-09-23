@@ -373,6 +373,19 @@
     };
 
     // ------------------------------------------------------------------
+    /**
+     * Cheap content hash for cache keys. 23 Sep: two caches keyed on a string's LENGTH, which
+     * collides on any edit that preserves it — "She smiled warmly at him." and "She glared coldly
+     * at him." are both 25 characters, so a same-length edit kept the stale value. Not a security
+     * hash; it only has to change when the content does.
+     */
+    function contentHash(str) {
+        const s = String(str == null ? '' : str);
+        let h = 5381;
+        for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+        return s.length + ':' + h.toString(36);
+    }
+
     // Regex compilation — cached, so hot paths never rebuild a RegExp
     // ------------------------------------------------------------------
 
@@ -2718,11 +2731,11 @@
         });
     }
     function moodLexiconCompiled(settings) {
-        const key = settings.moodLexicon ? JSON.stringify(settings.moodLexicon).length : 0;
+        const key = settings.moodLexicon ? contentHash(JSON.stringify(settings.moodLexicon)) : '0';
         if (lexCache.key !== key) { lexCache.key = key; lexCache.table = MoodEngine.compileLexicon(settings.moodLexicon || null); }
         return lexCache.table;
     }
-    const lexCache = { key: -1, table: null };
+    const lexCache = { key: null, table: null };   // key is a contentHash string, or '0' for none
     function detectMood(text, member, settings) {
         try {
             const ext = memberExtract(text, member, settings);
@@ -4159,7 +4172,7 @@
                 if (m && !m.is_user && !m.is_system && m.mes) { last = m; idx = i; break; }
             }
             if (!last) return '';
-            const ck = idx + ':' + (last.mes || '').length + ':' + (last.swipe_id || 0);
+            const ck = idx + ':' + contentHash(last.mes || '') + ':' + (last.swipe_id || 0);
             if (thoughtCache.key !== ck) { thoughtCache.key = ck; thoughtCache.map.clear(); }
             if (thoughtCache.map.has(key)) return thoughtCache.map.get(key);
             const interRe = compileRegex(settings.interiorityRegex ? '\\b(?:' + settings.interiorityRegex + ')\\b' : '');

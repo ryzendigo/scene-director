@@ -39,6 +39,7 @@ function lift(name, args) {
 }
 
 const spriteFolderAndExt = lift('spriteFolderAndExt', 'src');
+const contentHash = lift('contentHash', 'str');
 const parseHourFromMatch = lift('parseHourFromMatch', 'm');
 const buildHudParts = lift('buildHudParts', 'scene');
 const slugify = lift('slugify', 'name');
@@ -181,6 +182,20 @@ const ASYNC = [];
     return JSON.stringify({ extraFetches: calls - before });
   }, JSON.stringify({ extraFetches: 0 })]);
 }
+
+// contentHash backs two cache keys. 23 Sep: both keyed on a string's LENGTH, which collides on any
+// edit that preserves it — "She smiled warmly at him." and "She glared coldly at him." are both 25
+// characters, so a same-length edit kept the stale thought tooltip, and a same-length lexicon edit
+// kept the old compiled table. It only has to change when the content does; it is not a security
+// hash.
+const A = 'She smiled warmly at him.', B = 'She glared coldly at him.';
+eq('same length, different hash', contentHash(A) !== contentHash(B), true);
+eq('stable for identical input', contentHash(A) === contentHash('She smiled warmly at him.'), true);
+eq('one character apart differs', contentHash('abc') !== contentHash('abd'), true);
+eq('transposition differs', contentHash('ab') !== contentHash('ba'), true);
+eq('empty is safe', typeof contentHash('') === 'string', true);
+eq('null is safe', contentHash(null) === contentHash(''), true);
+eq('length is part of the key', contentHash('abc').startsWith('3:'), true);
 
 let fails = 0;
 for (const [label, got, want] of CASES) {
