@@ -124,3 +124,27 @@ It mirrors the extension's day-rollover cleanup, where outerwear, accessories
 and shoes come off when the scene header's date changes. Leaving that out
 inflates every duration: the first version of this probe reported an apron worn
 for 6,909 messages purely because it skipped the rollover.
+
+## regex-safety.mjs — can a pasted regex freeze the tab?
+
+```
+node tools/regex-safety.mjs [path/to/index.js]
+```
+
+Several settings are regex sources the user types or pastes, and `compileRegex`
+used to check only syntax. A syntactically perfect pattern with nested
+quantifiers backtracks exponentially: `(a+)+$` takes over 30 seconds on a
+29-character string. Those regexes run against every message, so such a pattern
+freezes SillyTavern with no error and nothing to explain it.
+
+The guard times one probe built to trigger that blow-up. This checks both halves
+of the bargain, which is the whole point:
+
+- every pathological pattern must be caught, and
+- every regex the extension actually ships must not be.
+
+The second half matters more. A guard that rejects a real pattern silently
+disables a feature, which is worse than the bug it prevents.
+
+`compileRegex` is lifted from `index.js` rather than reimplemented, so this
+cannot drift from what ships. Rerun it if the probe or the limit is retuned.

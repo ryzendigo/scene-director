@@ -383,6 +383,20 @@
         let re = null;
         try {
             re = new RegExp(source, f);
+            // 23 Sep: syntax is not the only way a pasted regex breaks things. A VALID pattern with
+            // nested quantifiers — "(a+)+$" is the classic — backtracks exponentially: 33 SECONDS
+            // on a 29-character string here, and these regexes run against every message, so the
+            // tab simply freezes with no error and nothing to explain it. One cheap probe against a
+            // string built to trigger that blow-up costs well under a millisecond for a sane
+            // pattern and rejects the pathological ones before they ever see a real message.
+            const probe = 'a'.repeat(24) + '!';
+            const t0 = Date.now();
+            try { re.test(probe); } catch (e) { /* a probe failure is not a reason to reject */ }
+            const ms = Date.now() - t0;
+            if (ms > 40) {
+                console.error(`${LOG} rejected regex (took ${ms}ms on a 25-char probe — it backtracks exponentially and would freeze the tab): ${source}`);
+                re = null;
+            }
         } catch (e) {
             console.error(`${LOG} invalid regex: ${source}`, e);
         }
