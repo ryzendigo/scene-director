@@ -439,7 +439,6 @@
     // a name (or kinship alias) counts only with a presence/arrival/speech
     // cue within ~40 chars AND outside a phone/absence sentence ("ring the aunt
     // later" summons nobody). Cue/absence regexes are settings.
-    const DEPART_RE = /\b(?:leaves|left|walk(?:s|ed) out|storm(?:s|ed) (?:out|off)|dr(?:ives?|ove) (?:off|away)|departs?|departed|head(?:s|ed) (?:out|off|home)|goodbye|good night)\b/i;
     const SENTENCE_SPLIT_RE = /[.!?\n]/;
     function sentenceAround(text, idx) {
         let a2 = idx; let b2 = idx;
@@ -484,6 +483,10 @@
         const THINK_RE = /<think>[\s\S]*?(?:<\/think>|$)/gi;
         const TAG_RE = /[\[〔]\s*MOOD\s*[:：]\s*([a-z]+)\s*[\]〕]/gi;
         const DETAILS_MOOD_RE = /<details[\s\S]*?\bmood\b\s*[:：]?\s*\**\s*([a-z]+)[\s\S]*?<\/details>/i;
+        // `g` because this one is only ever used with .replace() to strip EVERY header line.
+        // The presence engine has its own copy without `g` — it uses .exec() to read the first
+        // header, where a sticky lastIndex would be a bug. Same name, different flags, on
+        // purpose: each engine block is self-contained so the suites can lift it alone.
         const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/gm;
         const FONT_ANY_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>([\s\S]*?)<\/font>/gi;
         const TAG_STRIP_RE = /<[^>]+>/g;
@@ -1112,6 +1115,8 @@
         // otherwise match nothing and leak the model's thinking into the engines as prose.
         const THINK_RE = /<think>[\s\S]*?(?:<\/think>|$)/gi;
         const SENTENCE_SPLIT_RE = /[.!?\n]/;
+        // No `g`: used with .exec() to read the FIRST header line. The mood engine has its own
+        // copy WITH `g`, for .replace() stripping. Do not unify them — see that comment.
         const HEADER_LINE_RE = /^[^\n]*📍[^\n]*$/m;
         // Physical arrival / position cues (narration only). No speech verbs.
         const DEFAULT_ARRIVAL = 'enter(?:s|ed)?|walk(?:s|ed)? (?:back )?(?:in|over|up)|com(?:es|ing) (?:back )?(?:in|over|up)|came (?:back )?(?:in|over|up)|step(?:s|ped)? (?:back )?(?:in|inside|closer|forward|up)|(?:comes?|came|gets?|got|walk(?:s|ed)?) back\\b(?! to (?:work|sleep|bed))|appear(?:s|ed)(?! to)|arriv(?:es|ed|ing)|join(?:s|ed) (?:them|us|her|him|you)|sits?|sat|sitting|seated|stands?|stood|standing|beside|next to|across (?:from|the table)|opposite|at the table|in the doorway|pulls? up a chair|takes? a seat|lean(?:s|ed|ing) (?:in|over|against|on)|settl(?:es|ed) (?:into|onto|in|beside)|waits? (?:by|at|beside)|opens? the door|in the (?:room|kitchen|corridor|hall|car)';
@@ -1988,12 +1993,6 @@
         }
         // Longest single match a key makes (0.8.2 tie-break: "japanese
         // classroom" beats "classroom", "school rooftop" beats "school").
-        function longest(re, text) {
-            re.lastIndex = 0;
-            let best = 0; let m;
-            while ((m = re.exec(text)) !== null) { if (m[0].length > best) best = m[0].length; if (m.index === re.lastIndex) re.lastIndex++; if (best > 200) break; }
-            return best;
-        }
         function baseOf(file) { return file ? file.replace(VARIANT_RE, function (m, v, off, str) { return str.slice(str.lastIndexOf('.')); }) : file; }
         function withVariant(file, hour, weatherLower, available) {
             if (!file) return file;
@@ -2128,18 +2127,9 @@
 
 
 
-    // Per-hex dialogue-span regexes for the mood heuristic, cached.
-    const spanRegexCache = new Map(); // hex -> RegExp ('gi')
-    function spanRegexFor(hex) {
-        let re = spanRegexCache.get(hex);
-        if (re === undefined) {
-            try {
-                re = new RegExp('<font\\s+color="?' + hex + '"?[^>]*>([\\s\\S]*?)</font>', 'gi');
-            } catch (e) { re = null; }
-            spanRegexCache.set(hex, re);
-        }
-        return re;
-    }
+    // spanRegexFor()/spanRegexCache lived here until 23 Sep: per-hex dialogue-span regexes
+    // for the pre-0.6.0 mood heuristic (detectMoodLegacy), which went with them. Dead since
+    // that release; MoodEngine.extractOwn does this now.
 
     // ------------------------------------------------------------------
     // Shared state
@@ -2579,8 +2569,11 @@
     // silhouette chip (inline SVG tinted with the colour), named from the
     // text before its first span, gendered by nearby pronouns.
     const FONT_SPAN_RE = /<font\s+color=["']?(#[0-9a-f]{6})["']?[^>]*>/gi;
-    const CAPS_NAME_RE = /\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b(?![^<]*>)/g;
-    const CAP_NAME_RE = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
+    // 23 Sep: CAPS_NAME_RE and CAP_NAME_RE used to live here too. Name guessing moved into
+    // PresenceEngine.nameGuess (which this file calls just below) and these copies were left
+    // behind, unused — but with DIFFERENT bodies from the live ones, the caps pattern here
+    // carrying a `(?![^<]*>)` lookahead the engine's version lacks. Two same-named regexes that do
+    // not agree is a trap for whoever edits one of them next, so the dead pair is gone.
     const NOT_NAMES = new Set(['The', 'She', 'He', 'They', 'Her', 'His', 'Then', 'And', 'But', 'When', 'Mood',
         'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Ten', 'Twenty', 'Half', 'Both', 'Nobody', 'Somebody', 'Someone', 'Everyone', 'Every', 'Outside', 'Inside', 'Down', 'Up', 'Back', 'Out', 'Now', 'Later', 'Still', 'Just', 'There', 'Here', 'That', 'This', 'What', 'Where', 'Why', 'How', 'Not', 'Yes', 'No', 'Well', 'Right', 'Left', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'January', 'February', 'March', 'April', 'June', 'July', 'August', 'September', 'October', 'November', 'December']);
     const unknownInfo = new Map(); // 'unk:#hex' -> { label, gender, hex }
@@ -2599,9 +2592,6 @@
             + '<path d="' + body + '" fill="#1b1c24"/><path d="' + body + '" fill="url(#g)"/>'
             + '<path d="' + head + '" fill="#1b1c24"/><path d="' + head + '" fill="url(#g)"/>' + hair + '</svg>';
         return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-    }
-    function titleCase(str) {
-        return str.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
     }
     /** [{ key, label, hex, gender, pos }] for colours on no Cast card. */
     function detectUnknownSpeakers(scene, settings) {
@@ -2749,51 +2739,9 @@
             });
         } catch (e) { /* ignore */ }
     }
-    function detectMoodLegacy(text, member, settings) {
-        try {
-            if (!text) return 'neutral';
-            let corpus = '';
-            if (member.colorHex) {
-                const spanRe = spanRegexFor(member.colorHex);
-                if (spanRe) {
-                    spanRe.lastIndex = 0;
-                    let m;
-                    while ((m = spanRe.exec(text)) !== null) {
-                        corpus += ' ' + m[1];
-                        corpus += ' ' + text.slice(Math.max(0, m.index - 120),
-                            Math.min(text.length, m.index + m[0].length + 120));
-                    }
-                }
-            }
-            if (!corpus && member.nameRegex) {
-                const re = compileRegex(member.nameRegex, 'gi');
-                if (re) {
-                    re.lastIndex = 0;
-                    let m;
-                    while ((m = re.exec(text)) !== null) {
-                        corpus += ' ' + text.slice(Math.max(0, m.index - 120),
-                            Math.min(text.length, m.index + m[0].length + 120));
-                        if (m.index === re.lastIndex) re.lastIndex++;
-                    }
-                }
-            }
-            if (!corpus) return 'neutral';
-            const low = corpus.toLowerCase();
-            let best = 'neutral';
-            let bestScore = 0;
-            for (const mood of MOODS) {
-                const source = settings.moodKeywords?.[mood];
-                if (!source) continue;
-                const re = compileRegex(source, 'g');
-                if (!re) continue;
-                const score = (low.match(re) || []).length; // .match ignores lastIndex
-                if (score > bestScore) { bestScore = score; best = mood; }
-            }
-            return best;
-        } catch (e) {
-            return 'neutral';
-        }
-    }
+    // detectMoodLegacy() lived here until 23 Sep: the pre-0.6.0 single-pass mood detector,
+    // superseded by the layered MoodEngine in that release and never called again — 23
+    // versions of dead code that still had to be read past and kept working in the head.
 
     // ------------------------------------------------------------------
     // Scene HUD
@@ -4158,9 +4106,6 @@
     // emoji, and the last 1–2 sentences about the character's inner state
     // (regex over the last AI message + its reasoning; cached per message).
     // ------------------------------------------------------------------
-
-    const SENTENCE_RE = /[^.!?\n]+[.!?]?/g;
-    const PRONOUN_RE = /^\s*(?:she|her|he|his|him|they|their)\b/i;
     const thoughtCache = { key: null, map: new Map() };
 
     function thoughtsFor(key, nameRe, aliasRe, settings) {
