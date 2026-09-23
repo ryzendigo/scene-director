@@ -1608,6 +1608,9 @@
         // produced states that cannot be true: "apron, nothing" and "belt, nothing" both appear in
         // the live chat, and an apron stayed on for 6,909 messages because nothing ever removed it.
         const KEEP_WHEN_BARE = /\b(?:hat|beanie|cap|scarf|gloves)$/i;
+        // Longest real sentence measured across four live chats was 783 chars; see the note
+        // at the truncation site for why this bound exists at all.
+        const MAX_SENT = 1000;
         function strip(state, key, at, keepAcc) {
             const s = bucket(state, key);
             for (const k of Object.keys(s)) { if (keepAcc && s[k].cat === 'acc' && KEEP_WHEN_BARE.test(k)) continue; delete s[k]; }
@@ -1669,8 +1672,16 @@
             SENT_RE.lastIndex = 0;
             let sm;
             while ((sm = SENT_RE.exec(src)) !== null) {
-                const sent = sm[0].replace(/\s+/g, ' ').trim();
+                let sent = sm[0].replace(/\s+/g, ' ').trim();
                 if (sent.length < 6 || MEMORY_RE.test(sent)) continue;
+                // The per-sentence matchers are superlinear in SENTENCE length (not message
+                // length): 400 short sentences cost 6ms, one sentence of the same total length
+                // costs 56ms, and it is quadratic from there — 41KB in one sentence took 811ms,
+                // thirteen times the per-message budget, and the rebuild runs this over 80
+                // messages. Real prose never gets near this: across 105,008 sentences from four
+                // live chats, p99.9 is 340 chars, the longest is 783, and none reaches 1000. A
+                // model emitting a run-on or an unpunctuated list is what hits it.
+                if (sent.length > MAX_SENT) sent = sent.slice(0, MAX_SENT);
                 // 23 Sep: an INSTRUCTION to dress is not a description of dressing. '"Put your
                 // coat on," she said' used to record the coat as worn. Only the imperative and
                 // reported-speech forms are dropped: a character stating what they have on
