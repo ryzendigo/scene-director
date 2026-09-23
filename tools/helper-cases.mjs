@@ -683,6 +683,63 @@ eq('sig: MESSAGE_EDITED forces',
 eq('sig: chat change clears it',
   /function onChatChanged\(\)[\s\S]{0,400}?lastRebuildSig = null/.test(src), true);
 
+// ---------------------------------------------------------------------------
+// wardrobeCast turns cast cards into matchers. The drawer labels the name regex
+// "(optional)" and calls it "Fallback detection" — presence is driven by dialogue
+// colour — but the wardrobe needs a name match to attribute a garment, and this used
+// to drop every member without an explicit regex. A cast set up the documented way,
+// by colour, got no garment tracking at all and no indication why.
+// lift() returns an evaluated function, but wardrobeCast needs its two helpers in
+// scope, so take the SOURCE of all three and build one closure.
+function liftSrc(name, args) {
+  const re = new RegExp('function\\s+' + name + '\\s*\\(' + args + '\\)\\s*\\{');
+  const m = re.exec(src);
+  if (!m) { console.error(name + '() not found in index.js'); process.exit(2); }
+  let i = m.index + m[0].length - 1, depth = 0, body = '';
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; body += c; if (depth === 0) break; continue; }
+    body += c;
+  }
+  return 'function ' + name + '(' + args + ') ' + body;
+}
+const wardrobeCast = eval('(function(){const regexCache = new Map(); const LOG = "[sd]"; const console = { error() {}, warn() {} };'
+  + liftSrc('compileRegex', 'source, flags') + '\n'
+  + liftSrc('escapeRegexLiteral', 's') + '\n'
+  + liftSrc('wardrobeCast', 'settings') + '\n'
+  + 'return wardrobeCast;})()');
+const wc = (cast) => wardrobeCast({ cast });
+const keys = (cast) => wc(cast).map((m) => m.key).join(',');
+eq('cast: explicit regex kept',  keys([{ key: 'ann', label: 'Ann', nameRegex: '\\bAnn\\b' }]), 'ann');
+eq('cast: null regex falls back', keys([{ key: 'bob', label: 'Bob', nameRegex: null }]), 'bob');
+eq('cast: empty regex falls back', keys([{ key: 'cara', label: 'Cara', nameRegex: '' }]), 'cara');
+eq('cast: no label, no matcher',  keys([{ key: 'none', label: '', nameRegex: null }]), '');
+eq('cast: 1-char label dropped',  keys([{ key: 'x', label: 'X', nameRegex: null }]), '');
+const NO_RE = { re: { test: () => 'MEMBER DROPPED' } };
+const one = (cast) => wc(cast)[0] || NO_RE;
+{
+  const bob = one([{ key: 'bob', label: 'Bob', nameRegex: null }]);
+  eq('cast: label is word-bounded', bob.re.test('Bob smiled'), true);
+  eq('cast: not a substring',       bob.re.test('Bobby smiled'), false);
+}
+{
+  // A label is a literal, not a pattern: "Mr. O(1)" must match itself and nothing else.
+  // It also ends in ')', so a trailing \b could never match — the boundaries are applied
+  // only where the label actually starts or ends with a word character.
+  const dot = one([{ key: 'dot', label: 'Mr. O(1)', nameRegex: null }]);
+  eq('cast: metachars escaped',     dot.re.test('Mr. O(1) came in'), true);
+  eq('cast: not read as a pattern', dot.re.test('Mr9 O1'), false);
+  const hy = one([{ key: 'hy', label: 'Anne-Marie', nameRegex: null }]);
+  eq('cast: hyphen label matches',  hy.re.test('Anne-Marie left'), true);
+  eq('cast: hyphen not a prefix',   hy.re.test('Anne-Maries left'), false);
+}
+{
+  // An invalid explicit regex must still fall back rather than dropping the member.
+  const bad = wc([{ key: 'b', label: 'Bea', nameRegex: '([unclosed' }]);
+  eq('cast: bad regex falls back',  bad.length && bad[0].re.test('Bea waved'), true);
+}
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

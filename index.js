@@ -5004,16 +5004,36 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     const WARDROBE_LOOKBACK = 160;
     const WARDROBE_INJECT_KEY = 'scene-director-wardrobe';
     let wardrobe = {};
+    // The drawer labels the name regex "(optional)" and its tooltip calls it "Fallback
+    // detection", because presence is primarily driven by dialogue colour. The wardrobe,
+    // though, needs a way to match a name in prose to attribute a garment — and this used
+    // to drop any member without an explicit regex, so a cast set up the documented way
+    // (by colour) got no garment tracking at all, silently. Fall back to the member's own
+    // label, escaped and word-bounded, which is what a user would have typed anyway.
     function wardrobeCast(settings) {
         return (settings.cast || []).map(function (m) {
-            const re = compileRegex(m.nameRegex || ''); return re ? { key: m.key, re, female: (m.gender === 'female') ? true : (m.gender === 'male' ? false : undefined), label: m.label } : null;
+            let re = compileRegex(m.nameRegex || '');
+            if (!re) {
+                const label = String(m.label || '').trim();
+                // A one-character label would match far too much to be useful as a name.
+                // Word boundaries only where the label actually starts/ends with a word
+                // character: "Mr. O(1)" ends in ')', and a trailing \b there can never
+                // match, so the member would have been silently dropped all over again.
+                if (label.length > 1) {
+                    const lead = /^\w/.test(label) ? '\\b' : '';
+                    const tail = /\w$/.test(label) ? '\\b' : '';
+                    re = compileRegex(lead + escapeRegexLiteral(label) + tail);
+                }
+            }
+            return re ? { key: m.key, re, female: (m.gender === 'female') ? true : (m.gender === 'male' ? false : undefined), label: m.label } : null;
         }).filter(Boolean);
     }
     // rebuildWardrobe re-scans WARDROBE_LOOKBACK messages from scratch and costs ~25-48ms
     // on a long chat, so running it twice for one event is worth avoiding. It genuinely
-    // fires twice today: MESSAGE_SENT schedules one and the MESSAGE_RECEIVED that follows
-    // rebuilds again via onMessage, and onChatChanged both schedules one AND calls
-    // onMessage. This skips a rebuild when nothing it reads has changed since the last.
+    // fires twice today: onChatChanged both schedules one AND calls onMessage. This skips
+    // a rebuild when nothing it reads has changed since the last. It does NOT help the
+    // MESSAGE_SENT then MESSAGE_RECEIVED pair — the reply changes the chat, so both of
+    // those rebuilds are doing real work.
     //
     // The signature must cover everything the scan depends on, not just the message count:
     // an EDIT keeps the count identical, and a swipe replaces the last message in place.
