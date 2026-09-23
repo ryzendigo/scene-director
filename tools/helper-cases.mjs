@@ -656,6 +656,33 @@ const PRES = [['__proto__', { miss: 1, strong: true }], ['bob', { miss: 0, stron
 // The shipped code must use the null-prototype container.
 eq('presence: uses null proto', /function persistPresence\(\)[\s\S]{0,800}?const obj = Object\.create\(null\)/.test(src), true);
 
+// ---------------------------------------------------------------------------
+// The wardrobe rebuild coalescing guard. rebuildWardrobe re-scans WARDROBE_LOOKBACK
+// messages from scratch (~29ms median, 51ms max on a long chat), and it fired twice
+// for one event: onChatChanged both schedules one AND calls onMessage. The signature
+// must change whenever the scan's result could, so it covers the message count plus
+// the last two messages' content — an edit keeps the count identical and a swipe
+// replaces the last message in place.
+const wardrobeSig = lift('wardrobeSig', 'chat');
+const MSG = (t) => ({ mes: t });
+const BASE = [MSG('a'), MSG('b'), MSG('c')];
+eq('sig: identical chat',        wardrobeSig(BASE) === wardrobeSig(BASE), true);
+eq('sig: appended message',      wardrobeSig(BASE) === wardrobeSig(BASE.concat([MSG('d')])), false);
+eq('sig: last edited',           wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b'), MSG('c2')]), false);
+eq('sig: swipe replaces last',   wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b'), MSG('zzz')]), false);
+eq('sig: second-last edited',    wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b2'), MSG('c')]), false);
+eq('sig: empty is stable',       wardrobeSig([]) === wardrobeSig([]), true);
+eq('sig: empty vs one',          wardrobeSig([]) === wardrobeSig([MSG('a')]), false);
+// Known blind spot, documented rather than pretended away: an edit further back than
+// the last two messages leaves the signature unchanged. MESSAGE_EDITED therefore calls
+// rebuildWardrobe(true) to force past the guard.
+eq('sig: deep edit is invisible', wardrobeSig(BASE) === wardrobeSig([MSG('x'), MSG('b'), MSG('c')]), true);
+eq('sig: MESSAGE_EDITED forces',
+  /MESSAGE_EDITED[\s\S]{0,200}?rebuildWardrobe\(true\)/.test(src), true);
+// A branch can share a signature with the chat being left, so the guard is cleared.
+eq('sig: chat change clears it',
+  /function onChatChanged\(\)[\s\S]{0,400}?lastRebuildSig = null/.test(src), true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

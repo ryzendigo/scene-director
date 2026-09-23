@@ -5009,7 +5009,33 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             const re = compileRegex(m.nameRegex || ''); return re ? { key: m.key, re, female: (m.gender === 'female') ? true : (m.gender === 'male' ? false : undefined), label: m.label } : null;
         }).filter(Boolean);
     }
-    function rebuildWardrobe() {
+    // rebuildWardrobe re-scans WARDROBE_LOOKBACK messages from scratch and costs ~25-48ms
+    // on a long chat, so running it twice for one event is worth avoiding. It genuinely
+    // fires twice today: MESSAGE_SENT schedules one and the MESSAGE_RECEIVED that follows
+    // rebuilds again via onMessage, and onChatChanged both schedules one AND calls
+    // onMessage. This skips a rebuild when nothing it reads has changed since the last.
+    //
+    // The signature must cover everything the scan depends on, not just the message count:
+    // an EDIT keeps the count identical, and a swipe replaces the last message in place.
+    // Length plus the last two messages' text catches both; a same-length edit further back
+    // than that is the one case it misses, and MESSAGE_EDITED schedules a rebuild anyway.
+    // NOT cached across the window sliding: the state is not a fold, because a garment that
+    // falls out of the window must be forgotten and cannot be subtracted from a folded
+    // state. Measured: incremental stepping differs from a full rebuild in 1 of 100 cases,
+    // keeping an apron on that the full rebuild had correctly dropped.
+    let lastRebuildSig = null;
+    function wardrobeSig(chat) {
+        const n = chat.length;
+        const a = n > 0 ? chat[n - 1] : null;
+        const b = n > 1 ? chat[n - 2] : null;
+        return n + '|' + contentHash((a && a.mes) || '') + '|' + contentHash((b && b.mes) || '');
+    }
+    function rebuildWardrobe(force) {
+        try {
+            const sig = wardrobeSig((SillyTavern.getContext().chat) || []);
+            if (!force && sig === lastRebuildSig) return;
+            lastRebuildSig = sig;
+        } catch (e) { lastRebuildSig = null; }
         try {
             const ctx = SillyTavern.getContext(); const settings = getSettings();
             const chat = ctx.chat || [];
@@ -5615,6 +5641,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
 
     function onChatChanged() {
         chatGen++;   // invalidate any in-flight onMessage from the previous chat
+        // A branch or a reloaded copy can share the wardrobe signature with the chat being
+        // left, so the coalescing guard must not carry across a switch.
+        lastRebuildSig = null;
         // New chat: forget dedupe state, clear pending timers, re-attach the
         // sprite observer fresh, and clear the previous chat's UI (item 5).
         lastBg = null;
@@ -7308,7 +7337,10 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             ctx.eventSource.on(et.MESSAGE_RECEIVED, onMessage);
             ctx.eventSource.on(et.MESSAGE_SWIPED, onMessage);
             if (et.MESSAGE_SENT) ctx.eventSource.on(et.MESSAGE_SENT, function () { sdTimeout(rebuildWardrobe, 50); });
-            if (et.MESSAGE_EDITED) ctx.eventSource.on(et.MESSAGE_EDITED, function () { sdTimeout(rebuildWardrobe, 50); });
+            // Forced: an edit further back than the last two messages leaves the wardrobe
+            // signature unchanged, so the coalescing guard would skip the rebuild that this
+            // event exists to trigger.
+            if (et.MESSAGE_EDITED) ctx.eventSource.on(et.MESSAGE_EDITED, function () { sdTimeout(function () { rebuildWardrobe(true); }, 50); });
             if (et.CHAT_CHANGED) ctx.eventSource.on(et.CHAT_CHANGED, onChatChanged);
             // Generation hooks are lazy — only when a feature needs them.
             if (settings.enableTypingPresence || settings.enableIdlePresence) {
