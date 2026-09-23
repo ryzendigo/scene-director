@@ -173,3 +173,21 @@ arriving.
 The last check in each case is the one that matters: can the real call sites
 actually run? `migrateSettings` is lifted from `index.js` rather than
 reimplemented, so this cannot drift from what ships.
+
+## engine-parity.mjs — have two builds of the extension drifted?
+
+```
+node tools/engine-parity.mjs <other-index.js> [this-index.js]
+```
+
+The pure engines are portable by design, so the same block can live in more than
+one build. When it does, a fix ported to one copy and not the other is
+invisible: both still pass their own suites, because each suite lifts the block
+out of the file it was given.
+
+This compares the blocks directly and names the first differing line. Comments
+and blank lines are ignored, since a comment is where a build's own vocabulary
+lives and is expected to differ. An engine present in one build and absent from
+the other is reported rather than failed.
+
+Exits non-zero on drift.

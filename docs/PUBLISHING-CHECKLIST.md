@@ -42,7 +42,7 @@ demo character only) with the release candidate installed in
       else's speech, a negated garment, a dog on all fours, a room named by too
       few nouns. A change that makes an engine fire more eagerly shows up here
       as a failure, which is the point.
-- [ ] **The two standalone checks pass**, neither of which is a case suite:
+- [ ] **The standalone checks pass**, none of which is a case suite:
 
       ```bash
       node tools/regex-safety.mjs && node tools/settings-repair.mjs
@@ -52,6 +52,16 @@ demo character only) with the release candidate installed in
       rejected while every regex the extension ships still compiles. The second
       confirms a corrupted settings object is repaired rather than left to throw
       on the 24 call sites that read `cast` and `places`.
+- [ ] **If another build of the extension shares the engine blocks, check it has
+      not drifted:**
+
+      ```bash
+      node tools/engine-parity.mjs <other-index.js>
+      ```
+
+      A fix ported to one copy and not the other is invisible: both still pass
+      their own suites, because each suite lifts the block out of the file it
+      was given. Exits non-zero on drift and names the first differing line.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
       third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
