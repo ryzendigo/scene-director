@@ -1114,7 +1114,8 @@
             for (const h of hexes) {
                 if (lower.indexOf(h) >= 0) {
                     // A colour is not proof when the same message says the character is elsewhere
-                    // (the model reuses a card's colour for a new speaker: 'Beth's out at the sheep' in Granty's grey).
+                    // (the model reuses a card's colour for a new speaker: "Beth's out at the sheep"
+                    // rendered in the grey belonging to a different character's card).
                     const nameSrc = [member.nameRe, member.aliasRe].filter(Boolean).map(function (r) { return r.source; }).join('|');
                     const elsewhere = nameSrc && new RegExp('(?:' + nameSrc + ")(?:'s| is| was)? (?:out|off|down|over|away|gone|not here|isn't here|been through|about somewhere|at the (?:sheep|sheds?|pens?|far end|other end))\\b", 'i').test(String(masked && masked.text || ''));
                     if (elsewhere) { score += 3; evidence.push('own colour but described elsewhere (' + h + ') — colour reuse?'); break; }
@@ -1309,7 +1310,7 @@
     // user. Remembered or hypothetical sentences never change anything.
     const WardrobeEngine = (function () {
         const NOUN = '(?:sun ?dress|dress|gown|slip|nightgown|nightie|night ?dress|cardigan|cardi|jumper|sweater|hoodie|jacket|coat|blazer|parka|shirt|blouse|tank ?top|crop ?top|singlet|t-?shirt|tee|flannel|jeans|trousers|pants|shorts|cut-?offs|skirt|leggings|stockings|tights|socks|boots|shoes|heels|flats|sneakers|trainers|sandals|thongs|slippers|bra|panties|knickers|underwear|underpants|boxers|briefs|swimsuit|swimmers|bikini|bathers|towel|apron|scarf|hat|beanie|cap|gloves|belt|suit|tie|pyjamas|pajamas|pjs|robe|dressing ?gown|bathrobe|overalls|uniform|vest|jersey|cover-?up|onesie)';
-        const QUAL = "(?:(?:dark|light|pale|deep|bright|old|new|little|long|short|big|thin|thick|soft|warm|good|best|clean|wet|damp|dry|torn|faded|worn|fitted|loose|tight|oversized|buttoned|unbuttoned|open|plain|floral|striped|checked|plaid|knit(?:ted)?|woollen|wool|cotton|linen|silk|satin|lace|denim|leather|flannel(?:ette)?|ribbed|navy|blue|green|red|white|cream|ivory|black|grey|gray|brown|tan|camel|yellow|pink|rose|lilac|purple|wine|maroon|orange|gold|golden|silver|sage|mint|emerald|his|her|my|your|their|Ryan's|Granty's|church|Sunday|summer|winter|work|wedding|school|going-out|borrowed|bloodstained|men's|mens)\\s+){0,3}";
+        const QUAL = "(?:(?:dark|light|pale|deep|bright|old|new|little|long|short|big|thin|thick|soft|warm|good|best|clean|wet|damp|dry|torn|faded|worn|fitted|loose|tight|oversized|buttoned|unbuttoned|open|plain|floral|striped|checked|plaid|knit(?:ted)?|woollen|wool|cotton|linen|silk|satin|lace|denim|leather|flannel(?:ette)?|ribbed|navy|blue|green|red|white|cream|ivory|black|grey|gray|brown|tan|camel|yellow|pink|rose|lilac|purple|wine|maroon|orange|gold|golden|silver|sage|mint|emerald|his|her|my|your|their|[A-Z][a-z]+'s|church|Sunday|summer|winter|work|wedding|school|going-out|borrowed|bloodstained|men's|mens)\\s+){0,3}";
         const GARMENT_RE = new RegExp('\\b(' + QUAL + NOUN + ')\\b', 'gi');
         const ON_RE = new RegExp("\\b(?:puts?|put|pulls?|pulled|slips?|slipped|tugs?|tugged|shrugs?|shrugged|steps?|stepped|gets?|got|throws?|threw|buttons?|buttoned|zips?|zipped|wriggles?|wriggled|draws?|drew|hooks?|hooked|wraps?|wrapped|drapes?|draped|climbs?|climbed|goes|went|gets?|got)\\s+(?:the|a|an|into|on|back|it)?\\s*(?:herself|himself|myself)?\\s*(?:on|into|up|over|round|around|back on|back into)?\\s*(?:the\\s+|a\\s+|an\\s+|her\\s+|his\\s+|my\\s+|their\\s+|your\\s+)?(" + QUAL + NOUN + ")\\b|\\b(?:wearing|wears|wore|dressed\\s+in|has\\s+on|had\\s+on|still\\s+in|back\\s+in|changes?\\s+into|changed\\s+into|buttoned\\s+into|zipped\\s+into|in)\\s+(?:a\\s+|the\\s+)?(" + QUAL + NOUN + ")\\b|\\b(" + QUAL + NOUN + ")\\s+(?:goes|went|comes|came)\\s+(?:back\\s+)?on\\b|(?:\\band\\b|,)\\s*(?:back\\s+)?into\\s+(?:her\\s+|his\\s+|my\\s+|your\\s+|their\\s+|the\\s+|a\\s+|an\\s+)?(" + QUAL + NOUN + ")\\b", 'gi');
         const OFF_RE = new RegExp("\\b(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\\s+(?:the|a|off|out of|down)?\\s*(?:off|out\\s+of|down|away)?\\s*(?:the|a)?\\s*(" + QUAL + NOUN + ")\\s*(?:off|down|away|over\\s+her\\s+head|to\\s+the\\s+floor|onto\\s+the\\s+floor)?\\b|\\b(" + QUAL + NOUN + ")\\s+(?:comes|came|falls|fell|slides|slid|drops|dropped|goes|went|is|was)\\s+(?:off|down|to\\s+the\\s+floor|onto\\s+the\\s+floor|over\\s+(?:her|his)\\s+head|gone|discarded|in\\s+a\\s+heap)\\b|\\bout\\s+of\\s+(" + QUAL + NOUN + ")\\b", 'gi');
@@ -2283,7 +2284,7 @@
             // 0.9.5 "Only here when": an optional per-member regex describing the member's world
             // (e.g. "phone|farm|virginia"). When set and NOT matched, the member cannot be present —
             // this stops someone who lives elsewhere being summoned by a message that merely mentions
-            // them ("Martha made that dress" putting her chip in a room 9,000 miles away).
+            // them ("Gran made that dress" putting her chip in a room 9,000 miles away).
             const ctxRe = compileRegex(member.contextRegex || '');
             if (ctxRe && !ctxRe.test(scene.text || '')) { castPresence.delete(member.key); continue; }
             const aliasHexes = [];

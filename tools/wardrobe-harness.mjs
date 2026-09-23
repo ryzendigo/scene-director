@@ -60,6 +60,10 @@ const CASES = [
   // Things that go "on" but are not worn:
   { t: 'She puts the kettle on.', want: [] },
   { t: 'She turns the light on.', want: [] },
+  // A possessive qualifier is generic ("<Name>'s"), not a hardcoded list of names. It must work for
+  // any name and for a relationship word, and must not swallow non-garment nouns.
+  { t: "She puts on Sarah's old coat.", want: ["sarah's old coat"] },
+  { t: "She wears her mother's dress.", want: ["mother's dress"] },
   // Known limits, asserted so they are visible rather than forgotten:
   // A bare pronoun + non-possessive article ("a clean shirt", not "his") has no traceable owner,
   // so ownerOf drops it. With a possessive or a name it resolves — see the three cases above.
