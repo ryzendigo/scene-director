@@ -78,7 +78,13 @@ demo character only) with the release candidate installed in
 
       ```bash
       node tools/engine-parity.mjs <other-index.js>
+      node tools/nonengine-parity.mjs
       ```
+
+      engine-parity only compares the five pure-engine blocks. nonengine-parity
+      covers the rest, where two fixes have already gone missing for releases at a
+      time — it tracks specific defensive constructs and records which differences
+      are deliberate, so a real gap is not lost among the legitimate ones.
 
       A fix ported to one copy and not the other is invisible: both still pass
       their own suites, because each suite lifts the block out of the file it
