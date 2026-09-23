@@ -475,6 +475,12 @@
         const TAG_STRIP_RE = /<[^>]+>/g;
         const SENT_RE = /[^.!?\n]+[.!?…]*["”']?/g;
         const PRONOUN_SHE = /\b(?:she|her|hers|herself)\b/i;
+        // 23 Sep: some characters narrate in the FIRST person ("I duck my head, but I'm smiling too
+        // hard to hide it"). extractOwn only ever looked for her name or she/her, so those messages
+        // extracted nothing at all and every one came back neutral — 216 of her messages in the
+        // live chat, 6%. This path only ever runs on the character's own message
+        // (getLastAiMessage returns null for a user message), so "I" in it is her.
+        const PRONOUN_I = /\b(?:I|I'm|I've|I'll|I'd|me|my|mine|myself)\b/;
         const NEG_RE = /\b(?:not|never|no|isn't|wasn't|doesn't|didn't|hardly|without|nor)\s+(?:\w+\s+){0,2}$/i;
         const LAST_FRACTION = 0.6; // sentences beyond this point weigh double
         // The ending is the mood she's left in: last 40% ×2, last 20% ×3.
@@ -745,8 +751,16 @@
                     if (o && Array.isArray(o.otherNameRes)) {
                         for (const r of o.otherNameRes) { if (r && r.test(sent)) { other = true; break; } }
                     }
+                    // First person is hers outright when no one else is named in the sentence: the
+                    // caller has already established this is her message. It does NOT need the
+                    // prevHers/soloFemale run-on that she/her needs, because "I" cannot refer to
+                    // another character here the way "she" can.
                     const pron = PRONOUN_SHE.test(sent);
-                    let hers = named || (pron && !other && (prevHers || Boolean(o && o.soloFemale)));
+                    // Gated on soloFemale, which the MAIN-character path sets true and every NPC path
+                    // sets false. Without that gate an NPC picks up the NARRATOR's first person: an NPC
+                    // scored joy from "I duck my head, smiling too hard to hide it", which is not hers.
+                    const firstPerson = !other && Boolean(o && o.soloFemale) && PRONOUN_I.test(sent);
+                    let hers = named || firstPerson || (pron && !other && (prevHers || Boolean(o && o.soloFemale)));
                     prevHers = hers ? !other || named : (other ? false : prevHers);
                     if (!hers) continue;
                     parts.push({ text: sent, w: weightAt((ch.at + sm.index) / total), kind: 'narration' });

@@ -70,7 +70,7 @@ for (const m of msgs.slice(0, 40)) {
     if (Wardrobe) Wardrobe.scan(m, [], {}, { at: 0, otherFemale: true, userIsMale: true, speaker: 'main' });
     if (Background) Background.evaluate({ tables: B_T, header: '', narr: masked.narr, available: null });
     if (Pose && Pose.detect) Pose.detect(m);
-    if (Mood) Mood.lexicon(Mood.extractOwn(m, { hex: '#c77', nameRe: cast[0] ? cast[0].nameRe : null, aliasRe: null, otherNameRes: [], soloFemale: false }), MOOD_TABLE);
+    if (Mood) Mood.lexicon(Mood.extractOwn(m, { hex: '#c77', nameRe: cast[0] ? cast[0].nameRe : null, aliasRe: null, otherNameRes: [], soloFemale: true }), MOOD_TABLE);
   } catch { /* warm-up only */ }
 }
 
@@ -80,9 +80,14 @@ msgs.forEach((m, i) => {
     const masked = Presence.mask(m);
     if (Mood) {
       // extractOwn needs a nameRe to know whose text to pull out; with null it finds nothing and
-      // every message comes back neutral. Use the first name given, which is normally the character
-      // whose moods you care about.
-      const ext = Mood.extractOwn(m, { hex: '#c77', nameRe: cast[0] ? cast[0].nameRe : null, aliasRe: null, otherNameRes: [], soloFemale: false });
+      // every message comes back neutral. soloFemale MATTERS just as much: with it false, a
+      // she/her sentence is not credited to her unless her name is in it, and 38% of her own
+      // messages extract NOTHING — prose like "Her cheeks flush a deeper crimson" never names her.
+      // The extension computes it as !(femaleNamesRegex matches), and that setting is empty by
+      // default, so true is what actually ships. Passing false here halved the reported mood rate
+      // and sent me looking for a bug in the lexicon that was not there.
+      // Use the first name given, which is normally the character whose moods you care about.
+      const ext = Mood.extractOwn(m, { hex: '#c77', nameRe: cast[0] ? cast[0].nameRe : null, aliasRe: null, otherNameRes: [], soloFemale: true });
       const out = Mood.verdict({ tag: null, local: null, lex: Mood.lexicon(ext, MOOD_TABLE), prev: null });
       if (out && out.final && out.final !== 'neutral') moods[out.final] = (moods[out.final] || 0) + 1;
     }

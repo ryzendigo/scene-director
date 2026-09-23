@@ -21,7 +21,10 @@ const M = eval('(function(){' + block.replace(/^\s*const MoodEngine = /m, 'retur
 
 const LX = M.compileLexicon();
 const OPTS = { hex: '#c77', soloFemale: true };
-const mood = t => (M.lexicon(M.extractOwn(t, OPTS), LX).top || 'none');
+// A case may pass `others: [/\bName\b/i]` to supply otherNameRes, which is what the extension does
+// for every other cast member. Without it the "someone else is acting" guard cannot fire, and a
+// case meant to test that guard passes for the wrong reason.
+const mood = (t, others, solo) => (M.lexicon(M.extractOwn(t, { ...OPTS, ...(others ? { otherNameRes: others } : {}), ...(solo === false ? { soloFemale: false } : {}) }), LX).top || 'none');
 
 const CASES = [
   // Behavioural cues: the table's primary evidence, and the bias it should keep.
@@ -48,6 +51,19 @@ const CASES = [
   { t: 'She was not angry at all.', want: 'none' },
   { t: 'She was never afraid of him.', want: 'none' },
   { t: 'It was not that she was sad.', want: 'none' },
+  // 23 Sep: some characters narrate in the FIRST person. extractOwn only looked for her name or
+  // she/her, so those messages extracted NOTHING and came back neutral no matter what they said —
+  // 216 of her messages in the live chat. The mood path only ever runs on her own message
+  // (getLastAiMessage returns null for a user message), so "I" in it is her.
+  { t: '*I duck my head, but I am smiling too hard to hide it.*', want: 'joy' },
+  { t: '*I laugh before I can stop myself.*', want: 'amusement' },
+  { t: '*My cheeks flush and I look at the floor.*', want: 'embarrassment' },
+  // ...but a sentence that names someone else is not about her:
+  { t: '*Kate laughs at the joke and I watch her.*', want: 'none', others: [/\bKate\b/i] },
+  // ...and first person is gated on soloFemale, which the MAIN-character path sets true and every
+  // NPC path sets false. Without that gate an NPC picks up the narrator's first person: an NPC
+  // scored joy from "I duck my head, smiling too hard to hide it", which is the main character.
+  { t: '*I duck my head, but I am smiling too hard to hide it.*', want: 'none', solo: false },
 ];
 
 // npcVariant picks which portrait file a cast chip shows. Added 0.9.14: an exact per-mood file
@@ -70,7 +86,7 @@ if (one) { console.log(mood(one)); process.exit(0); }
 
 let fails = 0;
 for (const c of CASES) {
-  const got = mood(c.t);
+  const got = mood(c.t, c.others, c.solo);
   const ok = got === c.want;
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} ${c.t}`);
