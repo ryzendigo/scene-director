@@ -5685,6 +5685,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function fetchBackgroundsList(force) {
         if (force) backgroundsListPromise = null;
         if (!backgroundsListPromise) {
+            // The promise WAS the cache, so one transient failure cached an empty list for
+            // the whole session. An empty list becomes `available = null` at the call site,
+            // which means "do not filter" rather than "nothing exists" — so backgrounds kept
+            // working, but the missing-file check stayed off until reload. A 404 or an empty
+            // result is a real answer and stays cached; a thrown fetch or a 5xx is not, so
+            // drop the cache and let the next message retry. Same shape as fetchBios.
+            let transient = false;
             backgroundsListPromise = (async function () {
                 try {
                     const ctx = SillyTavern.getContext();
@@ -5696,7 +5703,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                         headers,
                         body: JSON.stringify({}),
                     });
-                    if (!r.ok) return [];
+                    if (!r.ok) { if (r.status >= 500) transient = true; return []; }
                     const data = await r.json();
                     // New ST: { images: [{filename}], config }; old ST: [names].
                     if (Array.isArray(data)) return data;
@@ -5708,9 +5715,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     return [];
                 } catch (e) {
                     dbg('backgrounds list fetch failed', e);
+                    transient = true;
                     return [];
                 }
-            })();
+            })().then(function (list) {
+                if (transient) backgroundsListPromise = null;
+                return list;
+            });
         }
         return backgroundsListPromise;
     }

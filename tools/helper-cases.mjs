@@ -538,6 +538,56 @@ function makeColourCaches(clearOnSwitch) {
   eq('alias: uncleared carries',     D.alias('#a33', 'sister'), 'baker');
 }
 
+// ---------------------------------------------------------------------------
+// fetchBackgroundsList used the promise as its cache, so one transient failure cached
+// an empty list for the session. An empty list becomes `available = null` at the call
+// site — "do not filter" rather than "nothing exists" — so backgrounds kept working
+// but the missing-file check stayed off until reload. Same family as fetchBios: a 404
+// or an empty result is a real answer and stays cached; a 5xx or a thrown fetch is not.
+function makeBgList() {
+  let promise = null, fetches = 0;
+  return {
+    get fetches() { return fetches; },
+    load(resp, force) {
+      if (force) promise = null;
+      if (promise) return promise;
+      fetches++;
+      let transient = false;
+      promise = Promise.resolve(resp)
+        .then(function (r) {
+          if (r === 'throw') throw new Error('net');
+          if (!r.ok) { if (r.status >= 500) transient = true; return []; }
+          return r.body;
+        })
+        .catch(function () { transient = true; return []; })
+        .then(function (list) { if (transient) promise = null; return list; });
+      return promise;
+    },
+  };
+}
+const BG_OK = { ok: true, status: 200, body: ['a.png', 'b.png'] };
+const BG_404 = { ok: false, status: 404 };
+const BG_503 = { ok: false, status: 503 };
+ASYNC.push(['bglist: success resolves', async () => (await makeBgList().load(BG_OK)).length, 2]);
+ASYNC.push(['bglist: success is cached', async () => {
+  const B = makeBgList(); await B.load(BG_OK); await B.load(BG_OK); return B.fetches;
+}, 1]);
+ASYNC.push(['bglist: a 404 stays cached', async () => {
+  const B = makeBgList(); await B.load(BG_404); await B.load(BG_404); return B.fetches;
+}, 1]);
+ASYNC.push(['bglist: a 5xx retries', async () => {
+  const B = makeBgList(); await B.load(BG_503); await B.load(BG_OK); return B.fetches;
+}, 2]);
+ASYNC.push(['bglist: a throw retries', async () => {
+  const B = makeBgList(); await B.load('throw'); await B.load(BG_OK); return B.fetches;
+}, 2]);
+ASYNC.push(['bglist: recovers after a blip', async () => {
+  const B = makeBgList(); await B.load('throw'); return (await B.load(BG_OK)).length;
+}, 2]);
+ASYNC.push(['bglist: force refetches', async () => {
+  const B = makeBgList(); await B.load(BG_OK); await B.load(BG_OK, true); return B.fetches;
+}, 2]);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
