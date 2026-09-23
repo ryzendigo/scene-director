@@ -791,6 +791,34 @@ if (rcSrc) {
   }, 'ok']);
 }
 
+// ---------------------------------------------------------------------------
+// Group chats. SillyTavern reassigns name2 to each activated member as it speaks
+// (group-chats.js: setCharacterName(characters[chId].name) inside the per-member
+// loop, cleared between turns), so in a group chat "main" is not a character — it is
+// whoever spoke last. The wardrobe rebuilt mainRe from it, attributing one member's
+// clothes to another, and the HUD named the wrong person.
+const wardrobeLabel = (function () {
+  const i = src.indexOf('function wardrobeLabel(key, settings) {');
+  if (i < 0) return null;
+  let d = 0, k = src.indexOf('{', i);
+  for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}') { d--; if (d === 0) { k++; break; } } }
+  const body = src.slice(i, k);
+  return (groupId, name2) => eval('(function(){const SillyTavern={getContext:()=>({groupId:'
+    + JSON.stringify(groupId) + ',name1:"Ryan",name2:' + JSON.stringify(name2) + '})};'
+    + body + '\nreturn wardrobeLabel;})()');
+})();
+eq('group: label lift works', Boolean(wardrobeLabel), true);
+if (wardrobeLabel) {
+  eq('group: solo names the char',  wardrobeLabel(null, 'Rachel Marks')('main', {}), 'Rachel');
+  eq('group: group does not',       wardrobeLabel('g1', 'Whoever Spoke')('main', {}), 'the character');
+  eq('group: user is stable solo',  wardrobeLabel(null, 'X')('user', {}), 'Ryan');
+  eq('group: user is stable group', wardrobeLabel('g1', 'X')('user', {}), 'Ryan');
+  eq('group: empty name2 solo',     wardrobeLabel(null, '')('main', {}), 'the character');
+}
+// rebuildWardrobe must bail before building mainRe from name2 in a group chat.
+eq('group: rebuild bails early',
+  /if \(ctx\.groupId\) \{[^}]*wardrobe = Object\.create\(null\)[\s\S]{0,160}?return; \}[\s\S]{0,200}?const mainName = String\(ctx\.name2/.test(src), true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

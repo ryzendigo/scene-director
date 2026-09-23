@@ -22,7 +22,12 @@ const priv = readFileSync(privPath, 'utf8');
 const CONSTRUCTS = [
   { find: 'createTreeWalker', why: null, note: 'mood tag stripped without rebuilding the subtree (0.9.58)' },
   { find: 'slashApiWarned', why: null, note: 'both slash-command APIs feature-detected (0.9.56)' },
-  { find: 'Object.create(null)', why: null, note: 'null-prototype containers for user-reachable keys' },
+  // Counting occurrences was too blunt: a new unrelated use (the group-chat wardrobe
+  // reset) changed the total and reported a false missing port. Name the SITES that must
+  // have it, so the check is about those containers rather than a tally.
+  { find: 'const obj = Object.create(null)', why: null, note: 'persistPresence null-prototype container (0.9.51)' },
+  { find: 'const state = Object.create(null)', why: null, note: 'wardrobe state null-prototype container (0.9.50)' },
+  { find: 's = Object.create(null); state[key] = s', why: null, note: 'wardrobe bucket() null prototype (0.9.50)' },
   { find: 'MAX_SENT', why: null, note: 'wardrobe sentence cap (0.9.52)' },
   { find: 'TRAIL_MAX', why: null, note: 'day-trail cap (0.9.47)' },
   { find: 'unknownInfo.clear()', why: null, note: 'colour caches cleared on chat change (0.9.48)' },

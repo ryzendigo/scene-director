@@ -5063,6 +5063,14 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         try {
             const ctx = SillyTavern.getContext(); const settings = getSettings();
             const chat = ctx.chat || [];
+            // In a GROUP chat SillyTavern reassigns name2 to each activated member as it
+            // speaks (group-chats.js: setCharacterName(characters[chId].name) per turn,
+            // cleared between turns), so "main" is not a character — it is whoever spoke
+            // last. Rebuilding mainRe from it attributed one member's clothes to another
+            // and the HUD named the wrong person. The wardrobe has no concept of several
+            // simultaneous mains, so rather than mislabel, it tracks nothing here. Cast
+            // cards still work: those match by their own regex, not by name2.
+            if (ctx.groupId) { wardrobe = Object.create(null); updateWardrobeUi(settings); updateWardrobeInjection(settings); return; }
             const mainName = String(ctx.name2 || '').split(' ')[0]; const userName = String(ctx.name1 || '').split(' ')[0];
             const mainRe = mainName ? new RegExp('\\b' + mainName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
             const userRe = userName ? new RegExp('\\b' + userName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i') : null;
@@ -5111,7 +5119,14 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function wearing(key) { try { return WardrobeEngine.describe(wardrobe[key]); } catch (e) { return ''; } }
     function wardrobeLabel(key, settings) {
         const ctx = SillyTavern.getContext();
-        if (key === 'main') return String(ctx.name2 || 'the character').split(' ')[0];
+        // name2 is the last speaker in a group chat, not a fixed character.
+        // The .split(' ')[0] is for a real name ("Rachel Marks" -> "Rachel"); applying it to
+        // the placeholder produced the bare word "the" whenever name2 was empty.
+        if (key === 'main') {
+            if (ctx.groupId) return 'the character';
+            const n2 = String(ctx.name2 || '').split(' ')[0];
+            return n2 || 'the character';
+        }
         if (key === 'user') return String(ctx.name1 || 'the user').split(' ')[0];
         const m = (settings.cast || []).find(function (x) { return x.key === key; }); return m ? m.label : key;
     }
