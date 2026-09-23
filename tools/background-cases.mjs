@@ -157,6 +157,22 @@ else {
     console.log(`${ok ? 'PASS' : 'FAIL'}  raining=${String(got).padEnd(6)} want ${String(want).padEnd(6)} ${JSON.stringify(seg)}  (${why})`);
   }
 }
-const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length;
+// withVariant picks the -rain/-night/-dusk FILE, and it carries its own copy of the rain
+// pattern — 0.9.61 fixed only scene.raining, so the overlay came on while the background
+// stayed dry for an icon-only segment. These go through the real exported function.
+const VARIANT_CASES = [
+  ['🌧️ Overcast, 9°C', 12, 'kitchen-rain.jpg', 'icon-only rain picks the rain variant'],
+  ['Light rain', 12, 'kitchen-rain.jpg', 'worded rain still does'],
+  ['☀️ 84°F', 12, 'kitchen.jpg', 'a sunny midday stays base'],
+  ['🌧️ Overcast, 9°C', 22, 'kitchen-night.jpg', 'night wins over rain'],
+];
+const HAVE = new Set(['kitchen.jpg', 'kitchen-rain.jpg', 'kitchen-night.jpg', 'kitchen-dusk.jpg']);
+for (const [seg, hour, want, why] of VARIANT_CASES) {
+  const got = BackgroundEngine.withVariant('kitchen.jpg', hour, seg.toLowerCase(), HAVE);
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(20)} want ${want.padEnd(20)} ${why}`);
+}
+const total = CASES.length + HEADER_CASES.length + BASE_CASES.length + RAIN_CASES.length + VARIANT_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

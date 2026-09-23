@@ -2040,7 +2040,11 @@
             const has = function (f) { return !available || !available.size || available.has(f); };
             const night = hour !== null && hour !== undefined && (hour >= 19 || hour < 6);
             const dusk = hour !== null && hour !== undefined && hour >= 17 && hour < 19;
-            const rain = /rain|storm|shower|drizzl/.test(weatherLower || '');
+            // The wet ICONS matter as much as the words: across 1,304 real headers, 323
+            // weather segments carry 🌧 and only 156 say rain/storm/shower/drizzle. This
+            // copy is what picks a -rain background VARIANT, and 0.9.61 fixed only
+            // scene.raining — so the overlay came on while the background stayed dry.
+            const rain = /rain|storm|shower|drizzl|🌧|🌦|⛈/.test(weatherLower || '');
             if (night && has(stem + '-night' + ext)) return stem + '-night' + ext;
             if (rain && has(stem + '-rain' + ext)) return stem + '-rain' + ext;
             if (dusk && has(stem + '-dusk' + ext)) return stem + '-dusk' + ext;
