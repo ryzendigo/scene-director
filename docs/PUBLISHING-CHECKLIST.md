@@ -96,6 +96,14 @@ demo character only) with the release candidate installed in
 >   sh -c "npm i --no-save playwright-core@1.55.0 >/dev/null 2>&1 && node tools/demo/<driver>.js"
 > ```
 >
+> **Deploy index.js into the demo FIRST, or you are testing whatever build that
+> container happens to hold.** Only moodstrip.js reads the local file; the other five
+> exercise the page, which loads from the bind mount:
+>
+> ```bash
+> scp index.js root@10.14.88.171:/mnt/pool/config/st-demo/data/default-user/extensions/scene-director/index.js
+> ```
+>
 > The playwright-core version MUST match the image tag — npm otherwise pulls a newer one
 > and it refuses to use the image's browsers. Stop st-demo when finished.
 

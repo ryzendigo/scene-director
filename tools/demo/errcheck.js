@@ -18,10 +18,34 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // open the drawer and walk every settings tab/section
   await p.click('#extensions-settings-button'); await sleep(1500);
   const d = p.locator('#scene_director_settings');
-  if (!(await d.locator('.inline-drawer-content').first().isVisible().catch(()=>false))) { await d.locator('.inline-drawer-toggle').first().click(); await sleep(1200); }
+  // An unguarded click here throws a bare TimeoutError if the drawer never rendered,
+  // which buries the real problem in a stack trace. Say what went wrong instead.
+  if (!(await d.locator('.inline-drawer-content').first().isVisible().catch(() => false))) {
+    const toggled = await d.locator('.inline-drawer-toggle').first().click({ timeout: 5000 })
+      .then(() => true).catch(() => false);
+    if (!toggled) {
+      console.log('FAIL  the Scene Director settings drawer did not render or would not open');
+      console.log('Nothing below this would be meaningful, so stopping here.');
+      await b.close();
+      process.exit(1);
+    }
+    await sleep(1200);
+  }
   // toggle every checkbox on then off - the cheapest way to hit most code paths
   const boxes = await p.locator('#scene_director_settings input[type=checkbox]').all();
   console.log('checkboxes:', boxes.length);
+  // This driver's whole claim is "toggles every checkbox twice". If the drawer failed to
+  // render, boxes.length is 0, every loop below no-ops, and it still reports no errors —
+  // a pass that tested nothing. A floor rather than an exact count, because two template
+  // loops emit rows at runtime (13 are declared statically, ~45 exist), so an exact number
+  // would break every time a setting is added.
+  const MIN_BOXES = 30;
+  if (boxes.length < MIN_BOXES) {
+    console.log(`FAIL  only ${boxes.length} checkboxes found, expected at least ${MIN_BOXES}`);
+    console.log('The settings drawer did not render properly; nothing below this is meaningful.');
+    await b.close();
+    process.exit(1);
+  }
   for (const cb of boxes) { await cb.click({ timeout: 1500 }).catch(()=>{}); }
   await sleep(2500);
   for (const cb of boxes) { await cb.click({ timeout: 1500 }).catch(()=>{}); }
