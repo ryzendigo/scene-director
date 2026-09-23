@@ -16,6 +16,9 @@ demo character only) with the release candidate installed in
       still saves the box).
 - [ ] `node tools/demo/apply.js` — no `PAGEERROR`, Apply status is not blank,
       both checks print **PASS**.
+- [ ] `node tools/wardrobe-harness.mjs` — all cases pass. Runs in milliseconds
+      against the live engine in `index.js`; no container needed. Run it first,
+      before any of the browser drivers.
 - [ ] `node tools/demo/errcheck.js` — toggles every checkbox twice and clicks the
       scan/self-test buttons; must report **no `PAGEERROR`** and no JS exceptions.
       Expected-and-harmless: 404s for `backgrounds/animated.json`,
