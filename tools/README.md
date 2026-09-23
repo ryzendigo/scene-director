@@ -191,3 +191,20 @@ lives and is expected to differ. An engine present in one build and absent from
 the other is reported rather than failed.
 
 Exits non-zero on drift.
+
+## helper-cases.mjs — the pure helpers outside the engine blocks
+
+```
+node tools/helper-cases.mjs [path/to/index.js]
+```
+
+The engine suites lift a `=== X ENGINE (pure) ===` block, so nothing they do
+reaches a helper defined at module scope. Several of those are pure functions
+with real edge cases, and until 23 Sep none had a single test.
+
+Covers `spriteFolderAndExt` (query strings, fragments, missing extension),
+`slugify` and `uniqueCastKey` (collisions, and that the first member keeps its
+key because sprite folders are named after it).
+
+Each helper is lifted from `index.js` rather than reimplemented, so it cannot
+drift from what ships.

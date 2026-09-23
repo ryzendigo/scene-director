@@ -20,10 +20,11 @@ demo character only) with the release candidate installed in
       Must print nothing. Check string and regex literals, not just comments:
       a name inside an alternation (the `QUAL` garment list once hardcoded two
       real people) is easy to miss when skimming.
-- [ ] **Every engine suite passes.** They lift the pure engine blocks straight
-      out of `index.js`, so they test what ships, and they run in milliseconds
-      with no container. Run these FIRST — a failure here is quicker to read
-      than any browser driver:
+- [ ] **Every case suite passes.** They lift the pure code straight out of
+      `index.js` — the six `=== X ENGINE (pure) ===` blocks, plus the module-level
+      helpers no engine suite can reach — so they test what ships, and they run
+      in milliseconds with no container. Run these FIRST: a failure here is
+      quicker to read than any browser driver.
 
       ```bash
       for t in tools/*-cases.mjs tools/wardrobe-harness.mjs; do

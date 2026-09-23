@@ -3904,12 +3904,17 @@
     }
 
     function spriteFolderAndExt(src) {
-        const cut = src.lastIndexOf('/');
-        const file = src.slice(cut + 1);
+        const cut = String(src || '').lastIndexOf('/');
+        // 23 Sep: strip the query string BEFORE looking for the extension, not after. SillyTavern
+        // appends a cache-buster to sprite URLs, and the old order took the last dot in the WHOLE
+        // string — so "neutral.webp?v=1.5" returned ".5" and "happy.png?cache=v2.1.3" returned
+        // ".3". The extension then looked for files that cannot exist and every variant lookup for
+        // that character silently found nothing.
+        const file = String(src || '').slice(cut + 1).split('?')[0].split('#')[0];
         const dot = file.lastIndexOf('.');
         return {
-            folder: src.slice(0, cut + 1),
-            ext: dot >= 0 ? file.slice(dot).split('?')[0] : '.png',
+            folder: String(src || '').slice(0, cut + 1),
+            ext: dot >= 0 ? file.slice(dot) : '.png',
         };
     }
 
