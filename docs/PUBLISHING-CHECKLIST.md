@@ -83,6 +83,12 @@ demo character only) with the release candidate installed in
       A fix ported to one copy and not the other is invisible: both still pass
       their own suites, because each suite lifts the block out of the file it
       was given. Exits non-zero on drift and names the first differing line.
+> **The tools/demo/*.js drivers need Playwright and a browser binary, and neither is
+> installed in the current environment — `node tools/demo/shot.js` fails with
+> MODULE_NOT_FOUND. Every demo item below is therefore UNRUNNABLE here and has been for
+> some time. `npm i playwright` plus `npx playwright install chromium` restores them.
+> Do not tick these boxes without actually running them.**
+
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
       third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box

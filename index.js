@@ -5190,9 +5190,36 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 if (!mesText) return;
                 MOOD_TAG_DOM_RE.lastIndex = 0;
                 if (!MOOD_TAG_DOM_RE.test(mesText.innerHTML)) return;
-                mesText.innerHTML = mesText.innerHTML
-                    .replace(MOOD_TAG_DOM_RE, '')
-                    .replace(EMPTY_P_TAIL_RE, '');
+                // Reassigning innerHTML here destroyed and rebuilt the WHOLE message
+                // subtree to delete a handful of characters: an open <details> snapped
+                // shut, images reloaded, and any listener SillyTavern or another
+                // extension had attached inside the message was silently lost. The tag
+                // is plain text, so edit the text node that holds it and leave every
+                // other node alone.
+                const walker = document.createTreeWalker(mesText, NodeFilter.SHOW_TEXT);
+                const hits = [];
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    MOOD_TAG_DOM_RE.lastIndex = 0;
+                    if (MOOD_TAG_DOM_RE.test(n.nodeValue)) hits.push(n);
+                }
+                for (const n of hits) {
+                    MOOD_TAG_DOM_RE.lastIndex = 0;
+                    n.nodeValue = n.nodeValue.replace(MOOD_TAG_DOM_RE, '');
+                }
+                if (!hits.length) {
+                    // The tag spans element boundaries (a <br> inside the match), which a
+                    // text walker cannot reach. Fall back to the old whole-subtree rewrite
+                    // rather than leaving the tag on screen.
+                    mesText.innerHTML = mesText.innerHTML
+                        .replace(MOOD_TAG_DOM_RE, '')
+                        .replace(EMPTY_P_TAIL_RE, '');
+                    return;
+                }
+                // A tag alone in a trailing paragraph leaves an empty <p>; drop it.
+                const lastEl = mesText.lastElementChild;
+                if (lastEl && lastEl.tagName === 'P' && !lastEl.textContent.trim() && !lastEl.children.length) {
+                    lastEl.remove();
+                }
             } catch (e) { /* ignore */ }
         };
         // First attempt in the shared rAF batch; the render can land after
