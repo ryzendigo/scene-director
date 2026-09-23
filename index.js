@@ -456,13 +456,6 @@
     // a name (or kinship alias) counts only with a presence/arrival/speech
     // cue within ~40 chars AND outside a phone/absence sentence ("ring the aunt
     // later" summons nobody). Cue/absence regexes are settings.
-    const SENTENCE_SPLIT_RE = /[.!?\n]/;
-    function sentenceAround(text, idx) {
-        let a2 = idx; let b2 = idx;
-        while (a2 > 0 && !SENTENCE_SPLIT_RE.test(text[a2 - 1])) a2--;
-        while (b2 < text.length && !SENTENCE_SPLIT_RE.test(text[b2])) b2++;
-        return text.slice(a2, b2);
-    }
     function PRESENCE_MISS_LIMIT_() { try { return Math.max(1, Math.min(6, (Number(getSettings().graceMessages) || 2) + 1)); } catch (e) { return 3; } }
 
     // Strip <details> planning blocks from a message, leaving only prose. Callers outside the pure

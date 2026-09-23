@@ -194,6 +194,42 @@ for (const c of CT_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(got).slice(0, 30).padEnd(32)} want ${JSON.stringify(c.want).slice(0, 26).padEnd(28)} ${c.label}`);
 }
-const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length;
+// --- normaliseLocal ----------------------------------------------------------------
+// Turns a raw classifier response into lowercase labels with a share of the total,
+// sorted strongest first. verdict() reads .share and .label, so a pass-through would
+// silently feed it unsorted, mixed-case rows with no share at all. A mutation sweep
+// found nothing asserted any of it.
+const NL_CASES = [
+  {
+    label: 'shares sum to 1 and sort desc',
+    in: [{ label: 'Joy', score: 1 }, { label: 'SADNESS', score: 3 }],
+    check: (r) => r.length === 2 && r[0].label === 'sadness' && r[0].share === 0.75
+      && r[1].label === 'joy' && r[1].share === 0.25,
+  },
+  {
+    label: 'labels lowercased',
+    in: [{ label: 'AMUSEMENT', score: 2 }],
+    check: (r) => r[0].label === 'amusement',
+  },
+  {
+    label: 'non-numeric score is 0',
+    in: [{ label: 'joy', score: 'x' }, { label: 'fear', score: 2 }],
+    check: (r) => r[0].label === 'fear' && r[1].score === 0,
+  },
+  { label: 'empty in, empty out', in: [], check: (r) => Array.isArray(r) && r.length === 0 },
+  { label: 'non-array is empty', in: null, check: (r) => Array.isArray(r) && r.length === 0 },
+  {
+    label: 'all-zero scores do not divide by zero',
+    in: [{ label: 'joy', score: 0 }, { label: 'fear', score: 0 }],
+    check: (r) => r.length === 2 && r.every((x) => Number.isFinite(x.share)),
+  },
+];
+for (const c of NL_CASES) {
+  let ok = false;
+  try { ok = Boolean(c.check(M.normaliseLocal(c.in))); } catch (e) { ok = false; }
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  normaliseLocal: ${c.label}`);
+}
+const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length + NL_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

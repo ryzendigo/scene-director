@@ -133,5 +133,28 @@ for (const c of CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${(got ? 'SHOWN' : 'hidden').padEnd(8)} want ${(c.want ? 'SHOWN' : 'hidden').padEnd(8)} ${c.t}`);
 }
-console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length} pass`);
+// --- sentenceAround ----------------------------------------------------------------
+// Bounds which sentence an index falls in. Everything that attributes a name, a garment
+// or a prop to an actor works on the sentence around a match, so a wrong boundary
+// attributes across sentences. A mutation sweep found that returning the WHOLE text with
+// spans covering everything — type-correct and plausible — failed no suite at all.
+const SA_CASES = [
+  { t: 'She left. He stayed.', idx: 2, want: 'She left' },
+  { t: 'She left. He stayed.', idx: 12, want: ' He stayed' },
+  { t: 'One sentence only', idx: 4, want: 'One sentence only' },
+  { t: 'Stop! Go on.', idx: 7, want: ' Go on' },
+  { t: 'Ask? Answer.', idx: 6, want: ' Answer' },
+  { t: 'Line one\nLine two', idx: 11, want: 'Line two' },
+  { t: '', idx: 0, want: '' },
+  { t: 'Trailing.', idx: 0, want: 'Trailing' },
+];
+for (const c of SA_CASES) {
+  const r = P.sentenceAround(c.t, c.idx);
+  const got = r && r.text;
+  const spansOk = r && r.start <= c.idx && r.end >= c.idx && r.text === c.t.slice(r.start, r.end);
+  const ok = got === c.want && spansOk;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(got).padEnd(22)} want ${JSON.stringify(c.want).padEnd(22)} sentenceAround(${JSON.stringify(c.t)}, ${c.idx})`);
+}
+console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length + SA_CASES.length} pass`);
 process.exit(fails ? 1 : 0);
