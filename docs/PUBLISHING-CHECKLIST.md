@@ -83,12 +83,26 @@ demo character only) with the release candidate installed in
       A fix ported to one copy and not the other is invisible: both still pass
       their own suites, because each suite lifts the block out of the file it
       was given. Exits non-zero on drift and names the first differing line.
-> **The tools/demo/*.js drivers need Playwright and a browser binary, and neither is
-> installed in the current environment — `node tools/demo/shot.js` fails with
-> MODULE_NOT_FOUND. Every demo item below is therefore UNRUNNABLE here and has been for
-> some time. `npm i playwright` plus `npx playwright install chromium` restores them.
-> Do not tick these boxes without actually running them.**
+> **The demo drivers need Playwright and a browser binary, neither of which is installed
+> locally — `node tools/demo/shot.js` fails with MODULE_NOT_FOUND. Run them inside the
+> Playwright image that is already on the Docker host instead, which needs no local
+> install:**
+>
+> ```bash
+> # start the demo, copy index.js + the driver to /tmp/sdtest on 10.14.88.171, then:
+> docker run --rm --network host -v /tmp/sdtest:/work -w /work \
+>   -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+>   mcr.microsoft.com/playwright:v1.55.0-noble \
+>   sh -c "npm i --no-save playwright-core@1.55.0 >/dev/null 2>&1 && node tools/demo/<driver>.js"
+> ```
+>
+> The playwright-core version MUST match the image tag — npm otherwise pulls a newer one
+> and it refuses to use the image's browsers. Stop st-demo when finished.
 
+- [ ] `tools/demo/moodstrip.js` — all 6 **PASS**. Checks the mood tag is removed
+      from the rendered message WITHOUT rebuilding its subtree. `sameNode` and
+      `preAttachedSurvived` are the load-bearing assertions: they are the only two
+      that fail on the pre-0.9.58 innerHTML rewrite.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
       third-party/scene-director`, no `[scene-director]` errors, `chips > 0`.
 - [ ] `node tools/demo/persist.js` — both lines print **PASS** (a ticked box
