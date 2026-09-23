@@ -197,6 +197,34 @@ eq('empty is safe', typeof contentHash('') === 'string', true);
 eq('null is safe', contentHash(null) === contentHash(''), true);
 eq('length is part of the key', contentHash('abc').startsWith('3:'), true);
 
+// ---------------------------------------------------------------------------
+// The sprite scroll-resize clamp. Math.max/min PROPAGATE NaN, so a clamp wrapped
+// around a non-numeric setting does NOT sanitise it — it writes NaN straight back,
+// which JSON.stringify serialises as null, and scroll-resize is then dead for good
+// because every later scroll re-reads the same bad value. Lifted from index.js so
+// the test cannot drift from the shipped expression.
+const wheelSrc = src.slice(src.indexOf('const stored = Number(st.spriteVh);'));
+const curExpr = /const cur = ([^;]*);/.exec(wheelSrc)[1];
+const clampLine = /st\.spriteVh = (Math\.max\([^;]*?);/.exec(wheelSrc)[1];
+
+function resize(spriteVh, spriteAuto, curPx, deltaY) {
+  const st = { spriteVh, spriteAuto };
+  const vh = 10, step = 2;
+  const ev = { deltaY };
+  const stored = Number(st.spriteVh);
+  const cur = eval(curExpr);
+  return eval(clampLine);
+}
+eq('scroll-resize: numeric grows',     resize(62, false, 620, -1), 64);
+eq('scroll-resize: numeric shrinks',   resize(62, false, 620, 1), 60);
+eq('scroll-resize: string is finite',  Number.isFinite(resize('abc', false, 620, -1)), true);
+eq('scroll-resize: string falls back', resize('abc', false, 620, -1), 64);
+eq('scroll-resize: null falls back',   resize(null, false, 620, -1), 64);
+eq('scroll-resize: auto measures',     resize(62, true, 620, -1), 64);
+eq('scroll-resize: clamps low',        resize(20, false, 620, 1), 20);
+eq('scroll-resize: clamps high',       resize(160, false, 620, -1), 160);
+eq('scroll-resize: object is finite',  Number.isFinite(resize({}, false, 620, -1)), true);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;

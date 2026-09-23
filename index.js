@@ -4546,7 +4546,12 @@
             ev.preventDefault();
             const vh = window.innerHeight / 100;
             const curPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scene-director-sprite-h')) || (62 * vh);
-            const cur = (st.spriteAuto || !st.spriteVh) ? curPx / vh : Number(st.spriteVh);
+            // Math.max/min PROPAGATE NaN, so the clamp below cannot rescue a
+            // non-numeric spriteVh (a hand-edited or imported settings file) — it
+            // would write NaN back, serialise as null, and kill scroll-resize for
+            // good. Fall back to the measured height instead of trusting the clamp.
+            const stored = Number(st.spriteVh);
+            const cur = (st.spriteAuto || !st.spriteVh || !Number.isFinite(stored)) ? curPx / vh : stored;
             const step = ev.shiftKey ? 0.5 : 2;
             st.spriteAuto = false;
             st.spriteVh = Math.max(20, Math.min(160, Math.round((cur + (ev.deltaY < 0 ? step : -step)) * 2) / 2));
