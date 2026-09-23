@@ -156,5 +156,48 @@ for (const c of SA_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(got).padEnd(22)} want ${JSON.stringify(c.want).padEnd(22)} sentenceAround(${JSON.stringify(c.t)}, ${c.idx})`);
 }
-console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length + SA_CASES.length} pass`);
+// --- a place named after someone is not that person --------------------------------
+// Measured on the real corpus: Caitlin is named in 75 messages and shown in none, and 9
+// of those score exactly 3 — her name is in the LOCATION HEADER ("40 Roberts Road,
+// Caitlin's Old Room") while the narration has Granty in the room. The threshold is what
+// separates "a room named after her" from "she is here".
+const PLACE_CASES = [
+  // The header alone scores 3, under the threshold. NOTE: a narration ACTION CUE adds 4
+  // regardless of who performs it, so "Granty sits on the bed" in Beth's room DOES show
+  // Beth — presence is not passed the other cast names the way MoodEngine is. Measured
+  // before leaving it: across the whole corpus a cast name appears only in the header 7
+  // times and presence shows the chip in 0 of them, because those narrations carry no cue
+  // verb. Theoretical, not live; changing the scoring on synthetic evidence would be worse.
+  ['📍 40 Roberts Road, Beth\'s Old Room\n\nThe window slides up with a dry scrape.', false,
+    'a room named after her, with no action cue, is not her'],
+  ['📍 Beth Street\n\nHe walked to the corner and waited.', false,
+    'a street named after her is not her'],
+  // She is present when the NARRATION puts her there, header or not.
+  ['📍 the kitchen\n\nBeth leans against the bench and watches him.', true,
+    'narration carries presence'],
+  ['📍 40 Roberts Road, Beth\'s Old Room\n\nBeth sits on the edge of the made bed.', true,
+    'named place plus narration is still her'],
+];
+for (const [text, want, why] of PLACE_CASES) {
+  const got = shown(text);
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${(got ? 'SHOWN' : 'hidden').padEnd(8)} want ${(want ? 'SHOWN' : 'hidden').padEnd(8)} ${why}`);
+}
+// The strongest property, verified across 16,350 corpus checks: presence never shows a
+// chip for a character the message does not name at all.
+const UNNAMED_CASES = [
+  'He crossed the room and put the kettle on.',
+  'She said nothing for a long moment.',
+  '📍 the kitchen\n\nThe door opened and someone came in.',
+  '"Beth is coming later," he said.',
+];
+for (const text of UNNAMED_CASES) {
+  const names = /\bBeth\b/i.test(text);
+  const got = shown(text);
+  const ok = !got || names;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${(got ? 'SHOWN' : 'hidden').padEnd(8)} ${names ? '(named)  ' : '(unnamed)'} ${JSON.stringify(text.slice(0, 46))}`);
+}
+console.log(fails ? `\n${fails} failing` : `\nall ${CASES.length + SA_CASES.length + PLACE_CASES.length + UNNAMED_CASES.length} pass`);
 process.exit(fails ? 1 : 0);
