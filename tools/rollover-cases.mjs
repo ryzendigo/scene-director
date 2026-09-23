@@ -28,8 +28,16 @@ const cond = /const c = WardrobeEngine\.category\(g\);\s*\n\s*if \(\((c === '[^'
 if (!cond) { console.log('FAIL  could not find the rollover condition in rebuildWardrobe'); process.exit(1); }
 const CLEARS = (cond[1].match(/'(\w+)'/g) || []).map((x) => x.replace(/'/g, ''));
 
-const d = /const defaultSettings = \{([\s\S]*?)\n    \};/.exec(src)[1];
-const dateRe = new RegExp(/^\s+dateRegex: '((?:[^'\\]|\\.)*)'/m.exec(d)[1].replace(/\\\\/g, '\\'), 'i');
+// The private build has no defaultSettings block (different settings mechanism) and its
+// date pattern is a constant, so accept either shape rather than crashing on --src.
+const d = /const defaultSettings = \{([\s\S]*?)\n    \};/.exec(src);
+const fromSettings = d && /^\s+dateRegex: '((?:[^'\\]|\\.)*)'/m.exec(d[1]);
+const fromConst = /const DATE_RE = \/([^/]+)\//.exec(src);
+if (!fromSettings && !fromConst) {
+  console.log('SKIP  no dateRegex in this build — the rollover needs one, so there is nothing to test');
+  process.exit(0);
+}
+const dateRe = new RegExp(fromSettings ? fromSettings[1].replace(/\\\\/g, '\\') : fromConst[1], 'i');
 
 // Replay a short scripted chat through the real rollover logic.
 function run(messages) {

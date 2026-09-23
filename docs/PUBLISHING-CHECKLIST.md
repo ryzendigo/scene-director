@@ -51,6 +51,8 @@ demo character only) with the release candidate installed in
    suite actually fails (a suite that passes on a mutant is not testing anything):
 
       node tools/mood-cases.mjs --src=../docs/rachel-images/rachel-autobg-index.js
+      node tools/rollover-cases.mjs   # the day-rollover cleanup, which is caller-side
+                                      # and so invisible to the engine harness
 
    A full mutation sweep (slow, a few minutes) sabotages every engine function in
    turn and reports any that NO suite reacts to. SURVIVED must stay at zero; the
