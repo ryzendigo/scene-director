@@ -1315,6 +1315,13 @@
         const OFF_RE = new RegExp("\\b(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\\s+(?:the|a|off|out of|down)?\\s*(?:off|out\\s+of|down|away)?\\s*(?:the|a)?\\s*(" + QUAL + NOUN + ")\\s*(?:off|down|away|over\\s+her\\s+head|to\\s+the\\s+floor|onto\\s+the\\s+floor)?\\b|\\b(" + QUAL + NOUN + ")\\s+(?:comes|came|falls|fell|slides|slid|drops|dropped|goes|went|is|was)\\s+(?:off|down|to\\s+the\\s+floor|onto\\s+the\\s+floor|over\\s+(?:her|his)\\s+head|gone|discarded|in\\s+a\\s+heap)\\b|\\bout\\s+of\\s+(" + QUAL + NOUN + ")\\b", 'gi');
         const NAKED_RE = /\bnaked\b|\bnude\b|\b(?:with|wearing|has|had|got|in)\s+nothing\s+on\b|\bnothing\s+on\s+(?:at\s+all|but|under|beneath|except)\b|\bnot\s+a\s+stitch\b|\bbare\s+(?:from|to)\b|\bin\s+nothing\s+(?:at\s+all|but)\b|\bstripped\s+bare\b|\bwithout\s+a\s+thread\b|\bwearing\s+nothing\b/i;
         const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|on the plane|at the wedding|in Rome|in Virginia|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put))\b/i;
+        // Verbs that appear in BOTH ON_RE and OFF_RE, so the verb alone says nothing about direction:
+        // "pulls a shirt on" vs "pulls her shirt off". For these, OFF must show a removal particle or
+        // it is not a removal at all. Unambiguous verbs (unbuttons, sheds, peels, strips...) are absent
+        // here on purpose: "she unbuttons her blouse" is a removal with no particle and must still count.
+        const AMBIG_OFF_VERB = /^(?:pulls?|pulled|slips?|slipped|shrugs?|shrugged|steps?|stepped|tugs?|tugged|gets?|got|draws?|drew|throws?|threw)\b/i;
+        // A removal particle anywhere in the matched span, or the "out of <garment>" form.
+        const OFF_PARTICLE = /\b(?:off|out\s+of|down|away|to\s+the\s+floor|onto\s+the\s+floor|over\s+(?:her|his)\s+head)\b/i;
         const OFF_VERB_HEAD = /^(?:takes?|took|pulls?|pulled|slips?|slipped|peels?|peeled|strips?|stripped|shrugs?|shrugged|kicks?|kicked|steps?|stepped|tugs?|tugged|gets?|got|works?|worked|eases?|eased|slides?|slid|draws?|drew|unbuttons?|unbuttoned|unzips?|unzipped|unhooks?|unhooked|sheds?|shed|drops?|dropped|loses|lost|throws?|threw|shucks?|shucked)\b/i;
         const SENT_RE = /[^.!?\n]+[.!?…]*["”']?/g;
         const SHE_RE = /\b(?:she|her|hers|herself)\b/i;
@@ -1433,15 +1440,28 @@
                 OFF_RE.lastIndex = 0; let m;
                 while ((m = OFF_RE.exec(sent)) !== null) {
                     const d = m[1] || m[2] || m[3]; if (!d) continue;
+                    // "He pulls a clean shirt on" is putting a shirt ON. OFF_RE matched only because
+                    // 'pulls' is in its verb list and its trailing particle group is optional, and
+                    // because OFF runs first it used to swallow the garment so ON never saw it.
+                    // A direction-neutral verb with no removal particle in the match is not a removal.
+                    if (AMBIG_OFF_VERB.test(m[0]) && !OFF_PARTICLE.test(m[0])) continue;
                     const who = ownerOf(d, sent, cast, opts, m.index); if (!who) continue;
                     if (take(state, who, d)) changes.push(who + ': -' + norm(d));
                 }
                 ON_RE.lastIndex = 0;
                 while ((m = ON_RE.exec(sent)) !== null) {
                     const d = m[1] || m[2] || m[3]; if (!d) continue;
-                    // "pulls off her dress" also matches ON via 'pulls ... dress' — skip when an OFF verb+off is in the same clause
-                    const head = sent.slice(Math.max(0, m.index - 2), m.index + m[0].length);
-                    if (/\b(?:off|out of)\b/i.test(head) && OFF_VERB_HEAD.test(m[0])) continue;
+                    // "pulls off her dress" and "pulls her jumper off" both also match ON via
+                    // 'pulls ... <garment>'. Decide by the particle nearest the garment, looking a
+                    // little PAST the match too: the old window stopped at the end of the match, so a
+                    // trailing "off" was invisible and the removal was double-counted as a put-on.
+                    // 'on'/'into' after the garment wins outright ("tugs the jumper on over her head"
+                    // contains 'over her head' but is still a put-on).
+                    const tail = sent.slice(m.index + m[0].length, m.index + m[0].length + 14);
+                    if (!/^\s*(?:on|into|up)\b/i.test(tail)
+                        && OFF_VERB_HEAD.test(m[0])
+                        && (/\b(?:off|out of)\b/i.test(sent.slice(Math.max(0, m.index - 2), m.index + m[0].length))
+                            || /^\s*(?:off|down|away|out\s+of)\b/i.test(tail))) continue;
                     const who = ownerOf(d, sent, cast, opts, m.index); if (!who) continue;
                     put(state, who, d, at); changes.push(who + ': +' + norm(d));
                     const s = state[who]; if (s && s['(nothing)']) delete s['(nothing)'];

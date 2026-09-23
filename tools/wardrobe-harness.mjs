@@ -40,9 +40,22 @@ const CASES = [
   { t: 'She is wearing a blue cotton nightgown.', want: ['blue cotton nightgown'] },
   { t: 'She changes into her summer dress.', want: ['summer dress'] },
   { t: 'She remembered the red dress she wore that year.', want: [] },   // memory, ignored
-  { t: 'She pulls the green dress off over her head and puts her blue coat on.', want: ['blue coat', 'green dress'] },
+  // The dress comes off and the coat goes on, so only the coat is still worn. Before 23 Sep this
+  // asserted ['blue coat','green dress']: the ON pass re-added the dress it had just removed.
+  { t: 'She pulls the green dress off over her head and puts her blue coat on.', want: ['blue coat'] },
+  // Fixed 23 Sep: a direction-neutral verb ("pulls", "tugs") with no removal particle is a put-on,
+  // not a removal. OFF used to claim these first, so the garment was lost entirely.
+  { t: 'He pulls his clean shirt on.', want: ['clean shirt'] },
+  { t: 'She pulls her boots on.', want: ['boots'] },
+  { t: 'She tugs the jumper on over her head.', want: ['jumper'] },
+  // ...and the removals those same verbs DO make must still register:
+  { t: 'She pulls her jumper off.', want: [] },
+  { t: 'She steps out of her dress.', want: [] },
+  { t: 'She unbuttons her blouse.', want: [] },      // unambiguous verb, no particle, still a removal
   // Known limits, asserted so they are visible rather than forgotten:
-  { t: 'He pulls a clean shirt on.', want: [] },                     // 'pulls' is in both verb lists; OFF claims it first
+  // A bare pronoun + non-possessive article ("a clean shirt", not "his") has no traceable owner,
+  // so ownerOf drops it. With a possessive or a name it resolves — see the three cases above.
+  { t: 'He pulls a clean shirt on.', want: [] },
   { t: 'She shrugs her cardigan on over the tank top.', want: ['cardigan'] },  // only the first garment in a clause
 ];
 
