@@ -2153,6 +2153,10 @@
     // ------------------------------------------------------------------
 
     // Dedupe state: never re-issue /bg or /costume for an unchanged value.
+    // Bumped on every chat change. Anything that awaits and then writes per-chat
+    // state must capture this first and bail if it moved: getContext()/chatMeta()
+    // resolve LIVE, so a late write lands on whatever chat is open now.
+    let chatGen = 0;
     let lastBg = null;
     let lastBgGraded = false;   // last applied bg is a graded (-night/-rain/-dusk) pick
     let lastBgLoc = null;       // 0.7.0: 📍 text the current background was chosen for
@@ -5420,6 +5424,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     }
 
     async function onMessage() {
+        const gen = chatGen;
         try {
             const ctx = SillyTavern.getContext();
             const settings = getSettings();
@@ -5490,6 +5495,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     if (v.file) {
                         const locChangedBg = location !== lastBgLoc;
                         if (v.file !== lastBg && (locChangedBg || v.score >= 8 || !lastBg)) {
+                            if (gen !== chatGen) return;   // chat switched during fetchBackgroundsList
                             lastBg = v.file;
                             lastBgGraded = GRADED_VARIANT_RE.test(v.file);
                             await applyBackground(ctx, v.file, settings);
@@ -5534,6 +5540,12 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     const wc = wardrobeCostume(settings); if (wc !== null) desired = wc;   // 0.8.7: what she is wearing wins
                     if (desired !== null && desired !== lastCostume) {
                         await runCommand(ctx, desired ? `/costume ${costumeArg(ctx, desired)}` : '/costume');
+                        // The user can switch chats during that await. onChatChanged clears
+                        // lastCostume and restores the new chat's value, but this resumed with
+                        // the OLD chat's answer — and chatMeta() resolves live, so the write
+                        // below would persist it into the NEW chat's metadata, where it
+                        // survives reloads.
+                        if (gen !== chatGen) return;
                         // 0.5.1: the /costume handler re-classifies; redraw
                         // the tagged mood so a None classifier can't blank it.
                         replayExpression(ctx, settings, 0);
@@ -5554,6 +5566,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     }
 
     function onChatChanged() {
+        chatGen++;   // invalidate any in-flight onMessage from the previous chat
         // New chat: forget dedupe state, clear pending timers, re-attach the
         // sprite observer fresh, and clear the previous chat's UI (item 5).
         lastBg = null;

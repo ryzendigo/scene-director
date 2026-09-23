@@ -413,6 +413,57 @@ function chipCap(size, avail) {
 eq('two real chips size',    Math.round(chipCap(2, 800)), 374);
 eq('a phantom shrinks them', chipCap(3, 800) < chipCap(2, 800), true);
 
+// ---------------------------------------------------------------------------
+// The chat-generation guard. onMessage awaits /costume and fetchBackgroundsList,
+// and the user can switch chats during either. getContext() and chatMeta() resolve
+// LIVE, so a resumed handler from the OLD chat wrote the old chat's costume into the
+// NEW chat's metadata — where saveMetadataDebounced persists it across reloads.
+function makeChat() {
+  let chatGen = 0;
+  const meta = { A: {}, B: {} };
+  let open = 'A';
+  return {
+    meta,
+    switchTo(c) { chatGen++; open = c; },
+    // Returns what the resumed handler managed to write, or null if it bailed.
+    async message(costume, guarded, duringAwait) {
+      const gen = chatGen;
+      await Promise.resolve();
+      if (duringAwait) duringAwait();
+      if (guarded && gen !== chatGen) return null;
+      meta[open].lastCostume = costume;   // chatMeta() resolves live
+      return open;
+    },
+  };
+}
+ASYNC.push(['gen: normal write lands', async () => {
+  const C = makeChat(); await C.message('pajamas', true, null); return C.meta.A.lastCostume;
+}, 'pajamas']);
+ASYNC.push(['gen: switch bails out', async () => {
+  const C = makeChat();
+  return await C.message('pajamas', true, () => C.switchTo('B'));
+}, null]);
+ASYNC.push(['gen: new chat stays clean', async () => {
+  const C = makeChat();
+  await C.message('pajamas', true, () => C.switchTo('B'));
+  return C.meta.B.lastCostume;
+}, undefined]);
+ASYNC.push(['gen: old chat untouched too', async () => {
+  const C = makeChat();
+  await C.message('pajamas', true, () => C.switchTo('B'));
+  return C.meta.A.lastCostume;
+}, undefined]);
+// Unguarded, the same sequence writes the old chat's costume into the new chat.
+ASYNC.push(['gen: unguarded corrupts B', async () => {
+  const C = makeChat();
+  await C.message('pajamas', false, () => C.switchTo('B'));
+  return C.meta.B.lastCostume;
+}, 'pajamas']);
+ASYNC.push(['gen: a later message is fine', async () => {
+  const C = makeChat(); C.switchTo('B');
+  await C.message('sundress', true, null); return C.meta.B.lastCostume;
+}, 'sundress']);
+
 let fails = 0;
 for (const [label, got, want] of CASES) {
   const ok = got === want;
