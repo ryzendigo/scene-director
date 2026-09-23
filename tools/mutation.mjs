@@ -52,7 +52,11 @@ function verdictFor(file) {
     } catch (e) {
       out = String((e.stdout || '') + (e.stderr || ''));
     }
-    if (/\d+ failing/.test(out)) return { kind: 'failed', suite: s };
+    // A suite may report a failure without the "N failing" summary line — mood-cases
+    // used to print FAIL and exit(1) from its lexicon-fallback loop before reaching it,
+    // and this classified that as "crashed", i.e. uncovered, when the check had caught
+    // the mutant. Any FAIL line counts.
+    if (/\d+ failing/.test(out) || /^FAIL\b/m.test(out)) return { kind: 'failed', suite: s };
     return { kind: 'crashed', suite: s };
   }
   return { kind: 'survived' };

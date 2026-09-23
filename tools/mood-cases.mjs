@@ -28,10 +28,27 @@ const LX = M.compileLexicon();
 // settings import carrying a number or object here threw "is not iterable" instead of falling back.
 // Settings import copies any key present in defaultSettings with NO type check, so a hand-edited or
 // truncated export reaches this. A malformed table must mean "use the built-in one", never a crash.
-for (const bad of [42, 'nonsense', {}, { a: 1 }, true]) {
-  let ok = false;
-  try { ok = M.compileLexicon(bad).length > 0; } catch (e) { /* ok stays false */ }
-  if (!ok) { console.error(`FAIL  compileLexicon(${JSON.stringify(bad)}) did not fall back to the built-in table`); process.exit(1); }
+// These used to print FAIL and process.exit(1) directly, outside the `fails` counter, so
+// a failure here produced no "N failing" line — which made the mutation sweep classify a
+// broken compileLexicon as UNCOVERED when the check had caught it all along. Report them
+// like every other case instead.
+// A NON-array means "malformed, use the built-in table". An ARRAY is the user's own
+// table, and an empty one legitimately means "no cues" — settings document
+// `moodLexicon: null = built-in table; else [[regex, label, weight, [vetoes]], ...]`.
+// I first asserted that [] should fall back too, which is wrong: that would make it
+// impossible to turn the lexicon off.
+const LEX_FALLBACK = [
+  [42, 'built-in'], ['nonsense', 'built-in'], [{}, 'built-in'], [{ a: 1 }, 'built-in'],
+  [true, 'built-in'], [null, 'built-in'], [undefined, 'built-in'],
+  [[], 'empty'], [[null], 'empty'], [[['(', 'joy', 1]], 'empty'],   // rows that cannot compile
+];
+let lexFails = 0;
+for (const [input, want] of LEX_FALLBACK) {
+  let n = -1;
+  try { n = M.compileLexicon(input).length; } catch (e) { /* stays -1 */ }
+  const ok = want === 'built-in' ? n > 0 : n === 0;
+  if (!ok) lexFails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  compileLexicon(${JSON.stringify(input)}) -> ${n} rows, want ${want}`);
 }
 const OPTS = { hex: '#c77', soloFemale: true };
 // A case may pass `others: [/\bName\b/i]` to supply otherNameRes, which is what the extension does
@@ -118,7 +135,7 @@ const VARIANT_CASES = [
 const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;
 if (one) { console.log(mood(one)); process.exit(0); }
 
-let fails = 0;
+let fails = lexFails;
 for (const c of CASES) {
   const got = mood(c.t, c.others, c.solo);
   const ok = got === c.want;
@@ -137,6 +154,46 @@ for (const c of VARIANT_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(14)} want ${c.want.padEnd(14)} npcVariant(${c.label}, ${c.have ? '[' + c.have.join(',') + ']' : 'none'})`);
 }
-const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length;
+// --- classifierText ----------------------------------------------------------------
+// What the local classifier actually SEES. Heavy parts (the character's own dialogue,
+// w >= 2) go first and light parts only fill the remaining budget, so a long narration
+// can never crowd out her own words. A mutation sweep found that truncating this to
+// five characters — type-correct and plausible — failed no suite, so nothing asserted
+// any of it.
+const CT_CASES = [
+  {
+    label: 'heavy first, light after',
+    ext: { parts: [{ text: 'narration here', w: 1 }, { text: 'her words', w: 2 }] },
+    cap: 1500, want: 'her words narration here',
+  },
+  {
+    label: 'light dropped when heavy fills the cap',
+    ext: { parts: [{ text: 'x'.repeat(30), w: 2 }, { text: 'narration', w: 1 }] },
+    cap: 20, want: 'x'.repeat(20),
+  },
+  {
+    label: 'cap truncates',
+    ext: { parts: [{ text: 'abcdefghij', w: 2 }] },
+    cap: 4, want: 'abcd',
+  },
+  {
+    label: 'default cap applies when none given',
+    ext: { parts: [{ text: 'y'.repeat(2000), w: 2 }] },
+    cap: undefined, want: 'y'.repeat(1500),
+  },
+  {
+    label: 'light only is still used',
+    ext: { parts: [{ text: 'just narration', w: 1 }] },
+    cap: 1500, want: 'just narration',
+  },
+  { label: 'no parts is empty', ext: { parts: [] }, cap: 1500, want: '' },
+];
+for (const c of CT_CASES) {
+  const got = M.classifierText(c.ext, c.cap);
+  const ok = got === c.want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(got).slice(0, 30).padEnd(32)} want ${JSON.stringify(c.want).slice(0, 26).padEnd(28)} ${c.label}`);
+}
+const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);

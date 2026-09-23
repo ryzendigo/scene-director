@@ -104,6 +104,29 @@ for (const c of HEADER_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${got.padEnd(10)} want ${c.want.padEnd(10)} 📍 ${c.h}`);
 }
-const total = CASES.length + HEADER_CASES.length;
+// --- baseOf / withVariant ---------------------------------------------------------
+// baseOf strips a -night/-rain/-dusk variant back to the base filename; the engine uses
+// it to tell "this place's file is already showing" from "a graded variant of it is".
+// A mutation sweep found that returning the input UNCHANGED — type-correct, plausible —
+// failed no suite at all, so nothing asserted this behaviour.
+const BASE_CASES = [
+  ['kitchen.jpg', 'kitchen.jpg'],
+  ['kitchen-night.jpg', 'kitchen.jpg'],
+  ['kitchen-rain.jpg', 'kitchen.jpg'],
+  ['kitchen-dusk.jpg', 'kitchen.jpg'],
+  ['kitchen-NIGHT.JPG', 'kitchen.JPG'],          // the pattern is case-insensitive
+  ['kitchen-night.png', 'kitchen.png'],          // any extension
+  ['back-garden-night.jpg', 'back-garden.jpg'],  // hyphens in the name itself survive
+  ['kitchen-summer.jpg', 'kitchen-summer.jpg'],  // not a graded variant: left alone
+  ['kitchen-nightfall.jpg', 'kitchen-nightfall.jpg'],  // must anchor at the extension
+  ['', ''],
+];
+for (const [file, want] of BASE_CASES) {
+  const got = BackgroundEngine.baseOf(file);
+  const ok = got === want;
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${String(got).padEnd(26)} want ${String(want).padEnd(24)} baseOf(${JSON.stringify(file)})`);
+}
+const total = CASES.length + HEADER_CASES.length + BASE_CASES.length;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
