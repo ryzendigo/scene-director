@@ -114,8 +114,13 @@ console.log(`\nmost garments at once: ${maxWorn} (message ${maxAt})`);
 console.log(`"(nothing)" beside real garments: ${contradictions}${contradictions ? '  <-- always a bug' : ''}`);
 for (const f of firstContradiction) console.log('   ' + f);
 console.log(`two garments of one category at once: ${dupes}${dupes ? '  <-- always a bug' : ''}`);
+// A value of exactly LOOKBACK does NOT mean "worn that long" — it means the garment was
+// mentioned once and then aged out of the rebuild window without the text ever removing
+// it. Only a value ABOVE the window proves the text kept referring to it. Marking the
+// difference, because reading a run of 80s as real durations is an easy mistake.
 console.log('\nlongest a garment stayed on (messages):');
 for (const [k, v] of Object.entries(longest).sort((a, b) => b[1] - a[1]).slice(0, 8)) {
-  console.log(`  ${String(v).padStart(5)}  ${k}`);
+  const note = v >= LOOKBACK ? (v > LOOKBACK ? '  (re-mentioned; outlived the window)' : '  (aged out of the window, never removed in text)') : '';
+  console.log(`  ${String(v).padStart(5)}  ${k}${note}`);
 }
 process.exit(contradictions || dupes ? 1 : 0);
