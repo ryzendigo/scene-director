@@ -111,6 +111,24 @@ const CASES = [
   { t: 'She puts her blue dress on.\n<details><summary>Plot</summary>- Path_A: she puts her red coat on</details>', want: ['blue dress'] },
   { t: 'She puts her blue dress on.\n<details><summary>Plot</summary>- Path_A: she puts her red coat on', want: ['blue dress'] },
   { t: '<details><summary>Plot</summary>- Path_A: she puts her red coat on</details>\nShe puts her blue dress on.', want: ['blue dress'] },
+  // 23 Sep: adjusting a garment already worn is not putting one on. Making "pulls" a put-on verb
+  // (the fix earlier that day) meant "he pulls his cap lower" recorded a NEW cap — in the live chat
+  // that put a cap on a character who then wore it for 2,515 messages.
+  { t: 'He pulls his cap lower.', want: [] },
+  { t: 'She pulls her scarf tighter.', want: [] },
+  { t: 'He pulls his collar straight.', want: [] },
+  { t: 'She pulls her coat tighter around her.', want: [] },
+  // ...without breaking the real put-ons that share the verb:
+  { t: 'He pulls his cap on.', want: ['cap'] },
+  { t: 'She pulls her boots on.', want: ['boots'] },
+  // 23 Sep: undressing spared EVERY accessory, but the 'acc' category mixes items that plainly
+  // survive it (hat, scarf, gloves) with clothing in its own right (apron, belt, tie, towel).
+  // Sparing the second kind produced states that cannot be true — "apron, nothing" and
+  // "belt, nothing" both occur in the live chat, and an apron stayed on for thousands of messages.
+  { t: ['She puts her apron on.', 'She is naked.'], want: ['(nothing)'] },
+  { t: ['She puts her belt on.', 'She is naked.'], want: ['(nothing)'] },
+  // ...while a hat still survives, because it genuinely can:
+  { t: ['She puts her hat on.', 'She is naked.'], want: ['(nothing)', 'hat'] },
 ];
 
 const one = process.argv[2];
@@ -118,7 +136,8 @@ if (one) { console.log(JSON.stringify(wornAfter([one]))); process.exit(0); }
 
 let fails = 0;
 for (const c of CASES) {
-  const got = wornAfter([c.t]);
+  // `t` may be a single message or an ordered list, for cases that need state carried between them.
+  const got = wornAfter(Array.isArray(c.t) ? c.t : [c.t]);
   const ok = JSON.stringify(got) === JSON.stringify(c.want);
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${JSON.stringify(got).padEnd(34)} want ${JSON.stringify(c.want).padEnd(26)} ${c.t}`);

@@ -59,6 +59,21 @@ const errs = [], slow = [], moods = {}, pres = {}, named = {}, was = {};
 const wstate = {};
 let bgCount = 0, poseCount = 0;
 
+// Warm the engines before timing anything. These matchers are large regexes built at runtime, and
+// compiling them costs ~200ms once. Without this the FIRST message absorbs all of it and gets
+// reported as pathologically slow — 23 Sep that sent me hunting a catastrophic-backtracking bug
+// that does not exist. The same message costs 0.03ms once the regexes are compiled.
+for (const m of msgs.slice(0, 40)) {
+  try {
+    const masked = Presence.mask(m);
+    for (const M of cast) Presence.evaluate(masked, M, { tables: P_T });
+    if (Wardrobe) Wardrobe.scan(m, [], {}, { at: 0, otherFemale: true, userIsMale: true, speaker: 'main' });
+    if (Background) Background.evaluate({ tables: B_T, header: '', narr: masked.narr, available: null });
+    if (Pose && Pose.detect) Pose.detect(m);
+    if (Mood) Mood.lexicon(Mood.extractOwn(m, { hex: '#c77', nameRe: cast[0] ? cast[0].nameRe : null, aliasRe: null, otherNameRes: [], soloFemale: false }), MOOD_TABLE);
+  } catch { /* warm-up only */ }
+}
+
 msgs.forEach((m, i) => {
   const t0 = process.hrtime.bigint();
   try {

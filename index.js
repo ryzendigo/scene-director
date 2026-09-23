@@ -1528,9 +1528,15 @@
             for (const k of Object.keys(s)) { if (k === n || noun(k) === nn) { delete s[k]; hit = true; } }
             return hit;
         }
+        // 23 Sep: keepAcc used to spare EVERY accessory, and the 'acc' category mixes two unlike
+        // things — items that plainly survive undressing (hat, scarf, gloves, jewellery) and items
+        // that are clothing in their own right (apron, belt, tie, towel). Sparing the second kind
+        // produced states that cannot be true: "apron, nothing" and "belt, nothing" both appear in
+        // the live chat, and an apron stayed on for 6,909 messages because nothing ever removed it.
+        const KEEP_WHEN_BARE = /\b(?:hat|beanie|cap|scarf|gloves)$/i;
         function strip(state, key, at, keepAcc) {
             const s = state[key] || (state[key] = {});
-            for (const k of Object.keys(s)) { if (keepAcc && s[k].cat === 'acc') continue; delete s[k]; }
+            for (const k of Object.keys(s)) { if (keepAcc && s[k].cat === 'acc' && KEEP_WHEN_BARE.test(k)) continue; delete s[k]; }
             s['(nothing)'] = { at, cat: 'none' };
         }
         /** Owner of one garment phrase: its possessive first, then the sentence. */
@@ -1627,6 +1633,12 @@
                         && OFF_VERB_HEAD.test(m[0])
                         && (/\b(?:off|out of)\b/i.test(sent.slice(Math.max(0, m.index - 2), m.index + m[0].length))
                             || /^\s*(?:off|down|away|out\s+of)\b/i.test(tail))) continue;
+                    // 23 Sep: adjusting a garment already on is not putting one on. "He pulls his
+                    // cap lower" and "she pulls her scarf tighter" were recording a NEW garment —
+                    // in the live chat that put a cap on a character who then wore it for 2,515
+                    // messages. A comparative or a fastening word after the garment means the thing
+                    // is already being worn.
+                    if (/^\s*(?:lower|higher|tighter|closer|tight|straight|flat|open|shut|closed|loose|looser|further|back down)\b/i.test(tail)) continue;
                     const who = ownerOf(d, sent, cast, opts, m.index); if (!who) continue;
                     put(state, who, d, at); changes.push(who + ': +' + norm(d));
                     const s = state[who]; if (s && s['(nothing)']) delete s['(nothing)'];
@@ -1640,6 +1652,13 @@
             const keys = Object.keys(s);
             if (!keys.length) return '';
             keys.sort(function (a, b) { return ORDER.indexOf(s[a].cat) - ORDER.indexOf(s[b].cat); });
+            // "(nothing)" is a marker meaning undressed, not a garment. With something still on —
+            // a hat or gloves survive undressing — rendering it as "hat, nothing" reads as a
+            // contradiction, so say what is actually meant.
+            if (keys.length > 1 && s['(nothing)']) {
+                const rest = keys.filter(function (k) { return k !== '(nothing)'; });
+                return rest.join(', ') + ' and nothing else';
+            }
             return keys.map(function (k) { return k === '(nothing)' ? 'nothing' : k; }).join(', ');
         }
         return { scan, describe, norm, category, GARMENT_RE, MEMORY_RE };

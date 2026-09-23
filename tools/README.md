@@ -86,10 +86,41 @@ Read it in this order:
   is absent from the story scoring high. Both matter, because widening a matcher
   trades one for the other, and only measuring both shows the trade.
 - **slow** messages. The wardrobe is rebuilt on every message, edit and swipe,
-  so anything over 60ms is worth a look.
+  so anything over 60ms is worth a look. The engines are warmed on the first 40
+  messages before timing starts: these matchers are large regexes built at
+  runtime and compiling them costs around 200ms once, which otherwise lands
+  entirely on whichever message happens to be first and reports it as
+  pathologically slow.
 
 Verdict counts are not assertions, since no chat is labelled. Compare them
 before and after a change rather than reading them as pass or fail.
 
 Chat files live in SillyTavern under
 `data/<user>/chats/<character>/<name>.jsonl`.
+
+## wardrobe-drift.mjs — carry wardrobe state across a whole chat
+
+```
+node tools/wardrobe-drift.mjs <chat.jsonl> [MainName] [UserName]
+```
+
+The case suites check one message at a time and `soak.mjs` reports rates, so
+neither can see a bug that only emerges over hundreds of messages. This carries
+state forward the way the extension does and looks for states that cannot be
+true.
+
+- **"(nothing)" beside real garments** and **two garments of one category at
+  once** are always bugs. The engine's own rules say they cannot happen. A hat,
+  cap, scarf or gloves beside "(nothing)" is legal, because those genuinely
+  survive undressing.
+- **Longest worn** is the useful signal. A garment on for hundreds of messages
+  means either the text that should have removed it was never matched, or
+  something recorded a garment nobody put on. "He pulls his cap lower" once
+  recorded a cap worn for 2,515 messages.
+
+Exits non-zero when it finds an impossible state.
+
+It mirrors the extension's day-rollover cleanup, where outerwear, accessories
+and shoes come off when the scene header's date changes. Leaving that out
+inflates every duration: the first version of this probe reported an apron worn
+for 6,909 messages purely because it skipped the rollover.
