@@ -670,6 +670,14 @@ eq('sig: identical chat',        wardrobeSig(BASE) === wardrobeSig(BASE), true);
 eq('sig: appended message',      wardrobeSig(BASE) === wardrobeSig(BASE.concat([MSG('d')])), false);
 eq('sig: last edited',           wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b'), MSG('c2')]), false);
 eq('sig: swipe replaces last',   wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b'), MSG('zzz')]), false);
+// A swipe replaces the last message in place rather than appending, so the message COUNT
+// is unchanged and only the content distinguishes them. A same-length alternative is the
+// case a length-only signature would miss — contentHash exists because two caches once
+// keyed on length and served stale data across exactly this edit.
+eq('sig: same-length swipe',     wardrobeSig([MSG('a'), MSG('She wore a coat.')])
+  === wardrobeSig([MSG('a'), MSG('She wore a boot.')]), false);
+eq('sig: one-char swipe',        wardrobeSig([MSG('a'), MSG('She wore a coat.')])
+  === wardrobeSig([MSG('a'), MSG('She wore a goat.')]), false);
 eq('sig: second-last edited',    wardrobeSig(BASE) === wardrobeSig([MSG('a'), MSG('b2'), MSG('c')]), false);
 eq('sig: empty is stable',       wardrobeSig([]) === wardrobeSig([]), true);
 eq('sig: empty vs one',          wardrobeSig([]) === wardrobeSig([MSG('a')]), false);
