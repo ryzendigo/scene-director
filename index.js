@@ -2537,7 +2537,14 @@
         if (settings.enableEra && date) {
             for (const rule of settings.eraRules) {
                 const re = compileRegex(rule.pattern);
-                if (date.year >= rule.minYear && result === rule.from && (!rule.pattern || (re && re.test(location)))) {
+                // `>=` COERCES, so a rule whose minYear is null, [] or true compares against 0
+                // or 1 and fires on every date — an era swap meant for "1998 onwards" applying
+                // to the whole story. The settings validator rejects those, but IMPORT bypasses
+                // every validator and migrateSettings only drops non-object entries, never bad
+                // fields, so a shared settings export reaches here. Require a real number.
+                if (typeof rule.minYear === 'number' && Number.isFinite(rule.minYear)
+                    && date.year >= rule.minYear && result === rule.from
+                    && (!rule.pattern || (re && re.test(location)))) {
                     result = rule.to;
                     break;
                 }

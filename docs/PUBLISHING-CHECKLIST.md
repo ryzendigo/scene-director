@@ -72,7 +72,13 @@ demo character only) with the release candidate installed in
         && node tools/prefetch-cases.mjs \
         && node tools/global-style-restore.mjs \
         && node tools/command-injection.mjs \
-        && node tools/meta-store.mjs
+        && node tools/meta-store.mjs \
+        && node tools/variant-cases.mjs
+
+   `variant-cases.mjs` covers `applyVariants`, which lives outside the pure engines
+   and so was never touched by `background-cases.mjs`. It pins that an era rule with
+   a non-numeric `minYear` does NOT fire — `>=` coerces, and Import bypasses the
+   validator that would have rejected it.
 
    `meta-store.mjs` is public-only (it lifts the public build's atlas store). Chat
    metadata travels with the chat file and is untrusted on the way back in; anything
