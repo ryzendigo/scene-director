@@ -75,7 +75,15 @@ demo character only) with the release candidate installed in
         && node tools/meta-store.mjs \
         && node tools/variant-cases.mjs \
         && node tools/rulefield-cases.mjs \
-        && node tools/scene-cases.mjs
+        && node tools/scene-cases.mjs \
+        && node tools/snippet-cases.mjs \
+        && node tools/carry-cases.mjs
+
+   `snippet-cases.mjs` treats PROMPT_SNIPPET as a **contract**: it derives a header
+   from the snippet's own `Syntax =` line and parses it with the shipped regexes, so
+   editing the snippet without the regexes (or vice versa) fails here rather than in
+   someone's install. A mutation test proved hand-written cases alone cannot catch a
+   change to the snippet's own glyphs.
 
    `scene-cases.mjs` (public-only) covers `parseScene` — 26 cases over location, hour,
    date, weather, the rain flag and the night/dusk/rain state thresholds, plus

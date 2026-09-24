@@ -284,6 +284,10 @@
         enableThoughtTips: true,
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
+        // 0.9.79: reuse the last STATED location on a message that carries no header, so
+        // the stage does not go inert. Off by default — it is a deliberate softening of
+        // the "we only ever read what the model wrote" guarantee.
+        carryLocation: false,
         // Wardrobe attribution: with this on, a sentence whose only pronouns are male
         // credits the garment to the USER. Read since 0.9.x but never declared here, so it
         // was permanently true (`settings.userIsMale !== false` on undefined) with no way
@@ -5727,14 +5731,25 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             if (settings.enableEmotionAccents) {
                 try { sdTimeout(function () { fireEmotionAccent(settings); }, 1500); } catch (e) { /* ignore */ }
             }
-            const location = scene.location;
+            // 0.9.79 carry-forward: without a header the extension went fully inert — no
+            // background, costume, trail or overlay — which is the whole experience for
+            // anyone whose preset does not emit one, and for the ~5% of messages where a
+            // model that normally does simply lapses. A scene rarely teleports between
+            // consecutive messages, so the last stated location is a far better guess than
+            // "unknown". Opt-in, and only ever a CARRY: it never invents a location that
+            // was never stated, and a real header always wins.
+            let location = scene.location;
+            let carried = false;
+            if (!location && settings.carryLocation && lastParsedLoc) { location = lastParsedLoc; carried = true; }
             if (!location) {
                 updateWeatherOverlay(null, settings);
                 try { updateSpriteFilter('neutral', settings); } catch (e) { /* ignore */ }
                 try { updateTabTitle(null, settings); } catch (e) { /* ignore */ }
                 return;
             }
-            lastParsedLoc = location;
+            // Only a REAL header advances the anchor. Re-stamping it from a carried value
+            // would make one header pin the location for the rest of the chat.
+            if (!carried) lastParsedLoc = location;
             if (scene.date && scene.date.day) lastParsedDate = scene.date;
 
             // --- Auto Backgrounds (0.7.0: BackgroundEngine verdict) ---
@@ -6635,6 +6650,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
+        ['carryLocation', 'Carry location forward', 'When a reply has no 📍 header, keep using the last location the model DID state, instead of going inert. Never invents a location; a real header always wins. The HUD still shows only what the message itself said.'],
         ['userIsMale', 'User persona is male', 'Wardrobe: a sentence with only male pronouns credits the clothing to you. Turn off if your persona is not male.'],
         ['enableUnknownSpeakers', 'Unknown Speakers', 'A tinted silhouette chip (male/female/neutral by nearby pronouns, best-guess name) for any dialogue colour not on a Cast card'],
         ['enableLocalClassifier', 'Local Classifier', 'Mood engine layer 2: SillyTavern\'s built-in server-side go_emotions classifier on the character\'s own text (no external API)'],
@@ -6680,8 +6696,26 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['counters', 'Life counters', '[{"label": "married", "emoji": "💍", "date": "2026-07-11", "mode": "days"}] — computed from the parsed STORY date; "weeks" renders as 6w2d'],
     ];
 
-    const PROMPT_SNIPPET = 'Begin every reply with a status line in this exact format:\n'
-        + '[ 🕰️ <12h time> | ☀️ <Weekday, Month D, YYYY> | 📍 <current location> | 🌥️ <weather> ]';
+    // The header instruction users paste into their preset. Rewritten 0.9.79 in the shape
+    // of a header block measured at 95% compliance over 1,280 messages (XML-tagged,
+    // MUST_START_EVERY_RESPONSE, an explicit Syntax template, named variables) rather than
+    // the prose sentence it replaced, which had no evidence behind it. The five shipped
+    // regexes parse this and 217 other real-world header shapes, so the exact glyphs are a
+    // suggestion, not a contract — only the FIELDS matter.
+    const PROMPT_SNIPPET = '<header_instructions>\n'
+        + 'Header_Protocol:\n'
+        + '  MUST_START_EVERY_RESPONSE\n'
+        + '    Syntax = `[ 🕰️ HH:MM AM/PM | 🗓️ DayOfWeek, Month DD, YYYY | 📍 Location - Specific Area | WeatherEmoji Weather, Temp°F ]`\n'
+        + '\n'
+        + 'Variables:\n'
+        + '    Location = "General_Area - Specific_Room"\n'
+        + '        Event_Trigger: IF (scene moves) -> Update_Immediately()\n'
+        + '    Weather = [Atmospheric_Emoji (☀️, 🌧️, 🌫️, 🌩️), Temperature]\n'
+        + '\n'
+        + 'Rules:\n'
+        + '    The header is the FIRST line of every reply, before all prose.\n'
+        + '    Time advances logically with the pacing of the scene.\n'
+        + '</header_instructions>';
 
     // Preset line for the Inline Mood Tag feature — lists all 28 labels the
     // expressions extension understands.
