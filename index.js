@@ -4164,6 +4164,9 @@
     // current place's slots, then the day trail's places by recency, then
     // the rest. Starts only after the first real background has applied.
     const prefetchDone = new Set();
+    // Files the server answered 404/403 for. They live in prefetchDone so the queue stops
+    // asking, and here too so the debug count does not report a missing file as prefetched.
+    const prefetchMissing = new Set();
     let prefetchRunning = false;
     function placeFiles(place) {
         const slots = place.slots || {};
@@ -4194,6 +4197,12 @@
                 return prefetchOne(file, 1);
             }
             dbg('prefetch ' + file + ' -> HTTP ' + r.status);
+            // A 404/403 is a real answer — the file is not there — so mark it done and stop
+            // asking. Settings can name a background the user has since deleted or renamed,
+            // and without this the queue re-requested it on every chat switch and every
+            // settings save, for the life of the tab. Same distinction fetchBios draws: a
+            // definite "no" is cacheable, a 5xx or a thrown fetch is not (those retry above).
+            if (r.status === 404 || r.status === 403) { prefetchDone.add(file); prefetchMissing.add(file); }
         } catch (e) {
             if (!attempt) { await new Promise(function (res) { sdTimeout(res, 5000); }); return prefetchOne(file, 1); }
             dbg('prefetch ' + file + ' failed');
@@ -4212,7 +4221,8 @@
                 }
             };
             await Promise.all([worker(), worker()]); // concurrency 2
-            dbg('prefetched ' + prefetchDone.size + ' backgrounds');
+            dbg('prefetched ' + (prefetchDone.size - prefetchMissing.size) + ' backgrounds'
+                + (prefetchMissing.size ? ' (' + prefetchMissing.size + ' missing, not retried)' : ''));
         } finally { prefetchRunning = false; }
     }
     function schedulePreload(settings) {

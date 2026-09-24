@@ -68,7 +68,14 @@ demo character only) with the release candidate installed in
         && node tools/duplicate-decls.mjs && node tools/pattern-drift.mjs \
         && node tools/pack-reachable.mjs \
         && node tools/dead-settings.mjs \
-        && node tools/import-typecheck.mjs
+        && node tools/import-typecheck.mjs \
+        && node tools/prefetch-cases.mjs
+
+   `prefetch-cases.mjs` runs against BOTH builds (it takes the tracked-timer helper
+   name from the lifted body, since the public build calls it `sdTimeout` and the
+   private one `rTimeout`):
+
+      node tools/prefetch-cases.mjs ~/docs/rachel-images/rachel-autobg-index.js
 
    `tools/demo/numfields.js` runs in the Playwright image (it needs a real browser —
    the question is what `<input type="number">.value` returns for typed input, and
