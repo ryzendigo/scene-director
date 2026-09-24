@@ -284,6 +284,11 @@
         enableThoughtTips: true,
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
         enableUnknownSpeakers: true,
+        // Wardrobe attribution: with this on, a sentence whose only pronouns are male
+        // credits the garment to the USER. Read since 0.9.x but never declared here, so it
+        // was permanently true (`settings.userIsMale !== false` on undefined) with no way
+        // to turn it off — wrong for anyone whose persona is not male.
+        userIsMale: true,
         enableDebug: false,         // v0.5.5: console diagnostics off by default
         // v0.7.1 privacy + audit
         hideOnCurtain: true,        // hide every overlay while a Panic Curtain (#panic-curtain) is up
@@ -6611,6 +6616,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['enableCounters', 'Life Counters', 'User-defined date counters (days / weeks+days) from the story date, in the HUD tooltip'],
         ['enableSpeakingOrder', 'Speaking Order', 'Order cast chips by who spoke latest (latest first)'],
         ['enablePreload', 'Asset Preloading', 'Idle prefetch of every mapped background and the current sprite\'s neutral variants (skipped on slow connections)'],
+        ['userIsMale', 'User persona is male', 'Wardrobe: a sentence with only male pronouns credits the clothing to you. Turn off if your persona is not male.'],
         ['enableUnknownSpeakers', 'Unknown Speakers', 'A tinted silhouette chip (male/female/neutral by nearby pronouns, best-guess name) for any dialogue colour not on a Cast card'],
         ['enableLocalClassifier', 'Local Classifier', 'Mood engine layer 2: SillyTavern\'s built-in server-side go_emotions classifier on the character\'s own text (no external API)'],
         ['enableDebug', 'Debug Logging', 'Print [scene-director] diagnostics (chip add/remove with evidence, sprite replays, injection) to the console; off = silent unless something fails'],

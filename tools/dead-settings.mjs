@@ -80,6 +80,20 @@ if (missing.length) {
     process.exit(2);
 }
 
+// The inverse: a key READ off settings but never declared in defaultSettings is
+// permanently undefined, so a `!== false` test is stuck true and getSettings() cannot
+// backfill it. That is how `userIsMale` shipped with no way to turn it off.
+const readNotDeclared = new Set();
+for (const mm of src.matchAll(/\bsettings\.([A-Za-z_$][\w$]*)\b/g)) {
+    if (!keys.includes(mm[1])) readNotDeclared.add(mm[1]);
+}
+if (readNotDeclared.size) {
+    console.log(`settings read but never declared in defaultSettings: ${readNotDeclared.size}`);
+    for (const k of readNotDeclared) console.log(`  settings.${k}`);
+    console.log('\nSuch a key is always undefined — add it to defaultSettings (and a row, if the user should control it).');
+    process.exit(1);
+}
+
 if (dead.length) {
     console.log(`settings keys the panel exposes but nothing reads: ${dead.length}`);
     for (const k of dead) console.log(`  ${k}`);
