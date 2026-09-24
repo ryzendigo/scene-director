@@ -3246,6 +3246,9 @@
     let reconcileTimer = null;
     function scheduleReconcile() {
         if (reconcileTimer) clearTimeout(reconcileTimer);
+        // Untracked on purpose: this removes duplicate <img> clones ST left in
+        // #expression-holder. That cleanup must still run after a chat change —
+        // cancelling it strands the extra images on screen for the new chat too.
         reconcileTimer = setTimeout(reconcileSprite, 1500);
     }
     function reconcileSprite() {
@@ -4336,6 +4339,8 @@
             if (!tip) return;
             tip.style.opacity = '0';
             if (tipTimer) clearTimeout(tipTimer);
+            // Untracked on purpose: hides a tooltip. Cancelling it leaves the tip
+            // stuck visible; it touches no chat state, so a late fire is harmless.
             tipTimer = setTimeout(function () { tip.style.display = 'none'; }, 250);
         } catch (e) { /* ignore */ }
     }
@@ -4626,6 +4631,9 @@
                     const cb = document.getElementById('sd_chipSizeAuto'); if (cb) cb.checked = false;
                     const sl = document.getElementById('sd_chipSize'); if (sl) sl.value = String(st.chipSize);
                 } catch (e) { /* ignore */ }
+                // Untracked on purpose: persists a size the user just scrolled. Settings are
+                // global, not per-chat, and cancelling this on a chat switch would silently
+                // discard the adjustment they had already seen take effect.
                 clearTimeout(wheelSave); wheelSave = setTimeout(function () { saveSettings(); }, 400);
                 return;
             }
@@ -4647,6 +4655,9 @@
                 const cb = document.getElementById('sd_spriteAuto'); if (cb) cb.checked = false;
                 const sl = document.getElementById('sd_spriteVh'); if (sl) sl.value = String(st.spriteVh);
             } catch (e) { /* ignore */ }
+            // Untracked on purpose: persists a size the user just scrolled. Settings are
+            // global, not per-chat, and cancelling this on a chat switch would silently
+            // discard the adjustment they had already seen take effect.
             clearTimeout(wheelSave); wheelSave = setTimeout(function () { saveSettings(); try { applyStripAppearance(getSettings()); } catch (e) { /* ignore */ } }, 400);
         }, { passive: false, capture: true });
     }
@@ -5143,7 +5154,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     function wardrobeLabel(key, settings) {
         const ctx = SillyTavern.getContext();
         // name2 is the last speaker in a group chat, not a fixed character.
-        // The .split(' ')[0] is for a real name ("Rachel Marks" -> "Rachel"); applying it to
+        // The .split(' ')[0] is for a real name ("Ada Lovelace" -> "Ada"); applying it to
         // the placeholder produced the bare word "the" whenever name2 was empty.
         if (key === 'main') {
             if (ctx.groupId) return 'the character';
@@ -5574,7 +5585,13 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         };
         const dwellMs = Math.max(0, Number(settings.moodDwell) || 8) * 1000;
         const wait = moodState.lastEmitTs ? Math.max(0, dwellMs - (Date.now() - moodState.lastEmitTs)) : 0;
-        if (wait > 0) moodState.pending = setTimeout(go, wait); else go();
+        // Tracked: a dwell-deferred emit fires up to moodDwell seconds later, and both
+        // syncFallback() and emote() take the ctx captured HERE. Left untracked, switching
+        // chats inside that window painted the previous character's mood onto the new chat
+        // and persisted it as that character's fallback_expression. clearAllTimeouts() in
+        // onChatChanged now cancels it; onChatChanged also nulls moodState.pending so a
+        // later emit does not clearTimeout a dead id and think one is still queued.
+        if (wait > 0) moodState.pending = sdTimeout(go, wait); else go();
     }
 
     // Reads .mes, never extra.display_text, and that is deliberate. SillyTavern renders
@@ -5747,6 +5764,9 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         lastBgGraded = false;
         lastBgLoc = null;
         lastCostume = null;
+        // clearAllTimeouts() below kills the dwell timer; drop the dead id too, or the
+        // next emitMood clearTimeout's a stale one and the state reads as still-queued.
+        moodState.pending = null;
         try { onGenerationEnd(); } catch (e) { /* ignore */ }
         trailDateKey = null;
         trailLocs = [];

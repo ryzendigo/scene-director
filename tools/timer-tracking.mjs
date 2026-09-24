@@ -19,7 +19,12 @@ const lines = src.split('\n');
 // A call is exempt if the line assigns the id to something we can later clear,
 // or the 3 lines above it carry an explicit untracked-on-purpose note.
 // Structural, not name-based: the id is stored somewhere it can be cleared from.
-const ASSIGNS = /(?:(?:const|let|var)\s+)?[\w$]+(?:\.[\w$]+)*\s*=\s*setTimeout\(/;
+// Capture the target so we can check it is clearable from OUTSIDE its own
+// rescheduling site. `x = setTimeout(...)` right after `clearTimeout(x)` is only a
+// DEBOUNCE, not a cancellable timer: nothing else can stop it, so it still fires
+// against a chat the user has left. That is exactly how moodState.pending shipped
+// a stale /emote across a chat switch (v0.9.66).
+const ASSIGNS = /(?:(?:const|let|var)\s+)?([\w$]+(?:\.[\w$]+)*)\s*=\s*setTimeout\(/;
 // `await new Promise(r => setTimeout(r, n))` — the awaiting code is what gets abandoned,
 // and the timer only resolves a promise; there is nothing stale to act on.
 const AWAITED = /new Promise\([^)]*\)\s*=>\s*setTimeout\(|new Promise\(function\s*\([^)]*\)\s*\{\s*setTimeout\(/;
@@ -27,12 +32,25 @@ const AWAITED = /new Promise\([^)]*\)\s*=>\s*setTimeout\(|new Promise\(function\
 // comment that happens to use the word "untracked" must NOT exempt the line below it.
 const NOTE = /\bUntracked on purpose\b/;
 
+// Is `name` clearTimeout'd from OUTSIDE the function that schedules it? A clear in
+// the same function is the timer cancelling its own previous self — a debounce.
+// Nothing else can stop it, so it still fires against a chat the user has left.
+const fnStarts = [];
+lines.forEach((l, i) => { if (/^\s{0,8}(async )?function [a-zA-Z_$]/.test(l)) fnStarts.push(i); });
+const fnOf = (i) => { let f = -1; for (const s of fnStarts) { if (s <= i) f = s; else break; } return f; };
+function clearedElsewhere(name, schedIdx) {
+    const re = new RegExp('clearTimeout\\(\\s*' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\)');
+    const home = fnOf(schedIdx);
+    return lines.some((l, i) => re.test(l) && fnOf(i) !== home);
+}
+
 const offenders = [];
 lines.forEach((line, i) => {
     if (!/\bsetTimeout\(/.test(line)) return;
     if (/function sdTimeout/.test(line)) return;
     if (/const id = setTimeout/.test(line)) return;      // sdTimeout's own body
-    if (ASSIGNS.test(line)) return;                       // self-managing
+    const asg = ASSIGNS.exec(line);
+    if (asg && clearedElsewhere(asg[1], i)) return;       // genuinely cancellable
     if (AWAITED.test(line)) return;                       // promise resolver only
     const above = lines.slice(Math.max(0, i - 4), i).join('\n');
     if (NOTE.test(above)) return;                         // documented exception
