@@ -3670,7 +3670,7 @@
     // is painted relative to the viewport, so a CSS transform animation can
     // never move it. The loop writes transform every ~33ms (transform-only,
     // will-change) and sets background-attachment: scroll while running.
-    const drift = { raf: null, el: null, last: 0, t0: 0, scale: 1, running: false, observer: null, statusTs: 0 };
+    const drift = { raf: null, el: null, last: 0, t0: 0, scale: 1, running: false, observer: null, statusTs: 0, tookOverflow: false };
     function driftFrame(now) {
         drift.raf = null;
         try {
@@ -3702,7 +3702,15 @@
         el.style.willChange = 'transform';
         el.style.transformOrigin = '50% 50%';
         el.style.backgroundAttachment = 'scroll';
-        try { const html = document.documentElement; if (getComputedStyle(html).overflow === 'visible') html.style.overflow = 'hidden'; } catch (e) { /* ignore */ }
+        // The drift transform can push #bg1 past the viewport, so the document must not
+        // scroll while it runs. Remember that WE set this: it is a document-wide property,
+        // and driftStop() used to leave the page overflow:hidden for the rest of the
+        // session once Ken Burns was switched off. ST sets no overflow on <html> (it
+        // inherits the UA default), so restoring '' hands it back correctly.
+        try {
+            const html = document.documentElement;
+            if (getComputedStyle(html).overflow === 'visible') { html.style.overflow = 'hidden'; drift.tookOverflow = true; }
+        } catch (e) { /* ignore */ }
         if (drift.observer) drift.observer.disconnect();
         drift.observer = new MutationObserver(function () {
             if (drift.running && drift.el && drift.el.style.backgroundAttachment !== 'scroll') drift.el.style.backgroundAttachment = 'scroll';
@@ -3725,6 +3733,10 @@
         drift.raf = null;
         if (drift.el) { drift.el.style.transform = ''; drift.el.style.willChange = ''; drift.el.style.backgroundAttachment = ''; }
         if (drift.observer) { drift.observer.disconnect(); drift.observer = null; }
+        if (drift.tookOverflow) {
+            try { document.documentElement.style.overflow = ''; } catch (e) { /* ignore */ }
+            drift.tookOverflow = false;
+        }
         if (drift.running) dbg('drift stopped (' + (why || '') + ')');
         drift.running = false; drift.scale = 1;
         updateDriftStatus();

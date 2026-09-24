@@ -69,7 +69,12 @@ demo character only) with the release candidate installed in
         && node tools/pack-reachable.mjs \
         && node tools/dead-settings.mjs \
         && node tools/import-typecheck.mjs \
-        && node tools/prefetch-cases.mjs
+        && node tools/prefetch-cases.mjs \
+        && node tools/global-style-restore.mjs
+
+   `global-style-restore.mjs` runs against both builds too. It catches a write to
+   `documentElement.style` / `body.style` with no matching restore — a document-wide
+   property outlives the feature that set it.
 
    `prefetch-cases.mjs` runs against BOTH builds (it takes the tracked-timer helper
    name from the lifted body, since the public build calls it `sdTimeout` and the
