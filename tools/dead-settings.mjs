@@ -23,11 +23,16 @@ const src = readFileSync(file, 'utf8');
 const lines = src.split('\n');
 
 // Every top-level key of defaultSettings, with the line it is declared on.
-const dm = /const defaultSettings = \{([\s\S]*?)\n    \};/.exec(src);
+const dm = /const defaultSettings = (\{[\s\S]*?\n    \});/.exec(src);
 if (!dm) { console.error('defaultSettings not found'); process.exit(2); }
 const declStart = src.slice(0, dm.index).split('\n').length;
 const declEnd = declStart + dm[0].split('\n').length;
-const keys = [...dm[1].matchAll(/^\s{8}(\w+):/gm)].map((m) => m[1]);
+// PARSE the literal rather than regexing it. A line-anchored /^\s{8}(\w+):/ captures only
+// the FIRST key on each line, so the five settings that share a line with a neighbour were
+// never checked; and a nesting-blind regex is worse, it dives into moodEmoji's mood labels.
+let keys;
+try { keys = Object.keys((0, eval)('(' + dm[1] + ')')); }
+catch (e) { console.error('could not parse defaultSettings: ' + e.message); process.exit(2); }
 
 // Scaffolding regions: the declaration, the validator table, and the row tables.
 // A mention inside these does not prove anyone consumes the value.
