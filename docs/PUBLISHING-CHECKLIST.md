@@ -71,7 +71,13 @@ demo character only) with the release candidate installed in
         && node tools/import-typecheck.mjs \
         && node tools/prefetch-cases.mjs \
         && node tools/global-style-restore.mjs \
-        && node tools/command-injection.mjs
+        && node tools/command-injection.mjs \
+        && node tools/meta-store.mjs
+
+   `meta-store.mjs` is public-only (it lifts the public build's atlas store). Chat
+   metadata travels with the chat file and is untrusted on the way back in; anything
+   used as an object KEY has to survive `__proto__`, which is a silent no-op on a
+   plain object literal.
 
    `command-injection.mjs` runs against both builds. Every slash command is built by
    interpolating a user-controlled value (background filename, costume folder,

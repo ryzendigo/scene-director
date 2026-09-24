@@ -3079,7 +3079,16 @@
             if (!trailDateKey || !trailLocs.length) return;
             const meta = chatMeta(true);
             if (!meta) return;
-            if (!meta.atlas || typeof meta.atlas !== 'object') meta.atlas = {};
+            // Null prototype for the same reason as the cast-key store above: the key can come
+            // back from stored metadata (restoreTrail reads meta.trailDateKey with no type check,
+            // and a chat file travels between devices and can be hand-edited), and
+            // `obj['__proto__'] = v` on a plain object literal is a SILENT no-op — the day would
+            // simply vanish from the atlas with nothing to explain it. A literal restored from an
+            // older chat is re-homed rather than trusted.
+            if (!meta.atlas || typeof meta.atlas !== 'object') meta.atlas = Object.create(null);
+            else if (Object.getPrototypeOf(meta.atlas) !== null) {
+                meta.atlas = Object.assign(Object.create(null), meta.atlas);
+            }
             meta.atlas[trailDateKey] = trailLocs.slice();
             // Keep the store bounded: the most recent 60 dated days, oldest dropped first.
             const keys = Object.keys(meta.atlas).sort(function (a, b) { return atlasKeyOrder(a) - atlasKeyOrder(b); });
