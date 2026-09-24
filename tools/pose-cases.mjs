@@ -58,6 +58,16 @@ const CASES = [
   { t: 'They talked quietly.\n<details><summary>Plot</summary>- Path_B: she straddles him and rides him', want: 'gated' },
   // ...while a real pose written outside the block still lands:
   { t: 'She straddles him, hips rolling.\n<details><summary>Plot</summary>- Path_A: nothing</details>', want: 'riding' },
+  // --- the cues the gate actually suppresses in real chats ---------------------------
+  // Measured across 2,725 AI messages: PoseEngine.detect fires 256 times and the
+  // intimacy gate suppresses 84 of them — a THIRD. These are the most common, and every
+  // one is ordinary prose that would otherwise put a pose sprite on screen.
+  { t: 'She looks back over her shoulder at him and smiles.', want: 'gated' },
+  { t: 'She sits on the step with her knees drawn up, watching the road.', want: 'gated' },
+  { t: 'She puts her hands flat on his chest and pushes him away, laughing.', want: 'gated' },
+  { t: 'She glances over her shoulder at you as she leaves the room.', want: 'gated' },
+  // The same cue INSIDE an intimate scene must still work — the gate is a filter, not a ban.
+  { t: 'She looks back over her shoulder at him, his cock still inside her.', want: 'behind' },
 ];
 
 const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;
