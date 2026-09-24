@@ -74,7 +74,14 @@ demo character only) with the release candidate installed in
         && node tools/command-injection.mjs \
         && node tools/meta-store.mjs \
         && node tools/variant-cases.mjs \
-        && node tools/rulefield-cases.mjs
+        && node tools/rulefield-cases.mjs \
+        && node tools/scene-cases.mjs
+
+   `scene-cases.mjs` (public-only) covers `parseScene` — 26 cases over location, hour,
+   date, weather, the rain flag and the night/dusk/rain state thresholds, plus
+   degenerate input. It is the function every other feature reads from and no tool
+   named it before 2026-09-24. Both sides of every boundary are pinned: a mutation
+   test showed that testing only 17:00 let the dusk threshold move to 16:00 undetected.
 
    `rulefield-cases.mjs` covers `hourInWindow`, `pickCostume`, `buildCounters` and
    `compileRegex` — four caller-side helpers that had **no** coverage from any tool.
