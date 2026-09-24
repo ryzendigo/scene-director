@@ -70,6 +70,10 @@ demo character only) with the release candidate installed in
         && node tools/dead-settings.mjs \
         && node tools/import-typecheck.mjs
 
+   `tools/demo/numfields.js` runs in the Playwright image (it needs a real browser —
+   the question is what `<input type="number">.value` returns for typed input, and
+   guessing that got the fix wrong twice). Run it alongside the other demo drivers.
+
    `import-typecheck.mjs` lifts the Import button's type guard and checks it against
    every default/value shape. Import bypasses all validators, so that guard is its
    only defence; it shipped accepting `null` for object-valued keys because

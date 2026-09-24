@@ -6955,10 +6955,19 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
 
         for (const [key, , min, max] of NUMBER_FIELDS) {
-            const raw = document.getElementById(`sd_${key}`).value.trim();
-            const value = parseInt(raw, 10);
-            if (Number.isNaN(value) || value < min || value > max) {
-                setFieldError(key, `Must be an integer between ${min} and ${max}.`);
+            const el2 = document.getElementById(`sd_${key}`);
+            const raw = el2.value.trim();
+            // parseInt TRUNCATES rather than rejecting, so it silently stored a number the
+            // user never typed: "1e3" (meaning 1000) became 1, "6.9" became 6, "1e1" became
+            // 1 instead of 10. Measured in the Playwright image on 24 Sep — the number input
+            // does NOT blank invalid content, it hands the raw string straight through.
+            // Number() rejects what parseInt truncates, and checkValidity() catches the two
+            // the browser already knows are wrong (step="1" for "6.9", range for "1e3")
+            // where the old code ignored its verdict.
+            const value = raw === '' ? NaN : Number(raw);
+            if (!Number.isInteger(value) || value < min || value > max
+                || (typeof el2.checkValidity === 'function' && !el2.checkValidity())) {
+                setFieldError(key, `Must be a whole number between ${min} and ${max}.`);
                 ok = false; failed.push(key);
             } else {
                 setFieldError(key, '');
