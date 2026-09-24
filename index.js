@@ -1071,7 +1071,12 @@
                 'remorse', 'disappointment', 'fear', 'nervousness', 'embarrassment', 'confusion']);
             const broad = DARKISH.has(label)
                 ? ['sadness', 'nervousness', 'curiosity', 'neutral', 'caring', 'joy']
-                : ['caring', 'curiosity', 'joy', 'sadness', 'nervousness'];
+                // 'neutral' is on this list too: without it a warm label in a set that has
+                // only neutral fell through to `return label` and asked for a file that does
+                // not exist — a blank sprite, which is worse than a neutral face. The dark
+                // branch above already ended in neutral for exactly that reason; this one
+                // did not, which was an asymmetry rather than a decision.
+                : ['caring', 'curiosity', 'joy', 'sadness', 'nervousness', 'neutral'];
             for (const alt of broad) if (available.has(alt)) return alt;
             return label;
         }

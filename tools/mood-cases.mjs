@@ -255,6 +255,32 @@ for (const [text, wantDecide, why] of FLOOR_CASES) {
   if (!ok) fails++;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${(decided ? 'decides' : 'holds').padEnd(9)} want ${(wantDecide ? 'decides' : 'holds').padEnd(9)} ${why}  [${out && out.rule}]`);
 }
-const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length + NL_CASES.length + FLOOR_CASES.length;
+// --- mapToAvailable must never return a label the set does not have --------------------
+// Whatever it returns becomes a sprite FILENAME. Returning a label that is not installed
+// puts a missing file on screen — a blank sprite, worse than any wrong-but-present face.
+// The dark branch always ended in 'neutral'; the positive branch did not, so a warm label
+// in a neutral-only set fell through to `return label`. Asymmetry, not a decision.
+const SETS = [
+  ['neutral only', new Set(['neutral'])],
+  ['tiny', new Set(['neutral', 'joy', 'sadness'])],
+  ['warm only', new Set(['joy', 'love'])],
+];
+const EVERY_LABEL = [...new Set([...(M.LABELS || []), 'orgasm', 'beneath', 'behind', 'riding', 'kneeling'])];
+let mapFails = 0;
+for (const [name, avail] of SETS) {
+  const bad = EVERY_LABEL.filter((l) => { const m = M.mapToAvailable(l, avail); return !m || !avail.has(m); });
+  const ok = bad.length === 0;
+  if (!ok) { mapFails++; fails++; }
+  console.log(`${ok ? 'PASS' : 'FAIL'}  every label maps into the "${name}" set${ok ? '' : ` — unmapped: ${bad.slice(0, 5).join(', ')}`}`);
+}
+// A dark label must not become a warm face even when only warm sprites exist.
+{
+  const warm = new Set(['joy', 'love']);
+  const got = M.mapToAvailable('grief', warm);
+  const ok = got === 'joy' || got === 'love';
+  if (!ok) fails++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  grief in a warm-only set resolves to something installed (${got})`);
+}
+const total = CASES.length + NEAR_CASES.length + VARIANT_CASES.length + CT_CASES.length + LEX_FALLBACK.length + NL_CASES.length + FLOOR_CASES.length + SETS.length + 1;
 console.log(fails ? `\n${fails} failing` : `\nall ${total} pass`);
 process.exit(fails ? 1 : 0);
