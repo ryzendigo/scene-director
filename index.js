@@ -280,7 +280,6 @@
         // v0.5.3 presence + thought tooltips (regex sources, 'i' flag).
         // v0.6.4 presence engine tables (regex alternations; blank = built-in).
         presenceArrivalRegex: '', presenceActionRegex: '', presenceDepartRegex: '',
-        presenceCueRegex: 'enter(?:s|ed)?|walk(?:s|ed)? in|walk(?:s|ed)? over|com(?:es|ing) in|came in|appear(?:s|ed)|opens? the door|opened the door|arriv(?:es|ed|ing)|join(?:s|ed)|sits?|sat|sitting|seated|stands?|stood|standing|is (?:there|here)|was (?:there|here)|beside|next to|across (?:from|the table)|opposite|lean(?:s|ed|ing)|steps? (?:in|closer|forward)|says?|said|asks?|asked|replie[sd]|murmur(?:s|ed)|whisper(?:s|ed)|nods?|nodded|smil(?:es|ed)|frowns?|glanc(?:es|ed)|looks? (?:up|over|at)|watch(?:es|ed|ing)|hand(?:s|ed) (?:her|him|you|them)|turn(?:s|ed) to',
         absenceContextRegex: 'ring(?:s|ing)?|rang|call(?:s|ed|ing)?|phone[sd]?|phoning|text(?:s|ed|ing)?|messag(?:e|es|ed|ing)|miss(?:es|ed|ing)?|remember(?:s|ed|ing)?|think(?:s|ing)? (?:of|about)|thought (?:of|about)|tell(?:s|ing)?|told|mention(?:s|ed)?|about|wonder(?:s|ed|ing)?|wish(?:es|ed)?|promised?|later|tomorrow|afterwards',
         enableThoughtTips: true,
         // v0.5.4 unknown speakers: silhouette chips for unmapped dialogue colours.
@@ -341,13 +340,6 @@
         // the rain overlay, so those 167 scenes got neither. The icons are the wet ones
         // only: 🌦 (sun behind rain) and ⛈ (thunder) included, 🌫 fog and ☁ cloud not.
         rainRegex: 'rain|storm|shower|drizzl|🌧|🌦|⛈',
-
-        // Cast Mood Bubbles keyword sets (regex sources).
-        moodKeywords: {
-            happy: 'laugh|chuckl|smil|grin|warm|bright|beam',
-            angry: 'snap|sharp|cold|flat|hard|stern|glare|slam|hiss',
-            sad: 'tear|wept|weep|cries|crying|sob|quiet(?:ly)?\\s+sad|trembl|waver',
-        },
 
         // v0.4.0 Place cards — REPLACE the flat backgroundMap. Each place:
         // { "name": "Kitchen", "pattern": "kitchen", "bio": "",
@@ -6498,17 +6490,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             }
             return null;
         },
-        moodKeywords(value) {
-            if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-                return 'must be a JSON object like {"happy": "...", "angry": "...", "sad": "..."}';
-            }
-            for (const key of Object.keys(value)) {
-                if (!MOODS.includes(key)) return `unknown mood "${key}" (allowed: ${MOODS.join(', ')})`;
-                if (typeof value[key] !== 'string' || !value[key]) return `"${key}" must be a non-empty regex string`;
-                if (!compileRegex(value[key])) return `"${key}" is not a valid regex`;
-            }
-            return null;
-        },
         bgGenericLexicon(value) { return value === null ? null : (Array.isArray(value) && value.every(function (r) { return Array.isArray(r) && typeof r[0] === 'string' && typeof r[1] === 'string' && compileRegex(r[1]); }) ? null : 'must be null or [[key, regex], ...]'); },
         bgNounLexicon(value) { return value === null ? null : (Array.isArray(value) && value.every(function (r) { return Array.isArray(r) && typeof r[0] === 'string' && typeof r[1] === 'string' && compileRegex(r[1]); }) ? null : 'must be null or [[key, regex], ...]'); },
         moodLexicon(value) {
@@ -6586,7 +6567,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['presenceArrivalRegex', 'Arrival / position cues', 'Presence engine (+4): physical arrival or position verbs in NARRATION within ~40 chars of a name — blank = built-in list'],
         ['presenceActionRegex', 'Action cues', 'Presence engine (+2): physical action verbs in the narration sentence that names the character — blank = built-in'],
         ['presenceDepartRegex', 'Departure cues', 'Presence engine veto: leaves / walks out / hangs up… after the last arrival cue — blank = built-in'],
-        ['presenceCueRegex', 'Presence cue regex (legacy)', 'Cast Strip: a name/alias counts as in-scene only with one of these within ~40 chars (arrival / speech / posture verbs)'],
         ['absenceContextRegex', 'Absence / reported-speech vetoes', 'Presence engine veto: a narration sentence naming the character that also contains any of these (ring, said, would say, remember, about…) — blank = built-in'],
         ['femaleNamesRegex', 'Other female names', 'Mood engine: she/her narration counts as the main character\'s only when none of these appear in the message (e.g. aunt|mary|nurse)'],
         ['ownColorHex', 'Own dialogue colour', 'The main character\'s dialogue colour hex (e.g. #E87BA8) — excluded from Unknown Speakers'],
@@ -6607,7 +6587,6 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         ['eraRules', 'Era rules', '[{"minYear": 2027, "pattern": "build site", "from": "frame.jpg", "to": "finished.jpg"}]'],
         ['costumeRules', 'Costume rules', '[{"pattern": "bedroom", "fromHour": 20, "toHour": 7, "costume": "pajamas"}] — "" costume = default'],
         ['wardrobeCostumeRules', 'Wardrobe → costume', '[{"pattern": "slip|nightgown", "costume": "pajamas"}, {"pattern": "^nothing", "costume": "nude"}] — regex on what she is wearing (tracked from the prose), first match wins, beats the time rules'],
-        ['moodKeywords', 'Mood keywords', '{"happy": "laugh|smil", "angry": "snap|glare", "sad": "tear|sob"} — regex sources, highest match count wins'],
         ['bgGenericLexicon', 'Background: header keywords', '[["restaurant", "restaurant|bistro"], ...] — null = built-in; the 📍 header keyword that picks a generic scene (+4)'],
         ['bgNounLexicon', 'Background: narration nouns', '[["restaurant", "booth|menu|waitress"], ...] — null = built-in; scene nouns in narration (+1 each, cap +3, never over the header)'],
         ['moodLexicon', 'Mood lexicon', '[[regex, label, weight, [vetoes]], ...] — leave null for the built-in ~110-cue table; Export shows the current one'],
@@ -6988,7 +6967,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         }
 
         for (const [key] of JSON_FIELDS) {
-            const raw = document.getElementById(`sd_${key}`).value.trim() || ((key === 'moodKeywords' || key === 'moodEmoji') ? '{}' : ((key === 'moodLexicon' || key === 'bgGenericLexicon' || key === 'bgNounLexicon') ? 'null' : '[]'));
+            const raw = document.getElementById(`sd_${key}`).value.trim() || (key === 'moodEmoji' ? '{}' : ((key === 'moodLexicon' || key === 'bgGenericLexicon' || key === 'bgNounLexicon') ? 'null' : '[]'));
             let parsed;
             try {
                 parsed = JSON.parse(raw);

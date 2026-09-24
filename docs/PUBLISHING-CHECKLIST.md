@@ -66,7 +66,13 @@ demo character only) with the release candidate installed in
         && node tools/timer-tracking.mjs && node tools/chat-gen-guard.mjs \
         && node tools/settings-fuzz.mjs && node tools/text-fuzz.mjs \
         && node tools/duplicate-decls.mjs && node tools/pattern-drift.mjs \
-        && node tools/pack-reachable.mjs
+        && node tools/pack-reachable.mjs \
+        && node tools/dead-settings.mjs
+
+   `dead-settings.mjs` is public-only (the private build has no `defaultSettings`
+   literal and it exits 2 there). It catches a settings key the panel exposes with
+   nothing reading it — `moodKeywords` and `presenceCueRegex` both shipped that way
+   after the rewrites that removed their readers.
 
    Then, against whatever chat .jsonl files are to hand (the cap is justified by
    real prose, so it has to be rechecked against real prose):
