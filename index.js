@@ -5016,7 +5016,27 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
     // so the extension would just quietly stop changing anything with nothing in the log
     // pointing at why. Say it once, clearly, instead.
     let slashApiWarned = false;
+    // Every command this extension runs is built by interpolation — `/bg ${file}`,
+    // `/emote ${label}`, `/costume ${name}/${folder}` — and all three of those values
+    // are user-controlled: background filenames and costume folders come from settings
+    // (which the Import button accepts without running any validator), and the character
+    // name comes from the card. ST's parser treats `|` as a command separator and
+    // `{{...}}` as macro substitution, so a background named `a.jpg | /send oops` made
+    // this run a second, arbitrary command. Settings exports get shared between users.
+    //
+    // A real background filename never contains these: all 579 installed here use only
+    // alphanumerics, space, and ( ) - . _ — so refusing them costs nothing. Refuse
+    // rather than escape: escaping means tracking another project's parser rules.
+    const CMD_UNSAFE_RE = /[|{}\n\r]/;
+    function cmdArgIsSafe(value) { return !CMD_UNSAFE_RE.test(String(value == null ? '' : value)); }
     async function runCommand(ctx, cmd) {
+        // Guard the whole command line: it is built from those pieces, so one check here
+        // covers every call site and cannot be forgotten at a new one. The leading
+        // `/command` part is ours and contains none of these characters.
+        if (!cmdArgIsSafe(cmd)) {
+            console.error(`${LOG} refused a slash command containing parser characters (| { } or a newline):`, cmd);
+            return;
+        }
         if (ctx.executeSlashCommandsWithOptions) {
             await ctx.executeSlashCommandsWithOptions(cmd, { handleParserErrors: true });
         } else if (typeof ctx.executeSlashCommands === 'function') {

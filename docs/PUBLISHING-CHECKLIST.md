@@ -70,7 +70,13 @@ demo character only) with the release candidate installed in
         && node tools/dead-settings.mjs \
         && node tools/import-typecheck.mjs \
         && node tools/prefetch-cases.mjs \
-        && node tools/global-style-restore.mjs
+        && node tools/global-style-restore.mjs \
+        && node tools/command-injection.mjs
+
+   `command-injection.mjs` runs against both builds. Every slash command is built by
+   interpolating a user-controlled value (background filename, costume folder,
+   character name), and ST's parser treats `|` and `{{...}}` specially — so
+   `runCommand` refuses any command line containing them.
 
    `global-style-restore.mjs` runs against both builds too. It catches a write to
    `documentElement.style` / `body.style` with no matching restore — a document-wide
