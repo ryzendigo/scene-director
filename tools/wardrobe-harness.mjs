@@ -151,6 +151,20 @@ const CASES = [
   { t: ['She puts on a scarf.', 'She puts on a hat.'], want: ['hat', 'scarf'] },
   // Shoes replace shoes.
   { t: ['She pulls on her boots.', 'She slips on her sandals.'], want: ['sandals'] },
+  // --- past-tense recall is not a costume change -------------------------------------
+  // Found in a real chat: a line of dialogue recalling an earlier evening — "..you were
+  // in the gold dress from rome. That's what he tore." — changed her dress for 20
+  // messages until the prose said "green dress" again. MEMORY_RE's was/were branches only
+  // matched NEGATIONS, and the speech veto does not fire here because it needs an
+  // imperative (so a character stating what they wear still counts, deliberately).
+  { t: ['She wore a green dress.', '"..you were in the gold dress from rome."'], want: ['green dress'] },
+  { t: ['She wore a green dress.', '"..you were wearing the gold dress that night."'], want: ['green dress'] },
+  // A real change in the same shape must still land.
+  { t: ['She wore a green dress.', 'She changed into the gold dress.'], want: ['gold dress'] },
+  // Present tense is not a memory.
+  { t: ['She wore a green dress.', 'She is in the gold dress now.'], want: ['gold dress'] },
+  // "was in <place>" must not veto a real change sharing the sentence.
+  { t: ['I was in there eleven minutes. She pulled her coat on.'], want: ['coat'] },
 ];
 
 const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;

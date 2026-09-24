@@ -1526,7 +1526,15 @@
         // sentences. Measured: 80-msg rebuild 1.07ms -> see bench in the commit message.
         const SPEECH_HINT_RE = /["'\u201c\u2018]|\b(?:said|told|asked|tells?|asks?|says?)\b/i;
         const IMPERATIVE_RE = /(?:^|["'\u201c\u2018]\s*)(?:put|pull|get|take|wear|try)\b[^"'\u201d\u2019]{0,40}\b(?:on|off)\b|\b(?:said|told|asked|tells?|asks?|says?)\s+(?:\w+\s+){0,2}to\s+(?:put|pull|wear|take|get)\b/i;
-        const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put)|did(?:n'?t| not)|does(?:n'?t| not)|do(?:n'?t| not)|was(?:n'?t| not)|were(?:n'?t| not)|never|without (?:her|his|a|the)|instead of|should have (?:worn|put)|meant to (?:wear|put)|about to (?:wear|put)|thought about|thinking of|considered|wondered|decided against)\b/i;
+        // 24 Sep: past-tense "(was|were) in <garment>" slipped through, because the
+        // was/were branches above only matched NEGATIONS. A line of dialogue recalling a
+        // past event — "..you were in the gold dress from rome. That's what he tore." —
+        // changed her dress for 20 messages until the prose said "green dress" again.
+        // The speech veto does not catch it: that only fires alongside an imperative, so
+        // a character stating what they wear still counts, which is deliberate.
+        // A garment word is required after "in" so "I was in there eleven minutes" does
+        // not veto the real change in the same sentence.
+        const MEMORY_RE = /\b(?:remember(?:s|ed|ing)?|used to|back then|years? ago|that (?:day|night|morning|afternoon)|last (?:night|week|month|year|time)|the day (?:she|he|I|we)|when (?:she|he|I|we) (?:was|were)|tomorrow|next (?:time|week)|going to (?:wear|put)|would (?:wear|put)|if (?:she|he|I|you)|imagine|picture(?:s|d)?\b|I'?ll (?:wear|put)|could (?:wear|put)|did(?:n'?t| not)|does(?:n'?t| not)|do(?:n'?t| not)|was(?:n'?t| not)|were(?:n'?t| not)|(?:was|were) (?:wearing|in (?:the |a |an |her |his |my |your |that )?(?:[a-z'-]+ ){0,2}(?:dress|shirt|coat|jumper|skirt|gown|suit|uniform|blouse|jeans|trousers|robe|cardigan|apron))|never|without (?:her|his|a|the)|instead of|should have (?:worn|put)|meant to (?:wear|put)|about to (?:wear|put)|thought about|thinking of|considered|wondered|decided against)\b/i;
         // Verbs that appear in BOTH ON_RE and OFF_RE, so the verb alone says nothing about direction:
         // "pulls a shirt on" vs "pulls her shirt off". For these, OFF must show a removal particle or
         // it is not a removal at all. Unambiguous verbs (unbuttons, sheds, peels, strips...) are absent
