@@ -54,6 +54,7 @@ demo character only) with the release candidate installed in
       node tools/rollover-cases.mjs     # the day-rollover cleanup, caller-side and so
                                         # invisible to the engine harness
       node tools/hysteresis-cases.mjs   # the second background filter in onMessage
+      node tools/replay-cases.mjs       # replay.mjs stays faithful to onMessage
 
    A full mutation sweep (slow, a few minutes) sabotages every engine function in
    turn and reports any that NO suite reacts to. SURVIVED must stay at zero; the
