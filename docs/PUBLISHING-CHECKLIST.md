@@ -171,8 +171,17 @@ demo character only) with the release candidate installed in
       `preAttachedSurvived` are the load-bearing assertions: they are the only two
       that fail on the pre-0.9.58 innerHTML rewrite.
 - [ ] `node tools/demo/shot.js stage` — console shows `Activating extension
-      third-party/scene-director`, no `[scene-director]` errors, `chips > 0`
-      **and `hud 1`**. That hud figure was `0` on every run until 2026-09-24
+      third-party/scene-director`, no `[scene-director]` errors, **and `hud 1`**.
+      ⚠️ **`chips 0` is NOT a failure by itself.** The chip count depends entirely
+      on whether the chat's LAST message names a cast member. The demo chat's
+      seeded last message is *"She pulled the blue cardigan on…"* — a bare
+      pronoun naming nobody — so a correct build reports `chips 0` there, and the
+      old `chips > 0` wording would fail a healthy release. Verified 2026-09-24
+      from both ends: the page reports 0 chips with the strip element present and
+      cast loaded, and the pure PresenceEngine returns null for that same text.
+      To exercise chips, seed a message that names a cast member first.
+
+      That hud figure was `0` on every run until 2026-09-24
       because the probe matched a `.scene-director-hud` CLASS that does not
       exist — the HUD carries an id. A number that can only ever be zero is not
       a check, so it is asserted now.
