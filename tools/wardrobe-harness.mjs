@@ -165,6 +165,19 @@ const CASES = [
   { t: ['She wore a green dress.', 'She is in the gold dress now.'], want: ['gold dress'] },
   // "was in <place>" must not veto a real change sharing the sentence.
   { t: ['I was in there eleven minutes. She pulled her coat on.'], want: ['coat'] },
+  // --- bare "she" after another woman's name -----------------------------------------
+  // "Katharine appears in the doorway. She is wearing a cardigan over a nightgown." The
+  // cardigan is Katharine's, but a bare pronoun whose antecedent is in the PREVIOUS
+  // sentence goes to main. Measured before deciding: the heuristic that does this
+  // ("another woman is around but she is the actor here") carries 32 correct main
+  // attributions in one chat against this 1 misfire, so it stays. Pinned so the
+  // behaviour is deliberate rather than rediscovered.
+  { t: ['Katharine appears in the doorway. She is wearing a cardigan.'], want: ['cardigan'] },
+  // Naming her in the same sentence is handled: with no cast card for her the garment is
+  // DROPPED rather than guessed onto main, which is the safe outcome. (With a cast card
+  // it is attributed to her — the engine does that correctly, but this harness passes no
+  // cast, so the observable result here is the drop.)
+  { t: ['Katharine is wearing a cardigan.'], want: [] },
 ];
 
 const one = process.argv.slice(2).find((a) => !a.startsWith('--src=')) || undefined;
