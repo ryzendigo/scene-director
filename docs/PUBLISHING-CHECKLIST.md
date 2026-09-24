@@ -67,7 +67,13 @@ demo character only) with the release candidate installed in
         && node tools/settings-fuzz.mjs && node tools/text-fuzz.mjs \
         && node tools/duplicate-decls.mjs && node tools/pattern-drift.mjs \
         && node tools/pack-reachable.mjs \
-        && node tools/dead-settings.mjs
+        && node tools/dead-settings.mjs \
+        && node tools/import-typecheck.mjs
+
+   `import-typecheck.mjs` lifts the Import button's type guard and checks it against
+   every default/value shape. Import bypasses all validators, so that guard is its
+   only defence; it shipped accepting `null` for object-valued keys because
+   `typeof null === 'object'`. The private build has no import/export at all.
 
    `dead-settings.mjs` is public-only (the private build has no `defaultSettings`
    literal and it exits 2 there). It catches a settings key the panel exposes with

@@ -7272,7 +7272,11 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     if (parsed[key] === undefined) continue;
                     const def = defaultSettings[key];
                     const want = Array.isArray(def) ? 'array' : def === null ? 'any' : typeof def;
-                    const got = Array.isArray(parsed[key]) ? 'array' : typeof parsed[key];
+                    // `typeof null` is 'object', so a null slipped through wherever the default
+                    // was a plain object — and getSettings() only backfills `undefined`, so it
+                    // then survived every reload and silently disabled whatever read it. That is
+                    // the exact failure this check was added to stop.
+                    const got = parsed[key] === null ? 'null' : Array.isArray(parsed[key]) ? 'array' : typeof parsed[key];
                     if (want !== 'any' && want !== got) { skipped.push(`${key} (want ${want}, got ${got})`); continue; }
                     s[key] = parsed[key];
                 }
