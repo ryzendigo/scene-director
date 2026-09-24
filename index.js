@@ -396,7 +396,13 @@
 
     /** Compile (and cache) a regex source; null (not a throw) on bad input. */
     function compileRegex(source, flags) {
-        if (!source) return null;
+        // Only a STRING is a pattern. `new RegExp([])` is /(?:)/ — an empty regex that
+        // matches EVERY location, so an imported place whose pattern is [] would claim
+        // every background; `new RegExp({})` is /[object Object]/ and `new RegExp(42)` is
+        // /42/. The settings panel always hands over a trimmed string, but Import bypasses
+        // every validator and there is no `places` validator at all. Empty string is
+        // already "no pattern" and falls out here too.
+        if (typeof source !== 'string' || !source) return null;
         const f = flags || 'i';
         const key = f + ' ' + source;
         if (regexCache.has(key)) return regexCache.get(key);
@@ -2563,6 +2569,12 @@
 
     /** True if hour falls in [fromHour, toHour), wrapping midnight if needed. */
     function hourInWindow(hour, fromHour, toHour) {
+        // The validator requires integers 0-23, so an ALL-DAY rule is a real pair like
+        // (0, 0). But Import bypasses every validator and migrateSettings only drops
+        // non-object entries, so a rule can arrive with these missing, null, string or
+        // boolean — and `fromHour === toHour` is then true for any equal pair, making the
+        // rule match every hour. Same coercion family as eraRules' minYear (v0.9.76).
+        if (!Number.isInteger(fromHour) || !Number.isInteger(toHour)) return false;
         if (fromHour === toHour) return true;
         if (fromHour < toHour) return hour >= fromHour && hour < toHour;
         return hour >= fromHour || hour < toHour;

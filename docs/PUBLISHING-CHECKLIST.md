@@ -73,7 +73,15 @@ demo character only) with the release candidate installed in
         && node tools/global-style-restore.mjs \
         && node tools/command-injection.mjs \
         && node tools/meta-store.mjs \
-        && node tools/variant-cases.mjs
+        && node tools/variant-cases.mjs \
+        && node tools/rulefield-cases.mjs
+
+   `rulefield-cases.mjs` covers `hourInWindow`, `pickCostume`, `buildCounters` and
+   `compileRegex` — four caller-side helpers that had **no** coverage from any tool.
+   Rule-list FIELDS arrive unvalidated (Import bypasses the validators, and
+   `migrateSettings` drops non-object entries but never inspects their fields), so
+   anything reading `rule.fromHour` / `rule.minYear` / `place.pattern` must type-check
+   rather than coerce.
 
    `variant-cases.mjs` covers `applyVariants`, which lives outside the pure engines
    and so was never touched by `background-cases.mjs`. It pins that an era rule with
