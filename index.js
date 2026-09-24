@@ -404,10 +404,20 @@
             // tab simply freezes with no error and nothing to explain it. One cheap probe against a
             // string built to trigger that blow-up costs well under a millisecond for a sane
             // pattern and rejects the pathological ones before they ever see a real message.
-            const probe = 'a'.repeat(24) + '!';
-            const t0 = Date.now();
-            try { re.test(probe); } catch (e) { /* a probe failure is not a reason to reject */ }
-            const ms = Date.now() - t0;
+            // 24 Sep: ONE probe string was not enough. It was all letters, so it caught
+            // (a+)+$ and ([a-z]+)+# but sailed past (\d+)+$ and (\s+|\t+)+$ — equally
+            // catastrophic patterns that simply blow up on digits or whitespace instead.
+            // Measured: those two took 0-1ms on the letter probe and 320-450ms on their
+            // own input, PER MESSAGE. Four probes cover the classes a pattern can target;
+            // a sane pattern still measures 0ms against all four.
+            const probes = ['a'.repeat(24) + '!', '1'.repeat(24) + '!', ' '.repeat(24) + '!', 'x'.repeat(24) + '!'];
+            let ms = 0;
+            for (const probe of probes) {
+                const t0 = Date.now();
+                try { re.test(probe); } catch (e) { /* a probe failure is not a reason to reject */ }
+                ms = Math.max(ms, Date.now() - t0);
+                if (ms > 40) break;   // already condemned; do not pay for the rest
+            }
             if (ms > 40) {
                 console.error(`${LOG} rejected regex (took ${ms}ms on a 25-char probe — it backtracks exponentially and would freeze the tab): ${source}`);
                 re = null;

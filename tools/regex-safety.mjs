@@ -31,7 +31,10 @@ const compileRegex = eval(
 globalThis.__rejected = rejected;
 
 // Patterns that backtrack exponentially. All must come back null.
-const EVIL = ['(a+)+$', '(a|a)+$', '([a-z]+)*$', '(a*)*$', '(\\w+\\s?)*$', '(a+)+b', '([^!]+)*!x'];
+const EVIL = ['(a+)+$', '(a|a)+$', '([a-z]+)*$', '(a*)*$', '(\\w+\\s?)*$', '(a+)+b', '([^!]+)*!x',
+    // 24 Sep: all of the above are letter-based, so a letters-only probe looked like enough.
+    // These target other character classes and slipped straight through it.
+    '(\\d+)+$', '(\\s+|\\t+)+$', '(x+x+)+y', '(\\d+\\s?)*$'];
 // Every regex source the extension ships: the settings defaults and the big runtime-built tables.
 const REAL = [];
 const setRe = /^\s+(\w*[Rr]egex\w*): '((?:[^'\\]|\\.)*)'/gm;
