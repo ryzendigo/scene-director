@@ -5904,13 +5904,21 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
         lastParsedDate = null;
         lastParsedLoc = null;
         lastOverlayState = null;
-        // Both are keyed by DIALOGUE COLOUR, which means something different in every
+        // All three are keyed by DIALOGUE COLOUR, which means something different in every
         // chat. unknownInfo caches a guessed name and gender per hex and is only ever
         // filled on a miss, so a colour first seen in one chat kept that chat's name on
         // the chip in the next one; colourAlias binds a hex to a CAST KEY, so presence
-        // detection credited the wrong character outright. Neither was cleared anywhere.
+        // detection credited the wrong character outright. None was cleared anywhere.
         unknownInfo.clear();
         colourAlias.clear();
+        // 0.9.85: autoOwnHex is the same family and was missed when the other two were
+        // fixed. It caches the auto-detected MAIN character's colour, is set once and was
+        // never cleared, so the first chat opened decided it for the life of the page.
+        // Measured: two real chats use #56b4e9 and #e87ba8 for their protagonist, so
+        // after a switch hexLabel() returned the NEW chat's name2 for the OLD chat's
+        // colour — labelling another character's dialogue as the protagonist's. An
+        // explicit ownColorHex setting still wins; only the auto-detection is reset.
+        autoOwnHex = null;
         clearAllTimeouts();
         teardownSpriteCrossfade();
         try {

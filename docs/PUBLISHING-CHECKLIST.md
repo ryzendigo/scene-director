@@ -81,7 +81,13 @@ demo character only) with the release candidate installed in
         && node tools/pick-cases.mjs \
         && node tools/sleep-cases.mjs \
         && node tools/visibility-cases.mjs \
-        && node tools/moodtag-cases.mjs
+        && node tools/moodtag-cases.mjs \
+        && node tools/owncolor-cases.mjs
+
+   `owncolor-cases.mjs` is public-only (the private build hardcodes its cast and the
+   main character's colour, so there is nothing to auto-detect). It pins that the
+   auto-detected colour is cleared on a chat change — it is the THIRD cache keyed by
+   dialogue colour, after `unknownInfo` and `colourAlias`.
 
    `moodtag-cases.mjs` runs against both builds (it binds whichever label-set name the
    lifted function references — public `EXPRESSION_LABEL_SET`, private
