@@ -5928,6 +5928,22 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                 lastActivityTs = Date.now();
                 if (getSettings().enableIdlePresence || getSettings().enableTypingPresence) startIdleLoop();
                 try { updateKenBurns(getSettings()); } catch (e) { /* ignore */ }
+                // Cancelling timers while hidden is right, but assertExpression()'s
+                // blank-sprite retry is the ONLY recovery path for a sprite that failed to
+                // draw, and it waits 3.2s. Hiding the tab inside that window — common while
+                // a page is still loading, which is exactly when a sprite is most likely to
+                // be blank — killed it, and nothing re-checked on the way back, so the
+                // sprite stayed blank for the rest of the session. Re-assert only when it
+                // really is blank and we know what it should be; a healthy sprite is
+                // untouched, so this cannot cause a swap.
+                try {
+                    const ctx = SillyTavern.getContext();
+                    const label = lastMoodLabel || lastMoodLabelFromChat(ctx);
+                    if (label && spriteIsBlank()) {
+                        dbg('sprite was blank on tab restore -> re-asserting ' + label);
+                        assertExpression(ctx, label);
+                    }
+                } catch (e) { /* ignore */ }
             }
         } catch (e) { /* ignore */ }
     }

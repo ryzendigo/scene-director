@@ -79,7 +79,14 @@ demo character only) with the release candidate installed in
         && node tools/snippet-cases.mjs \
         && node tools/carry-cases.mjs \
         && node tools/pick-cases.mjs \
-        && node tools/sleep-cases.mjs
+        && node tools/sleep-cases.mjs \
+        && node tools/visibility-cases.mjs
+
+   `visibility-cases.mjs` runs against both builds. It pins that hiding the tab still
+   cancels pending work, but RESTORING re-asserts a sprite that is genuinely blank —
+   and leaves a healthy one alone, since a swap on every tab switch would be worse than
+   the bug. Note: dropping the caller's `label &&` is an EQUIVALENT mutation, because
+   `assertExpression` starts `if (!label) return;`.
 
    `sleep-cases.mjs` runs against BOTH builds (it reads the tracked-timer helper name
    from the source — public `sdTimeout`, private `rTimeout`). It pins that `await
