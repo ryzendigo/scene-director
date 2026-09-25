@@ -83,7 +83,12 @@ demo character only) with the release candidate installed in
         && node tools/visibility-cases.mjs \
         && node tools/moodtag-cases.mjs \
         && node tools/owncolor-cases.mjs \
-        && node tools/castcaller-cases.mjs
+        && node tools/castcaller-cases.mjs \
+        && node tools/unknown-cases.mjs
+
+   `unknown-cases.mjs` (public-only) covers `detectUnknownSpeakers` — which colours
+   count as unknown, the name guess and the colour alias it can create, the gender
+   heuristic, the per-colour cache and the speaker position. All six mutants caught.
 
    `castcaller-cases.mjs` covers the three things in `analyzeCast` that are NOT
    delegated to PresenceEngine: the `contextRegex` gate (which deletes presence, not
