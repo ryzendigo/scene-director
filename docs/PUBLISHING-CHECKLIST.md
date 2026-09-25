@@ -82,7 +82,14 @@ demo character only) with the release candidate installed in
         && node tools/sleep-cases.mjs \
         && node tools/visibility-cases.mjs \
         && node tools/moodtag-cases.mjs \
-        && node tools/owncolor-cases.mjs
+        && node tools/owncolor-cases.mjs \
+        && node tools/castcaller-cases.mjs
+
+   `castcaller-cases.mjs` covers the three things in `analyzeCast` that are NOT
+   delegated to PresenceEngine: the `contextRegex` gate (which deletes presence, not
+   just skips), `hexLabel`, and the speaker position. All three are lifted verbatim —
+   an earlier version REIMPLEMENTED the position lines and two mutants survived,
+   because it was testing the copy rather than the shipped code.
 
    `owncolor-cases.mjs` is public-only (the private build hardcodes its cast and the
    main character's colour, so there is nothing to auto-detect). It pins that the
