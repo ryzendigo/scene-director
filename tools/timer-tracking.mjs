@@ -64,4 +64,30 @@ if (offenders.length) {
     console.log('or add a comment saying why it must survive a chat change.');
     process.exit(1);
 }
+// The INVERSE mistake, which shipped three times before being noticed (v0.9.83): a
+// TRACKED timer whose body only hides or removes something. clearAllTimeouts() then
+// strands the thing it was going to clean up — the opposite of saving work. Cleanup
+// timers belong untracked, with the marker, like the sprite ghost's removal.
+// The builds name the tracked-timer helper differently (public sdTimeout, private
+// rTimeout). Hardcoding one made this check pass on a build that had the very bug.
+const TRACKED = (/function (sdTimeout|rTimeout)\(/.exec(src) || [, 'sdTimeout'])[1];
+const CLEANUP_BODY = /\.remove\(\)|display = 'none'|classList\.add\('[^']*-out'\)|revokeObjectURL/;
+const suspects = [];
+lines.forEach((line, i) => {
+    if (!new RegExp('\\b' + TRACKED + '\\(').test(line) || new RegExp('function ' + TRACKED).test(line)) return;
+    const body = lines.slice(i, i + 3).join(' ');
+    if (!CLEANUP_BODY.test(body)) return;
+    // A cleanup that only touches the settings panel's own transient text is fine:
+    // the next save overwrites it, so a cancel costs nothing.
+    if (/textContent/.test(body) && /Saved\./.test(body)) return;
+    suspects.push([i + 1, line.trim().slice(0, 90)]);
+});
+if (suspects.length) {
+    console.log(`tracked timers that only clean up (cancelling strands the thing): ${suspects.length}`);
+    for (const [n, t] of suspects) console.log(`  ${file.split('/').pop()}:${n}  ${t}`);
+    console.log('\nA cleanup timer belongs on a bare setTimeout with the marker — clearAllTimeouts()');
+    console.log('would otherwise orphan the element or leave the overlay on screen.');
+    process.exit(1);
+}
+
 console.log('all setTimeout calls tracked or documented');

@@ -3591,8 +3591,18 @@
             bubble.classList.remove('scene-director-bubble-out');
             bubble.style.display = '';
             const ms = (Number(settings.bubbleSeconds) || 6) * 1000;
-            sdTimeout(function () { if (my === mainBubbleSeq) bubble.classList.add('scene-director-bubble-out'); }, ms);
-            sdTimeout(function () {
+            // Untracked on purpose, like the sprite ghost's removal: these two HIDE the
+            // bubble, so cancelling them leaves it on screen instead of saving work.
+            // onVisibilityChange calls clearAllTimeouts() without adding the
+            // .scene-director-hidden class that the CSS uses to hide overlays, and with
+            // hideWhenTabHidden off applyPrivacy never engages either — so a tab switch
+            // while the bubble was up stranded it permanently. The next mood emit would
+            // clear it via mainBubbleSeq, but the median gap between AI messages is nine
+            // minutes. The `my === mainBubbleSeq` guard already makes a late fire a no-op.
+            // Untracked on purpose: these hide the bubble; cancelling strands it.
+            setTimeout(function () { if (my === mainBubbleSeq) bubble.classList.add('scene-director-bubble-out'); }, ms);
+            // Untracked on purpose: same reason.
+            setTimeout(function () {
                 if (my === mainBubbleSeq) { bubble.style.display = 'none'; bubble.classList.remove('scene-director-bubble-out'); }
             }, ms + 700);
         } catch (e) { /* ignore */ }
@@ -4007,7 +4017,9 @@
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    sdTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+                    // Untracked on purpose: this frees a blob URL. Cancelling it leaks that
+                    // object URL for the life of the page instead of saving any work.
+                    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
                 } catch (e) {
                     console.error(`${LOG} photo save failed`, e);
                     if (typeof toastr !== 'undefined') toastr.warning('Photo save failed: ' + e.message);
@@ -4080,7 +4092,9 @@
             const div = document.createElement('div');
             div.className = 'scene-director-accent ' + cls;
             document.body.appendChild(div);
-            sdTimeout(function () { try { div.remove(); } catch (e) { /* ignore */ } }, 1600);
+            // Untracked on purpose: this removes the accent overlay. Cancelling it orphans
+            // the div in the DOM — the same reason the sprite ghost's removal is untracked.
+            setTimeout(function () { try { div.remove(); } catch (e) { /* ignore */ } }, 1600);
         } catch (e) {
             console.error(`${LOG} emotion accent failed`, e);
         }
@@ -4152,7 +4166,9 @@
             d.style.left = (rect.left + rect.width * 0.5) + 'px';
             d.style.top = (rect.top + rect.height * 0.05) + 'px';
             document.body.appendChild(d);
-            sdTimeout(function () { try { d.remove(); } catch (e) { /* ignore */ } }, 4200);
+            // Untracked on purpose: this removes the drift emoji. Cancelling it orphans the
+            // element in the DOM.
+            setTimeout(function () { try { d.remove(); } catch (e) { /* ignore */ } }, 4200);
         } catch (e) { /* ignore */ }
     }
     function idleDriftTick(settings) {
@@ -4899,11 +4915,18 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
             bubbleEl.className = 'scene-director-mood-bubble';
             bubbleEl.textContent = (settings.moodEmoji && settings.moodEmoji[mood]) || MOOD_EMOJI[mood];
             wrap.appendChild(bubbleEl);
-            // 0.5.2: linger, then fade (opacity-only, tracked timeouts).
+            // 0.5.2: linger, then fade (opacity-only).
             const ms = (Number(settings.bubbleSeconds) || 6) * 1000;
             const b = bubbleEl;
-            sdTimeout(function () { b.classList.add('scene-director-bubble-out'); }, ms);
-            sdTimeout(function () { try { b.remove(); } catch (e) { /* ignore */ } }, ms + 700);
+            // Untracked on purpose, like the sprite ghost's removal: these FADE and then
+            // REMOVE the bubble, so cancelling them strands a DOM node rather than saving
+            // work — and unlike the main bubble there is no sequence guard to clear it on
+            // the next emit. clearCastStrip() wipes the strip wholesale, but only on a chat
+            // change, so the orphan sat on the chip until then.
+            // Untracked on purpose: this fades the bubble; cancelling strands it.
+            setTimeout(function () { b.classList.add('scene-director-bubble-out'); }, ms);
+            // Untracked on purpose: same reason — this is the removal.
+            setTimeout(function () { try { b.remove(); } catch (e) { /* ignore */ } }, ms + 700);
         }
         const label = document.createElement('div');
         label.className = 'scene-director-chip-label';
