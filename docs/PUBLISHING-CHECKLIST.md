@@ -78,7 +78,15 @@ demo character only) with the release candidate installed in
         && node tools/scene-cases.mjs \
         && node tools/snippet-cases.mjs \
         && node tools/carry-cases.mjs \
-        && node tools/pick-cases.mjs
+        && node tools/pick-cases.mjs \
+        && node tools/sleep-cases.mjs
+
+   `sleep-cases.mjs` runs against BOTH builds (it reads the tracked-timer helper name
+   from the source — public `sdTimeout`, private `rTimeout`). It pins that `await
+   sleep(n)` is never cancellable: a timer in the registry gets killed by
+   `clearAllTimeouts()`, and if it was the promise's only resolver the awaiting function
+   never continues. Case 4 deliberately proves the OLD shape still hangs, so case 3 is
+   not passing vacuously.
 
    `pick-cases.mjs` (public-only) covers `pickBackground` — slot precedence, the graded
    flag, empty-slot fallback, first-match-wins, legacy `backgroundMap` ordering and

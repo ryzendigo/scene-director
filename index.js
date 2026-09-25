@@ -2254,6 +2254,22 @@
         pendingTimeouts.add(id);
         return id;
     }
+    // An `await sleep(n)` must NOT go through sdTimeout. clearAllTimeouts() cancels the
+    // timer, and a cancelled timer that was the promise's only resolver leaves it
+    // PERMANENTLY unresolved — so the awaiting function never continues. That is worse
+    // than a late fire: applyBackground() awaits a 200ms crossfade pause, so a tab-hide
+    // (applyPrivacy -> clearAllTimeouts) mid-message abandoned everything after it — the
+    // weather overlay, the sprite filter and the costume switch — silently, for that
+    // message. Proven in isolation: the awaiting function reports HUNG and never returns.
+    //
+    // These sleeps carry no chat state; the callers that need to bail after one already
+    // re-check the chat generation counter, which is the right mechanism for abandoning
+    // stale work. (Deliberately not spelling that expression out: chat-gen-guard.mjs
+    // scans for it literally and would read this comment as a guard inside sleep().)
+    function sleep(ms) {
+        // Untracked on purpose: cancelling this would hang the awaiting function for ever.
+        return new Promise(function (r) { setTimeout(r, ms); });
+    }
     function clearAllTimeouts() {
         for (const id of pendingTimeouts) clearTimeout(id);
         pendingTimeouts.clear();
@@ -3516,7 +3532,7 @@
             }
             fade.style.transition = 'opacity 0.2s ease';
             fade.style.opacity = '0.6';
-            await new Promise(function (r) { sdTimeout(r, 200); });
+            await sleep(200);
             await runCommand(ctx, `/bg ${bg}`);
             issued = true;
             fade.style.transition = 'opacity 0.3s ease';
@@ -4252,7 +4268,7 @@
             const r = await fetch(url, { credentials: 'same-origin' });
             if (r.ok) { prefetchDone.add(file); return; }
             if ((r.status === 502 || r.status === 503) && !attempt) {
-                await new Promise(function (res) { sdTimeout(res, 5000); });
+                await sleep(5000);
                 return prefetchOne(file, 1);
             }
             dbg('prefetch ' + file + ' -> HTTP ' + r.status);
@@ -4263,7 +4279,7 @@
             // definite "no" is cacheable, a 5xx or a thrown fetch is not (those retry above).
             if (r.status === 404 || r.status === 403) { prefetchDone.add(file); prefetchMissing.add(file); }
         } catch (e) {
-            if (!attempt) { await new Promise(function (res) { sdTimeout(res, 5000); }); return prefetchOne(file, 1); }
+            if (!attempt) { await sleep(5000); return prefetchOne(file, 1); }
             dbg('prefetch ' + file + ' failed');
         }
     }
@@ -4276,7 +4292,7 @@
             const worker = async function () {
                 while (i < files.length) {
                     await prefetchOne(files[i++], 0);
-                    await new Promise(function (res) { sdTimeout(res, 150); });
+                    await sleep(150);
                 }
             };
             await Promise.all([worker(), worker()]); // concurrency 2
@@ -7471,7 +7487,7 @@ body.scene-director-chat-glass.scene-director-chat-noblur #chat {
                     if (!up.ok) throw new Error('upload HTTP ' + up.status);
                     done++;
                 } catch (e) { failed++; dbg('starter pack: ' + f + ' failed: ' + (e && e.message)); }
-                await new Promise(function (res) { sdTimeout(res, 120); });
+                await sleep(120);
             }
             await fetchBackgroundsList(true);
             say(`Starter pack: ${done} installed, ${files.length - todo.length} already present${failed ? ', ' + failed + ' failed' : ''}.`);

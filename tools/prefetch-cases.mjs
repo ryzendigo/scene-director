@@ -39,6 +39,8 @@ for (const [name, status, want] of CASES) {
         prefetchDone, prefetchMissing,
         dbg() {},
         [timerName](fn) { fn(); },                     // no real waiting
+        // prefetchOne now awaits sleep() instead of a cancellable timer (v0.9.81).
+        sleep() { return Promise.resolve(); },
         encodeURIComponent: (x) => x,
         fetch() {
             attempts++;
