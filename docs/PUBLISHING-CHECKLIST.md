@@ -77,7 +77,14 @@ demo character only) with the release candidate installed in
         && node tools/rulefield-cases.mjs \
         && node tools/scene-cases.mjs \
         && node tools/snippet-cases.mjs \
-        && node tools/carry-cases.mjs
+        && node tools/carry-cases.mjs \
+        && node tools/pick-cases.mjs
+
+   `pick-cases.mjs` (public-only) covers `pickBackground` — slot precedence, the graded
+   flag, empty-slot fallback, first-match-wins, legacy `backgroundMap` ordering and
+   unvalidated rule fields. Note: reordering its night/rain/dusk branches is an
+   EQUIVALENT mutation (the conditions are mutually exclusive); the real precedence is
+   one ternary in `parseScene` and lives in `scene-cases.mjs`.
 
    `snippet-cases.mjs` treats PROMPT_SNIPPET as a **contract**: it derives a header
    from the snippet's own `Syntax =` line and parses it with the shipped regexes, so
