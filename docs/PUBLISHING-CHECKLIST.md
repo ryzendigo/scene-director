@@ -80,7 +80,14 @@ demo character only) with the release candidate installed in
         && node tools/carry-cases.mjs \
         && node tools/pick-cases.mjs \
         && node tools/sleep-cases.mjs \
-        && node tools/visibility-cases.mjs
+        && node tools/visibility-cases.mjs \
+        && node tools/moodtag-cases.mjs
+
+   `moodtag-cases.mjs` runs against both builds (it binds whichever label-set name the
+   lifted function references — public `EXPRESSION_LABEL_SET`, private
+   `EXPRESSION_LABELS`). It pins that every shipped label is accepted and that an
+   invented one is REJECTED: a bad label overrides the classifier and asks /emote for a
+   file that does not exist, i.e. a blank sprite.
 
    `visibility-cases.mjs` runs against both builds. It pins that hiding the tab still
    cancels pending work, but RESTORING re-asserts a sprite that is genuinely blank —
